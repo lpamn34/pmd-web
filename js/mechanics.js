@@ -87,7 +87,7 @@ function speedAccMul(att, def) { return clamp(1 + 0.2 * Math.log2(speedOf(att) /
 const hasFlag = (m, f) => !!(m.fg && m.fg.includes(f));
 const isContact = m => hasFlag(m, 1);
 const isSlicing = m => /베기|가르기|자르기|칼|커터|베어|참격/.test(m.n);
-function moveType(att, move) { const A = abilityOf(att); return A.skin && move.t === 1 ? A.skin : move.t; }
+function moveType(att, move) { const A = abilityOf(att); return A.soundType && hasFlag(move, 9) ? A.soundType : A.skin && move.t === 1 ? A.skin : move.t; }
 function bestStatKey(c) { return ['atk', 'def', 'spa', 'spd'].reduce((b, k) => (c[k] > c[b] ? k : b), 'atk'); }
 
 // 특성에 의한 능력치 배율

@@ -7,7 +7,7 @@ const Dungeon = (() => {
   const T = { base: 0, cursor: 0, moveEnd: 0, busyUntil: 0 };
   const LOG = [];
   let canvas, ctx, mini, mctx, rafId = 0, logicTimer = 0, pendingKey = null;
-  let hudCache = '', logCache = '', moveCache = '';
+  let hudCache = '', logCache = '', moveCache = '', quickCache = '';
 
   const now = () => performance.now();
   const spd = () => (Game.save.settings.fast ? 0.55 : 1);
@@ -84,6 +84,11 @@ const Dungeon = (() => {
     return { w: W, h: H, tiles, room, rooms };
   }
 
+  // 복도(방이 아닌 바닥)가 r칸 안에 있는지: 방 입구 근처에는 함정을 만들지 않는다
+  function nearCorridor(x, y, r) {
+    for (let yy = y - r; yy <= y + r; yy++) for (let xx = x - r; xx <= x + r; xx++) if (floorAt(xx, yy) && D.room[idx(xx, yy)] < 0) return true;
+    return false;
+  }
   function randomRoomTile(opts = {}) {
     for (let tries = 0; tries < 400; tries++) {
       const r = opts.room != null ? D.rooms[opts.room] : pick(D.rooms);
@@ -273,7 +278,7 @@ const Dungeon = (() => {
       for (let i = rint(2, 4) + Math.floor(lvl / 25); i > 0; i--) {
         const t = randomRoomTile({ noItem: true, far: 3 });
         // 복도와 붙은 칸(방 출입구 옆)에는 만들지 않는다
-        if (t && !DIRS.some(([dx, dy]) => floorAt(t.x + dx, t.y + dy) && D.room[idx(t.x + dx, t.y + dy)] < 0)) D.traps.push({ ...t, kind: pick(kinds), seen: false });
+        if (t && !nearCorridor(t.x, t.y, 2)) D.traps.push({ ...t, kind: pick(kinds), seen: false });
       }
     }
     // 아이템 / 돈
@@ -801,7 +806,7 @@ const Dungeon = (() => {
       if (c.shiny && !itemAt(c.x, c.y)) D.items.push({ x: c.x, y: c.y, id: weighted(DROP_TABLE.filter(d => ITEMS[d[0]].held || ITEMS[d[0]].tm || d[0] === 'candy')), n: 1 });
       if (Math.random() < 0.1 && !itemAt(c.x, c.y) && !(D.stairs.x === c.x && D.stairs.y === c.y)) D.items.push({ x: c.x, y: c.y, id: weighted(DROP_TABLE), n: 1 });
       if (c.shiny && Game.unlockShiny(c.sp)) log(`✨ 이제 캐릭터 탭에서 ${spName(c.sp)}의 이로치 모습을 고를 수 있다!`, at + 300);
-      if (!c.outlaw && !Game.save.roster[c.sp]) {
+      if (run.mode === 'normal' && !c.outlaw && !NO_RECRUIT.includes(c.sp) && !Game.save.roster[c.sp]) {
         const rate = recruitRate(P().lv) * (DATA.species[c.sp].lg ? 0.5 : 1) * (c.boss ? 0.5 : 1) * (heldOf(P()).recruitMul || 1);
         if (Math.random() < rate) D.prompts.push(() => recruitPrompt(c));
       }
@@ -1585,6 +1590,17 @@ const Dungeon = (() => {
     return false;
   }
 
+  function quickUse() {
+    if (!D || busy()) return;
+    const id = Game.save.settings.quickItem;
+    if (!id || !ITEMS[id]) { log('가방에서 아이템을 고른 뒤 "빠른 사용으로 등록"을 누르세요.', now()); return; }
+    const slot = run.bag.findIndex(b => b.id === id);
+    if (slot < 0) { log(`가방에 ${jo(ITEMS[id].n, '이')} 없다.`, now()); return; }
+    const it = ITEMS[id];
+    if (it.throw || !it.use || it.use === 'none') { autoFace(P(), { r: 'p' }); act({ t: 'item', slot, mode: 'throw' }); }
+    else act({ t: 'item', slot, mode: 'use' });
+  }
+
   function itemMenu(i) {
     const b = run.bag[i], it = ITEMS[b.id];
     const ch = [];
@@ -1596,6 +1612,11 @@ const Dungeon = (() => {
       log(`${jo(it.n, '을')} 지니게 했다.` + (old ? ` (${jo(ITEMS[old].n, '은')} 가방으로)` : ''), now());
     } });
     ch.push({ label: '던진다', fn: () => act({ t: 'item', slot: i, mode: 'throw' }) });
+    const fav = Game.save.settings.quickItem === b.id;
+    ch.push({ label: fav ? '⭐ 빠른 사용 해제' : `⭐ 빠른 사용으로 등록 (T 키 / 버튼으로 바로 ${it.throw || !it.use || it.use === 'none' ? '던지기' : '사용'})`, fn: () => {
+      Game.setSetting('quickItem', fav ? null : b.id); quickCache = '';
+      log(fav ? '빠른 사용을 해제했다.' : `${jo(it.n, '을')} 빠른 사용으로 등록했다.`, now()); openBag();
+    } });
     ch.push({ label: '내려놓는다', fn: () => act({ t: 'item', slot: i, mode: 'drop' }) });
     ch.push({ label: '돌아간다', fn: openBag });
     UI.open({ title: `${it.icon} ${esc(it.n)}`, html: `<p>${esc(it.d)}</p>`, choices: ch, cancel: openBag });
@@ -1970,6 +1991,13 @@ const Dungeon = (() => {
           <span class="k">${i + 1}</span><span class="n">${esc(d.n)}</span><span class="p">${m.pp}/${m.max}</span><span class="info" data-move="${m.id}" data-pp="${m.pp}" data-max="${m.max}" title="기술 정보">?</span></button>`;
       }).join('');
     }
+    const qid = Game.save.settings.quickItem, qn = qid ? run.bag.filter(b => b.id === qid).reduce((s, b) => s + b.n, 0) : 0;
+    const qk = (qid || '') + ':' + qn;
+    if (qk !== quickCache) {
+      quickCache = qk;
+      const qb = document.querySelector('#actions [data-k=quick]');
+      if (qb) { qb.innerHTML = qid && ITEMS[qid] ? `${ITEMS[qid].icon}×${qn} <kbd>T</kbd>` : '⭐ 빠른사용 <kbd>T</kbd>'; qb.title = qid && ITEMS[qid] ? `${ITEMS[qid].n} 바로 ${ITEMS[qid].throw || !ITEMS[qid].use || ITEMS[qid].use === 'none' ? '던지기' : '사용'} (T)` : '가방에서 아이템을 골라 "빠른 사용"으로 등록하세요'; qb.classList.toggle('empty', !!qid && !qn); }
+    }
     const shown = LOG.filter(l => l.at <= t).slice(-5);
     const lg = shown.map(l => l.text + (l.cls || '')).join('\n') + shown.length;
     if (lg !== logCache) {
@@ -2050,6 +2078,7 @@ const Dungeon = (() => {
       case 'KeyJ': case 'KeyL': Game.showMissions(); return true;
       case 'KeyN': toggleMap(true); return true;
       case 'KeyK': toggleLook(); return true;
+      case 'KeyT': quickUse(); return true;
       case 'KeyP': showStatus(); return true;
       case 'Semicolon': case 'KeyU': showLog(); return true;
       case 'KeyV': D.dashNext = !D.dashNext; updateDashBtn(); log(D.dashNext ? '대쉬 준비! 방향을 누르면 쭉 달린다.' : '대쉬를 취소했다.', now()); return true;
@@ -2154,6 +2183,7 @@ const Dungeon = (() => {
       <tr><td>임무 확인</td><td>J: 받은 임무와 이 층의 임무 대상</td></tr>
       <tr><td>조사</td><td>K 또는 조사 버튼 → 살펴볼 칸을 누른다 (컴퓨터는 칸을 우클릭). 적의 HP·상태·가진 아이템, 떨어진 아이템, 발견한 함정을 볼 수 있다.</td></tr>
       <tr><td>메시지 기록 / 내 상태</td><td>U 또는 메시지 창을 누르면 지난 메시지, P 또는 위쪽 상태 표시줄을 누르면 내 능력치·능력 변화·기술.</td></tr>
+      <tr><td>빠른 사용</td><td>가방에서 아이템 → "빠른 사용으로 등록". 그 뒤 T 키나 ⭐ 버튼으로 바로 쓴다. 돌·가시 같은 던지는 아이템은 보이는 적 쪽으로 방향을 맞춰 던진다.</td></tr>
       <tr><td>발밑의 아이템</td><td>가방을 열면 맨 위의 "발밑"에서 조사·줍기·가방 아이템과 교환·던지기. 가방 정리 버튼으로 종류별 정렬.</td></tr>
       <tr><td>큰 지도</td><td>N 또는 미니맵 클릭. 큰 지도에서 가 본 곳을 누르면 그곳까지 이동한다. 아무 키나 누르면 닫힌다.</td></tr>
       <tr><td>공격</td><td>Space / Enter, 적 쪽으로 이동해도 공격</td></tr>
@@ -2201,7 +2231,7 @@ const Dungeon = (() => {
       ({ attack: () => act({ t: 'attack' }), explore: () => startAuto('explore'), fight: () => startAuto('fight'), rest: () => startAuto('rest'),
         wait: () => act({ t: 'wait' }), stairs: tryStairs, bag: openBag, menu: () => Game.dungeonMenu(), help: showHelp,
         dash: () => { D.dashNext = !D.dashNext; updateDashBtn(); log(D.dashNext ? '대쉬 준비! 방향을 누르면 쭉 달린다.' : '대쉬를 취소했다.', now()); },
-        mission: () => Game.showMissions(), map: () => toggleMap(), look: toggleLook })[k]?.();
+        mission: () => Game.showMissions(), map: () => toggleMap(), look: toggleLook, quick: quickUse })[k]?.();
     });
   }
 
@@ -2242,7 +2272,7 @@ const Dungeon = (() => {
   }
 
   function enter(r) {
-    run = r; LOG.length = 0; hudCache = logCache = moveCache = '';
+    run = r; LOG.length = 0; hudCache = logCache = moveCache = quickCache = '';
     Sprites.load(r.p.sp, r.p.shiny);
     newFloor();
     if (!rafId) render();

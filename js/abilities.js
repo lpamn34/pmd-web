@@ -185,7 +185,7 @@ ab_(177, { typeMul: { 3: 1.2 }, dungeon: '선제 개념이 없으므로 대신 �
 ab_(274, { typeMul: { 3: 1.2 }, dungeon: '바람 기술 구분이 없으므로 비행 기술의 위력이 1.2배.' });
 ab_(242, { typeMul: { 9: 1.5 }, dungeon: '강철 기술의 위력이 1.5배.' });
 ab_(203, { noContact: true, dungeon: '접촉 공격을 해도 상대의 접촉 특성(정전기 등)이 발동하지 않는다.' });
-ab_(204, { flagMul: [9, 1.2], dungeon: '소리 기술의 위력이 1.2배.' });
+ab_(204, { soundType: 11, flagMul: [9, 1.2], dungeon: '소리 기술이 물 타입이 되고, 위력이 1.2배.' });
 ab_([247, 301], { cheekPouch: true, dungeon: '열매로 회복하는 양이 1.5배.' });
 ab_(149, { evasion: 1.15, dungeon: '모습을 속여서 회피율이 1.15배.' });
 ab_(179, { defMul: 1.3, dungeon: '필드 대신 항상 방어가 1.3배.' });

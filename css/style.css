@@ -166,7 +166,7 @@ i.clear { font-style: normal; font-size: 11px; background: #3a9d4d; padding: 1px
 .mv .n { flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .mv .p { color: var(--dim); }
 .mv.empty { opacity: .5; }
-#actions { display: grid; grid-template-columns: repeat(6, 1fr); gap: 4px; }
+#actions { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; }
 #actions button { font: inherit; font-size: 11px; color: #fff; background: #ffffff14; border: 1px solid #fff4; border-radius: 6px; padding: 5px 1px; cursor: pointer; white-space: nowrap; overflow: hidden; }
 #actions button:hover { background: #ffffff26; }
 
@@ -419,3 +419,4 @@ i.clear.me { background: #2b6cb0; margin-left: 4px; }
 .medal-row.got { opacity: 1; background: #ffd96622; }
 .medal-row .medal { font-size: 18px; filter: grayscale(1); }
 .medal-row.got .medal { filter: none; }
+#actions button.empty { opacity: .5; }

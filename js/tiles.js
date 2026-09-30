@@ -165,7 +165,7 @@ const Tiles = (() => {
   }
   const DECO = {
     forest: 'grass', beach: 'shell', crystal: 'crystal', plains: 'flower', swamp: 'puddle', volcano: 'lava', desert: 'ripple',
-    frost: 'snow', storm: 'wave', dark: 'root', mine: 'ore', sky: 'cloud', canyon: 'ember', summit: 'star', trial: 'pebble', twilight: 'rune', mystery: 'rune',
+    frost: 'snow', storm: 'wave', dark: 'root', mine: 'ore', sky: 'cloud', canyon: 'ember', summit: 'star', trial: 'pebble', twilight: 'rune', mystery: 'rune', eternal: 'star',
     burned: 'ember', whirl: 'wave', seafloor: 'shell', ruins: 'rune', shrine: 'root', altar: 'flower', coronet: 'crystal', spiral: 'ore', areazero: 'crystal',
   };
   function drawDeco(g, kind, px, py, r, r2, pal) {

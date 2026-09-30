@@ -3,7 +3,7 @@
 
 // 게임 버전: 업데이트할 때 올리고, index.html의 ?v= 숫자도 같이 올린다
 // (친구와 구조 코드·오늘의 도전을 주고받으려면 버전이 같아야 한다)
-const GAME_VERSION = '0.26';
+const GAME_VERSION = '0.27';
 // 버전 비교: '0.25' > '0.9' 처럼 숫자로 비교한다
 function cmpVer(a, b) {
   const x = String(a).split('.').map(Number), y = String(b).split('.').map(Number);
@@ -12,6 +12,7 @@ function cmpVer(a, b) {
 }
 const GAME_DATE = '2026-09-30';
 const VERSION_NOTES = [
+  ['0.27', ['100층 로그라이크 "무한의 회랑" 추가 (최종 보스: 무한다이노 무한다이맥스)', '로그라이크 던전에서는 동료 영입 없음', '빠른 사용: 가방의 아이템 하나를 등록해 T 키/버튼으로 바로 던지거나 사용', '접촉 표시가 빠져 있던 8·9세대 기술(찍찍베기, 제트펀치 등)이 바로 앞의 적을 제대로 공격', '촉촉보이스: 소리 기술이 물 타입이 되고 위력 1.2배 (원작처럼 타입 변경 추가)', '함정이 방 입구(복도에서 2칸 안)에 생기지 않음']],
   ['0.26', ['리전폼 56종 추가 (알로라·가라르·히스이·팔데아의 모습, 도감 번호 0026-1 식)', '포켓몬별 던전 클리어 기록과 메달 (일반·테마·로그라이크 정복, 완전 정복), 던전 카드에 클리어 표시', '흡수 기술 회복량: 준 피해의 30%', '던진 아이템이 아이템 있는 칸에 떨어지면 가까운 빈칸으로 튕겨 나감', '던전에서 메시지 기록(U)·내 상태(P) 보기, 조사(K / 우클릭)로 먼 칸 살펴보기', '가방 정리, 발밑 아이템 조사·줍기·교환·던지기', '열매를 먹으면 배가 5 참', '직선 기술·던지기가 벽 모서리를 지나감', '적도 아이템을 주워서 먹거나 던짐 (쓰러지면 떨어뜨림)', '함정: 모르는 함정 80%·발견한 함정 40% 확률로 작동, 복도 옆에는 생기지 않음, 능력 리셋 함정 추가', '흡수 기술 회복량을 실제로 깎은 HP 기준으로', '휴대폰: 던전 방향 버튼(누르고 있으면 계속 걷기, 방향만 바꾸기), 마을 화면 정리, 창마다 ✕ 닫기 버튼', '일반 던전에서 패러독스 포켓몬이 나오는 확률을 1/5로 줄임', '계정 (아이디/비밀번호, 로그인은 선택)', '클라우드 세이브: 다른 기기에서 이어하기', '구조 게시판: 다른 플레이어의 구조 요청을 골라서 구조, A-OK·감사 편지 자동 전달']],
   ['0.25', ['새 버전 알림 (마을에서 새로고침 안내)', '업데이트 시 세이브 자동 변환 + 백업 (정보 탭에서 복원 가능)', '옛 버전 화면이 새 세이브를 덮어쓰지 않게 보호', '개발용 / 서비스용 환경 분리']],
   ['0.24', ['배경음악 루프 구간: 인트로 뒤 반복 구간만 반복 (파일 안 루프 정보 자동 인식, music/loops.js, 정보 탭에서 설정)']],
@@ -264,6 +265,7 @@ const DUNGEONS = [
   { id: 'trial',   n: '시련의 동굴',    floors: 15, lv: [3, 22],  types: null, mode: 'rogue', wx: [['sand', 0.3]], pal: ['#3b3530', '#6b5f55', '#a99a8a', '#8e7f70'] },
   { id: 'twilight', n: '황혼의 미궁',   floors: 30, lv: [4, 45],  types: [8, 17, 14, 18], mode: 'rogue', wx: [['fog', 0.3], ['rain', 0.1]], pal: ['#3a2438', '#6e4468', '#c79ab8', '#b387a6'] },
   { id: 'mystery', n: '불가사의 던전',  floors: 50, lv: [3, 70],  types: null, mode: 'rogue', wx: [['sun', 0.08], ['rain', 0.08], ['sand', 0.08], ['snow', 0.08], ['fog', 0.08]], pal: ['#26324a', '#44597e', '#9fb0cc', '#8395b3'] },
+  { id: 'eternal', n: '무한의 회랑',    floors: 100, lv: [3, 100], types: null, mode: 'rogue', wx: [['fog', 0.1], ['sand', 0.05], ['snow', 0.05]], pal: ['#1d0f24', '#4a1f4f', '#d45a8a', '#a8406c'] },
 ];
 // ── 테마 던전: 같은 시리즈로 묶이는 전설·패러독스 포켓몬이 보스로 나온다 ──
 // theme: 카드에 표시할 테마 / bosses: 최종 보스 후보 (무작위 하나) / mid: 중간 보스 층과 후보 / extra: 일반 적으로 섞이는 포켓몬
@@ -356,7 +358,9 @@ const SHINY_CHANCE = 1 / 80;
 const WIND = { warn: [500, 650, 750], limit: 800 };
 // 보스: 일반 던전은 마지막 층, 로그라이크는 10층마다와 마지막 층
 const BOSSES = { forest: 12, beach: 99, crystal: 302, plains: 243, swamp: 89, volcano: 244, desert: 330, frost: 144, storm: 245,
-  dark: 491, mine: 379, sky: 384, canyon: 445, summit: 483, trial: 68, twilight: 487, mystery: 493 };
+  dark: 491, mine: 379, sky: 384, canyon: 445, summit: 483, trial: 68, twilight: 487, mystery: 493, eternal: 1157 };
+// 영입할 수 없는 포켓몬 (특별한 보스 모습)
+const NO_RECRUIT = [1157];
 const isBossFloor = (dg, f) => f === dg.floors || (dg.mode === 'rogue' && f % 10 === 0) || !!(dg.mid && dg.mid.floors.includes(f) && midPool(dg).length);
 // 초상화 표정 (SpriteCollab 파일 이름 ↔ 데이터 글자)
 const EMOTIONS = { Normal: 'N', Happy: 'H', Pain: 'P', Determined: 'D', Joyous: 'J', Sad: 'S', Angry: 'A', Dizzy: 'Z', Surprised: 'U', Crying: 'C', Worried: 'W' };

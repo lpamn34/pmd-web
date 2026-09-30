@@ -21,7 +21,12 @@ FORM_IDS = json.load(open(ids_path, encoding='utf8')) if os.path.exists(ids_path
 FIRST_ID = 1101   # 원래 포켓몬 번호(1~1025) 뒤, 구조 코드의 11비트(2047) 안
 
 REGION = {'Alola': ('alola', '알로라', 'Alolan', 7), 'Galar': ('galar', '가라르', 'Galarian', 8), 'Hisui': ('hisui', '히스이', 'Hisuian', 8),
-          'Paldea': ('paldea', '팔데아', 'Paldean', 9), 'Paldea_Blaze': ('paldea-blaze-breed', '팔데아', 'Paldean', 9), 'Paldea_Aqua': ('paldea-aqua-breed', '팔데아', 'Paldean', 9)}
+          'Paldea': ('paldea', '팔데아', 'Paldean', 9), 'Paldea_Blaze': ('paldea-blaze-breed', '팔데아', 'Paldean', 9), 'Paldea_Aqua': ('paldea-aqua-breed', '팔데아', 'Paldean', 9),
+          # 리전폼은 아니지만 보스로 쓰는 특별한 모습
+          'Eternamax': ('eternamax', '', 'Eternamax', 8)}
+# 이름을 따로 정하는 모습 (기본은 "지방 이름 + 포켓몬")
+NAME_KO = {'eternatus-eternamax': '무한다이노 (무한다이맥스)'}
+NAME_EN = {'eternatus-eternamax': 'Eternatus (Eternamax)'}
 SUFFIX_KO = {'paldea-blaze-breed': ' (블레이즈종)', 'paldea-aqua-breed': ' (워터종)', 'paldea-combat-breed': ' (컴뱃종)'}
 # 리전폼만 진화하는 포켓몬 (원래 모습은 진화하지 않는다)
 REGION_EVO = {('meowth', 'galar'): 'perrserker', ('farfetchd', 'galar'): 'sirfetchd', ('corsola', 'galar'): 'cursola', ('mr-mime', 'galar'): 'mr-rime',
@@ -192,10 +197,12 @@ for base, fk, fv, reg, ident, pid in sorted(targets):
     for a, h in ab:
         if str(a) not in DATA['abilities']: DATA['abilities'][str(a)] = {'n': ab_ko.get(a, '?'), 'd': ab_fl.get(a, (0, ''))[1]}
     suffix = next((s for k2, s in SUFFIX_KO.items() if ident.endswith(k2)), '')
+    lset = learnset(pid)
+    if lset == [[1, 33]] and str(base) in species: lset = species[str(base)]['l']   # 기술 정보가 없는 모습은 원래 모습의 기술
     species[str(fid)] = {
-        'n': f'{reg[1]} {ko_species.get(base, en_species.get(base))}{suffix}', 'e': f'{reg[2]} {en_species.get(base)}' + (' (' + ident.split('paldea-')[1].replace('-breed', '').title() + ')' if 'breed' in ident else ''),
+        'n': NAME_KO.get(ident) or f'{reg[1]} {ko_species.get(base, en_species.get(base))}{suffix}', 'e': NAME_EN.get(ident) or f'{reg[2]} {en_species.get(base)}' + (' (' + ident.split('paldea-')[1].replace('-breed', '').title() + ')' if 'breed' in ident else ''),
         't': types[pid], 'b': stats[pid], 'x': I(poke[ident]['base_experience'], 60) or 60,
-        'l': learnset(pid), 'v': evos, 'g': reg[3], 'cr': cr, 'ab': ab,
+        'l': lset, 'v': evos, 'g': reg[3], 'cr': cr, 'ab': ab,
         'em': ''.join(EM[e] for e in fv.get('portrait_files', {}) if e in EM) or 'N',
         'sh': 1 if sh and 'Walk' in sh.get('sprite_files', {}) else 0,
         'sem': ''.join(EM[e] for e in (sh or {}).get('portrait_files', {}) if e in EM),
