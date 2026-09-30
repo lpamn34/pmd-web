@@ -6,7 +6,7 @@ import re
 import zipfile
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
-INCLUDE = ['index.html', 'README.md', 'start.bat', 'css', 'js', 'tiles', 'music']
+INCLUDE = ['index.html', 'README.md', 'LICENSE', 'start.bat', 'css', 'js', 'tiles', 'music']
 MUSIC_EXT = ('.ogg', '.mp3', '.m4a', '.wav')
 
 

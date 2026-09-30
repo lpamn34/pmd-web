@@ -47,6 +47,8 @@ npx http-server -p 8765
 - 배포용 zip은 `python make_release.py`로 만듭니다. 게임 파일과 `tiles/`, `music/` 폴더를 묶고, 빠진 타일셋·음악이 있으면 알려 줍니다.
 
 ## 크레딧과 라이선스
+- **이 게임의 소스 코드**(`index.html`, `css/`, `js/`, 스크립트 파일. 단 `js/data.js`에 담긴 포켓몬 데이터는 제외): [GNU AGPL-3.0](LICENSE). 자유롭게 보고, 고치고, 다시 배포할 수 있지만, 고친 버전을 배포하거나 웹사이트로 서비스하면 그 소스 코드도 같은 라이선스로 공개해야 합니다.
+- 아래 에셋과 데이터는 AGPL 대상이 **아니며** 각자의 권리와 라이선스를 따릅니다.
 - 배포본의 `tiles/`, `music/` 폴더에 들어 있는 원작 던전 타일셋과 음악: Pokémon Mystery Dungeon 시리즈에서 가져온 것으로, 저작권은 Nintendo / Creatures Inc. / GAME FREAK inc. / Spike Chunsoft에 있습니다. 비상업적 팬 게임이며, 권리자의 요청이 있으면 내립니다.
 - 포켓몬 스프라이트와 초상화: PMD Sprite Repository (SpriteCollab), CC BY-NC 4.0. 제작자별 크레딧은 게임 안에서 볼 수 있습니다.
 - 포켓몬 데이터(이름, 능력치, 기술, 특성): PokeAPI.

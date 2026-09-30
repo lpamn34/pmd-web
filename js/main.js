@@ -494,6 +494,7 @@ const Game = (() => {
       현재 캐릭터 ${esc(spName(save.current))}: 스프라이트 by ${esc(cr[0])} / 초상화 by ${esc(cr[1] || '?')}</p>
       <p>포켓몬 데이터(이름, 능력치, 기술): <a href="https://pokeapi.co/" target="_blank" rel="noopener">PokeAPI</a></p>
       <p>원작 던전 타일셋·음악 (게임 폴더의 tiles/, music/에 들어 있는 경우): Pokémon Mystery Dungeon 시리즈 © Nintendo / Spike Chunsoft</p>
+      <p>이 게임의 소스 코드: GNU AGPL-3.0 (게임 폴더의 LICENSE 파일)</p>
       <p class="dim">비상업적 팬 게임입니다. Pokémon © Nintendo / Creatures Inc. / GAME FREAK inc. Pokémon Mystery Dungeon © Spike Chunsoft.</p>`;
   }
 
