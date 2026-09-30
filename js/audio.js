@@ -367,7 +367,9 @@ const Sound = (() => {
   const MOODS = { burned: 'phryg', whirl: 'dorian', seafloor: 'minor', ruins: 'phryg', shrine: 'minor', altar: 'lydian', coronet: 'dorian', spiral: 'minor', areazero: 'lydian', crystal: 'lydian', swamp: 'dorian', volcano: 'phryg', desert: 'phryg', frost: 'minor', storm: 'minor', dark: 'minor', mine: 'dorian',
     canyon: 'phryg', summit: 'lydian', trial: 'dorian', twilight: 'minor', mystery: 'dorian', daily: 'dorian' };
   const town = () => bgm('town', { mode: 'major', bpm: 96, root: 55, prog: [0, 3, 4, 0], wave: 'triangle', sparse: 0.6, files: ['town'] });
-  const dungeon = dg => bgm('dg:' + dg.id + (dg.daily ? dg.seed : ''), { mode: MOODS[dg.id] || 'major', files: [dg.id, 'dungeon'] });
+  // 오늘의 도전: 날짜로 정해지는 던전 하나의 곡 (날짜 순서대로 돌며 파일이 있는 첫 곡)
+  const dailyFiles = seed => { const ids = DUNGEONS.filter(d => !d.daily).map(d => d.id), k = seed % ids.length; return [...ids.slice(k), ...ids.slice(0, k), 'dungeon']; };
+  const dungeon = dg => bgm('dg:' + dg.id + (dg.daily ? dg.seed : ''), { mode: MOODS[dg.id] || 'major', files: dg.daily ? dailyFiles(dg.seed >>> 0) : [dg.id, 'dungeon'] });
   const boss = () => bgm('boss', { mode: 'minor', bpm: 150, root: 45, prog: [0, 5, 6, 4], wave: 'sawtooth', sparse: 0.3, files: ['boss'] });
 
   // 브라우저는 사용자가 한 번 누르기 전에는 소리를 막는다

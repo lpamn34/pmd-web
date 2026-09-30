@@ -3,3 +3,4 @@ pmd/
 *.zip
 .claude/
 __pycache__/
+assets_in/

@@ -28,7 +28,7 @@ def main():
     print('타일셋:', '공통(default.png) 있음' if 'default.png' in tiles else '공통 없음')
     miss_t = [n for i, n in dungeons if i + '.png' not in tiles]
     print(f'  던전별 {len(dungeons) - len(miss_t)}/{len(dungeons)}' + (f'  (없음: {", ".join(miss_t)})' if miss_t else ''))
-    print('음악:', ', '.join(f'{k} {"O" if has_music(k) else "X"}' for k in ['town', 'boss', 'dungeon', 'daily']))
+    print('음악:', ', '.join(f'{k} {"O" if has_music(k) else "X"}' for k in ['town', 'boss', 'dungeon']))
     miss_m = [n for i, n in dungeons if not has_music(i)]
     print(f'  던전별 {len(dungeons) - len(miss_m)}/{len(dungeons)}' + (f'  (없음: {", ".join(miss_m)} → dungeon 공통 곡이나 합성 배경음)' if miss_m else ''))
 

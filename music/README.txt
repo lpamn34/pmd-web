@@ -12,7 +12,7 @@
 town      마을 (타이틀 포함)
 boss      보스전
 dungeon   던전 공통 (던전별 파일이 없을 때)
-daily     오늘의 도전
+(오늘의 도전은 날마다 던전 곡 중 하나를 골라 틉니다)
 forest    작은 숲
 beach     해변 동굴
 crystal   수정 동굴
