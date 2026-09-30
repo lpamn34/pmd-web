@@ -350,7 +350,9 @@ const Game = (() => {
       const s = save.sos;
       if (s && s.online && !s.revived) {
         const d = await Online.getSOS(s.docId || s.id);
-        if (d && d.status === 'rescued' && d.rescuer && DATA.species[d.rescuer.sp]) await receiveAOK({ id: s.id, sp: d.rescuer.sp, lv: d.rescuer.lv, sh: d.rescuer.shiny ? 1 : 0 }, d.rescuer.name);
+        // 서버의 값은 다른 사람이 쓴 것이라 숫자·이름을 다시 확인한다 (조작된 값이 화면에 그대로 들어가지 않게)
+        const rs = d && d.rescuer;
+        if (d && d.status === 'rescued' && rs && hasKey(DATA.species, rs.sp)) await receiveAOK({ id: s.id, sp: +rs.sp, lv: clamp(Math.floor(+rs.lv) || 1, 1, MAX_LEVEL), sh: rs.shiny ? 1 : 0 }, String(rs.name || '').slice(0, 16));
       }
       for (const [id, r] of Object.entries(save.rescued || {})) {
         if (!r.online || r.thanked) continue;
@@ -372,7 +374,7 @@ const Game = (() => {
         const d = await Online.getSOS(doc);
         if (!d) { r.thanked = true; persist(); continue; }
         if (d.status === 'thanked') {
-          await gotThanks(r, d.thx && ITEMS[d.thx] && d.thx !== 'quest' ? d.thx : null, d.name);
+          await gotThanks(r, hasKey(ITEMS, d.thx) && d.thx !== 'quest' ? d.thx : null, String(d.name || '').slice(0, 16));
           Online.deleteSOS(doc).catch(() => {});   // 다 쓴 요청은 지운다
         }
       }
@@ -394,7 +396,8 @@ const Game = (() => {
     if (!Online.loggedIn()) return accountDialog();
     let list;
     try { list = await Online.listSOS(); } catch (e) { UI.alert('📋 구조 게시판', `<p>${esc(Online.why(e))}</p>`); return; }
-    list = list.filter(s => dungeonById(s.dungeon) && DATA.species[s.sp]);
+    list = list.filter(s => dungeonById(s.dungeon) && hasKey(DATA.species, s.sp) && Number.isInteger(s.floor) && Number.isInteger(s.lv) && s.lv >= 1 && s.lv <= MAX_LEVEL)
+      .map(s => ({ ...s, sp: +s.sp, name: String(s.name || '').slice(0, 16), created: +s.created || Date.now() }));
     const taken = sid => !!((save.rescued || {})[sid] || save.missions.accepted.some(m => m.sosId === sid));
     const ago = t => { const mnt = Math.max(1, Math.round((Date.now() - t) / 60000)); return mnt < 60 ? `${mnt}분 전` : mnt < 1440 ? `${Math.round(mnt / 60)}시간 전` : `${Math.round(mnt / 1440)}일 전`; };
     const rows = list.map(s => {
@@ -427,6 +430,9 @@ const Game = (() => {
     save = load();
     if (save && !newerSave) persist();
     setTimeout(checkUpdate, 3000); setInterval(checkUpdate, 10 * 60 * 1000);
+    // 다른 탭에 있다가 돌아오면 바로 확인 (1분에 한 번까지). 파일 하나를 읽을 뿐이라 서버(Firebase) 사용량과는 상관없다
+    let lastCheckUpd = Date.now();
+    document.addEventListener('visibilitychange', () => { if (!document.hidden && Date.now() - lastCheckUpd > 60 * 1000) { lastCheckUpd = Date.now(); checkUpdate(); } });
     if (Online.enabled()) {
       document.getElementById('title-acct').innerHTML = '<span class="dim tiny">☁ 온라인 연결 중…</span>';
       onlineBoot = Online.init().then(async ok => {
@@ -704,8 +710,10 @@ const Game = (() => {
     const merged = {};
     for (const [iid, w] of table) merged[iid] = (merged[iid] || 0) + w;
     const tiers = Object.entries(TIER_LV).filter(([t, lv]) => +t > 1 && lv <= dg.lv[1]).map(([t, lv]) => [TIER_NAMES[t], firstAt(lv)]);
-    const tierNote = !tiers.length ? '흔한 아이템만 나온다' : tiers.every(([, f]) => f <= 1) ? '처음부터 모든 등급이 나온다'
-      : `좋은 아이템은 깊은 층부터: ${tiers.map(([n, f]) => `${n} ${f}층~`).join(', ')}`;
+    const highF = firstAt(HIGH_LV);
+    const tierNote = (!tiers.length ? '흔한 아이템만 나온다' : tiers.every(([, f]) => f <= 1) ? '처음부터 좋은 등급이 나온다'
+      : `좋은 아이템은 깊은 층부터: ${tiers.map(([n, f]) => `${n} ${f}층~`).join(', ')}`)
+      + (highF ? ` · ${highF}층부터는 흔한 아이템 대신 식량·회복만` : '');
     for (const [iid, w] of Object.entries(merged)) groups[itemGroup(iid)][1].push([iid, w]);
     const pctT = w => { const p = w / total * 100; return p >= 1 ? p.toFixed(1) + '%' : p >= 0.1 ? p.toFixed(2) + '%' : p.toFixed(3) + '%'; };
     const itemHtml = Object.values(groups).filter(g => g[1].length).map(([name, list]) => {
@@ -1461,21 +1469,24 @@ const Game = (() => {
         : '<p>친구가 이 코드로 구조해 주면 <b>A-OK 코드</b>를 받게 됩니다. 그 코드를 임무 탭에 입력하면 쓰러진 층부터 이어서 탐험할 수 있어요.</p>'}`, sosCode(s));
   }
 
-  // 친구 구조 선물: 구조 횟수가 정해진 수에 닿을 때마다 창고로
-  function rescueGift(lines) {
-    const n = Progress.stat('rescues');
-    if (n <= 0 || n % RESCUE_GIFT.every) return;
-    const id = n % RESCUE_GIFT.bigEvery === 0 ? pick(RESCUE_GIFT.big) : pick(rescueGiftPool());
+  // 달성 선물: 친구 구조 / 임무 완료 횟수가 정해진 수에 닿을 때마다 창고로 (두 횟수는 따로 센다)
+  const GIFT_NAMES = { rescues: '친구 구조', missions: '임무 완료' };
+  // 임무 횟수는 친구 구조를 뺀 게시판 임무만 (기록의 '임무'에는 친구 구조도 들어 있다)
+  const giftCount = kind => kind === 'missions' ? Math.max(0, Progress.stat('missions') - Progress.stat('rescues')) : Progress.stat(kind);
+  function milestoneGift(kind, lines) {
+    const n = giftCount(kind), every = MILESTONE_GIFT[kind];
+    if (n <= 0 || n % every) return;
+    const id = pick(milestoneGiftPool());
     storeAdd(id);
-    lines.push(`🎁 친구 구조 ${n}번 달성 선물: ${ITEMS[id].icon} <b>${esc(ITEMS[id].n)}</b> (창고로)`);
+    lines.push(`🎁 ${GIFT_NAMES[kind]} ${n}번 달성 선물: ${ITEMS[id].icon} <b>${esc(ITEMS[id].n)}</b> (창고로)`);
   }
-  function rescueGiftNote() {
-    const n = Progress.stat('rescues'), next = RESCUE_GIFT.every - (n % RESCUE_GIFT.every);
-    return `<p class="dim">🎁 친구를 ${RESCUE_GIFT.every}번 구조할 때마다 영양제·구미·특성캡슐 중 하나, ${RESCUE_GIFT.bigEvery}번째마다 특성패치나 무지개구미를 드려요. (지금 ${n}번 · 다음 선물까지 ${next}번)</p>`;
+  function giftNote() {
+    const part = kind => { const n = giftCount(kind), every = MILESTONE_GIFT[kind]; return `${GIFT_NAMES[kind]} ${every}번마다 (지금 ${n}번 · 다음까지 ${every - n % every}번)`; };
+    return `<p class="dim">🎁 달성 선물: ${part('rescues')}, ${part('missions')} — 영양제·구미(무지개구미 포함)·특성패치 중 하나를 창고로 드려요.</p>`;
   }
   function sosSection() {
     const s = save.sos;
-    let h = '<h3>🆘 친구 구조</h3>' + rescueGiftNote();
+    let h = '<h3>🆘 친구 구조</h3>' + giftNote();
     if (s) {
       const dg = dungeonById(s.dungeon);
       h += `<div class="row sos-row">${portraitImg(s.sp, 'portrait sm', s.revived ? 'Happy' : 'Pain', s.shiny)}<div class="grow">
@@ -1653,15 +1664,16 @@ const Game = (() => {
           if (m.kind === 'sos' && m.online) {
             save.rescued = save.rescued || {};
             save.rescued[m.sosId] = { sp: m.client, shiny: m.shiny, thanked: false, online: true, claimed: false, docId: m.docId, floor: m.floor, me: { sp: p.sp, lv: p.lv, shiny: !!p.shiny } };
-            Progress.add('rescues'); rescueGift(lines);
+            Progress.add('rescues'); milestoneGift('rescues', lines);
           } else if (m.kind === 'sos') {
             const code = Codes.encode('aok', { id: m.sosId, sp: p.sp, lv: p.lv, sh: p.shiny ? 1 : 0 });
             save.rescued = save.rescued || {}; save.rescued[m.sosId] = { sp: m.client, shiny: m.shiny, thanked: false };
             save.aokSent = [...(save.aokSent || []), { id: m.sosId, sp: m.client, code }].slice(-10);
             aoks.push({ m, code });
-            Progress.add('rescues'); rescueGift(lines);
+            Progress.add('rescues'); milestoneGift('rescues', lines);
           }
           Progress.add('missions');
+          if (m.kind !== 'sos') milestoneGift('missions', lines);
           save.money += m.reward;
           if (m.item) storeAdd(m.item);
           lines.push(`임무 완료 보상: ${rewardText(m)}${m.item ? ' (창고로)' : ''}`);

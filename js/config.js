@@ -28,6 +28,10 @@ const FIREBASE_CONFIG = {
 };
 const ONLINE_CONFIG = FIREBASE_CONFIG[ENV];
 
+// App Check (reCAPTCHA v3 사이트 키): 이 사이트에서 온 요청만 서버가 받게 한다 (스크립트로 한도를 다 쓰는 공격 방지)
+// 사이트 키는 공개되어도 되는 값이다. 비어 있으면 App Check를 쓰지 않는다 (내 컴퓨터 테스트는 쓰지 않음)
+const APPCHECK_SITE_KEY = { dev: '', prod: '' }[ENV];
+
 // 원작 배경음악: 코드와 다른 저장소(pmd-fan-web/assets)에 따로 둔다.
 // 권리자 요청으로 음악을 내려도 게임은 합성 배경음으로 계속 돌아간다. 내 컴퓨터에서는 게임 폴더의 music/을 쓴다.
 const MUSIC_BASE = ENV === 'prod' ? '/assets/music/' : 'music/';

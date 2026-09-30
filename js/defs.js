@@ -3,7 +3,7 @@
 
 // 게임 버전: 업데이트할 때 올리고, index.html의 ?v= 숫자도 같이 올린다
 // (친구와 구조 코드·오늘의 도전을 주고받으려면 버전이 같아야 한다)
-const GAME_VERSION = '0.29';
+const GAME_VERSION = '0.30';
 // 버전 비교: '0.25' > '0.9' 처럼 숫자로 비교한다
 function cmpVer(a, b) {
   const x = String(a).split('.').map(Number), y = String(b).split('.').map(Number);
@@ -12,6 +12,7 @@ function cmpVer(a, b) {
 }
 const GAME_DATE = '2026-09-30';
 const VERSION_NOTES = [
+  ['0.30', ['경험치 전체 배율 0.5 → 0.3', '적 Lv20 이상 층에는 흔한 아이템(씨앗·자갈 등) 대신 식량·회복 아이템만', '달성 선물: 친구 구조 5번마다, 임무 20번마다 영양제·구미(무지개구미 포함)·특성패치 중 하나 (두 횟수는 따로)', '다른 탭에서 돌아오면 새 버전을 바로 확인']],
   ['0.29', ['경험치 너프: 적에게서 얻는 경험치 절반, 보스·현상수배범 보너스 3배 → 2배', '아이템 등급: 초반 던전에는 흔한 아이템만, 지닌 물건·기술머신 등은 적 Lv20 이상 층부터 (던전 정보·도감에서 확인)', '바닥 아이템 3~6개 → 2~4개, 적이 떨어뜨리는 확률 10% → 5%', '전용 도구(금강옥 등)는 주인 포켓몬이 나오는 던전에서만 드물게, 마을 상점에 가끔 진열', '창고 정렬 (종류·이름·개수·넣은 순), 마을에서도 가방 정리', '혼자 탐험 보정(받는 데미지 0.85배) 삭제', '진화해도 클리어 기록·메달이 이어짐', '배경음이 두 개 겹쳐 들리던 문제 수정',
     '대쉬 삭제, 방향만 바꾸기는 다시 Shift + 방향', '마을 위쪽에 접속 중인 탐험대 수 표시 (로그인한 사람 기준, 10분마다 갱신)', '클라우드 저장은 던전을 마칠 때 · 창을 닫거나 다른 탭으로 갈 때 · 마을에서 10분마다 (던전 진행은 브라우저에 층마다 저장)',
     '지닌 물건 가격 2배, 상점 가격 인상 (₽3000 이하 2배, 그 위 1.5배), 아이템을 팔면 사는 값의 1/4', '임무 보상 돈 1.5배', '친구 구조 3번마다 영양제·구미·특성캡슐 선물 (10번째마다 특성패치·무지개구미)', '마을 상점 새로고침 (₽3000)']],
@@ -383,9 +384,9 @@ const EMOTIONS = { Normal: 'N', Happy: 'H', Pain: 'P', Determined: 'D', Joyous: 
 const shopPrice = id => ITEMS[id].price || (ITEMS[id].sell || 100) * 3;
 // 임무 보상 돈 배율 (v0.29에서 1 → 1.5)
 const MISSION_MONEY_MUL = 1.5;
-// 친구 구조 선물: 구조를 GIFT_EVERY번 할 때마다 좋은 아이템 하나 (BIG_EVERY번째마다는 더 귀한 것)
-const RESCUE_GIFT = { every: 3, bigEvery: 10, big: ['abpatch', 'rainbowgummy'] };
-const rescueGiftPool = () => [...Object.keys(VITAMINS), ...Object.keys(GUMMIES).filter(id => id !== 'rainbowgummy'), 'abcapsule'];
+// 달성 선물: 친구 구조 5번마다, 임무 완료 20번마다 영양제·구미(무지개구미 포함)·특성패치 중 하나 (두 횟수는 따로 센다)
+const MILESTONE_GIFT = { rescues: 5, missions: 20 };
+const milestoneGiftPool = () => [...Object.keys(VITAMINS), ...Object.keys(GUMMIES), 'abpatch'];
 // 마을 상점 새로고침 (그날 진열을 다시 뽑는다)
 const SHOP_REROLL_COST = 3000;
 // 파는 값: 사는 값의 1/4 (상점에 없는 물건은 정해진 값). 겹치는 물건은 5개 기준 값
@@ -410,6 +411,8 @@ function weighted(list) {
   return list[list.length - 1][0];
 }
 const pad4 = n => String(n).padStart(4, '0');
+// 객체에 그 키가 직접 있는지 ('constructor' 같은 이름으로 속이지 못하게: 서버·코드에서 온 값을 확인할 때)
+const hasKey = (obj, k) => (typeof k === 'string' || typeof k === 'number') && Object.prototype.hasOwnProperty.call(obj, k);
 // 리전폼(알로라·가라르·히스이·팔데아): 번호는 1101부터, species.f = [원래 번호, 스프라이트 폼 폴더]
 const formOf = id => DATA.species[id] && DATA.species[id].f;
 // 도감 번호: 0026 / 리전폼은 0026-1
@@ -473,10 +476,17 @@ function itemTier(id) {
   return 1;
 }
 // 그 레벨의 층에서 쓰는 드롭 테이블
+// 높은 층(적 Lv HIGH_LV 이상)에서는 흔한 등급이 나오지 않는다. 단 식량·회복 아이템은 살아남는 데 꼭 필요해서 계속 나온다
+const HIGH_LV = 20;
+const ALWAYS_DROP = ['apple', 'bigapple', 'oran', 'sitrus', 'elixir'];
 const dropCache = {};
 function dropTable(lvl) {
-  const key = Object.values(TIER_LV).filter(v => lvl >= v).length;
-  return dropCache[key] || (dropCache[key] = DROP_TABLE.filter(([id]) => lvl >= TIER_LV[itemTier(id)]));
+  const key = Object.values(TIER_LV).filter(v => lvl >= v).length + (lvl >= HIGH_LV ? 'h' : '');
+  return dropCache[key] || (dropCache[key] = DROP_TABLE.filter(([id]) => {
+    const t = itemTier(id);
+    if (lvl < TIER_LV[t]) return false;
+    return !(lvl >= HIGH_LV && t === 1 && !ALWAYS_DROP.includes(id));
+  }));
 }
 const tmBits = {};
 function canLearnTM(sp, mid) {

@@ -11,6 +11,7 @@ const Online = (() => {
   const listeners = [];
 
   const enabled = () => typeof ONLINE_CONFIG !== 'undefined' && !!ONLINE_CONFIG;
+  const appCheckOn = () => typeof APPCHECK_SITE_KEY === 'string' && !!APPCHECK_SITE_KEY;
   const loggedIn = () => !!user;
 
   function loadScript(src) {
@@ -26,8 +27,11 @@ const Online = (() => {
     if (!enabled()) return Promise.resolve(false);
     if (ready) return ready;
     ready = (async () => {
-      for (const f of ['firebase-app-compat.js', 'firebase-auth-compat.js', 'firebase-firestore-compat.js']) await loadScript(SDK + f);
+      const files = ['firebase-app-compat.js', 'firebase-auth-compat.js', 'firebase-firestore-compat.js'];
+      if (appCheckOn()) files.push('firebase-app-check-compat.js');
+      for (const f of files) await loadScript(SDK + f);
       const app = firebase.initializeApp(ONLINE_CONFIG);
+      if (appCheckOn()) app.appCheck().activate(APPCHECK_SITE_KEY, true);   // reCAPTCHA v3, 토큰 자동 갱신
       auth = app.auth(); db = app.firestore();
       await new Promise(res => {
         let first = true;
@@ -225,7 +229,7 @@ const Online = (() => {
     return db.runTransaction(async t => {
       const d = await t.get(ref);
       if (!d.exists || d.data().status !== 'open') return false;
-      t.update(ref, { status: 'rescued', key: GAME_VERSION + '|done', rescuer: { uid: user.uid, name: name(), sp: me.sp, lv: me.lv, shiny: !!me.shiny } });
+      t.update(ref, { status: 'rescued', key: d.data().ver + '|done', rescuer: { uid: user.uid, name: name(), sp: me.sp, lv: me.lv, shiny: !!me.shiny } });
       return true;
     });
   }
@@ -247,7 +251,9 @@ const Online = (() => {
     const body = { structuredAggregationQuery: {
       structuredQuery: { from: [{ collectionId: 'presence' }], where: { fieldFilter: { field: { fieldPath: 'at' }, op: 'GREATER_THAN', value: { timestampValue: since } } } },
       aggregations: [{ alias: 'n', count: {} }] } };
-    const r = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + await user.getIdToken() }, body: JSON.stringify(body) });
+    const headers = { 'Content-Type': 'application/json', Authorization: 'Bearer ' + await user.getIdToken() };
+    if (appCheckOn()) headers['X-Firebase-AppCheck'] = (await firebase.appCheck().getToken()).token;   // REST 요청도 App Check 토큰을 붙인다
+    const r = await fetch(url, { method: 'POST', headers, body: JSON.stringify(body) });
     if (!r.ok) throw new Error('count ' + r.status);
     const j = await r.json();
     return +((j[0] && j[0].result && j[0].result.aggregateFields.n.integerValue) || 0);

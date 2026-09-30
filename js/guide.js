@@ -98,7 +98,7 @@ const Guide = (() => {
   function growth() {
     return `<table class="rules">
       <tr><td>경험치</td><td>쓰러뜨린 적의 레벨이 내 레벨보다 낮을수록 줄어든다 (5세대식). 보스·현상수배범 ${BOSS_EXP_MUL}배, 행복의알 1.5배. 전설·환상은 필요 경험치 ${LEGEND_EXP_DIV}배, 울트라비스트·패러독스 ${STRONG_EXP_DIV}배 (도감에서 포켓몬마다 확인).</td></tr>
-      <tr><td>아이템 등급</td><td>던전 바닥의 아이템은 층의 적 레벨에 따라 나온다: ${Object.entries(TIER_LV).map(([t, lv]) => `${TIER_NAMES[t]} Lv${lv}+`).join(' · ')}. 초반 던전에는 흔한 아이템만. 한 층에 ${ITEMS_PER_FLOOR[0]}~${ITEMS_PER_FLOOR[1]}개, 쓰러뜨린 적이 ${Math.round(ENEMY_DROP_CHANCE * 100)}% 확률로 떨어뜨린다.</td></tr>
+      <tr><td>아이템 등급</td><td>던전 바닥의 아이템은 층의 적 레벨에 따라 나온다: ${Object.entries(TIER_LV).map(([t, lv]) => `${TIER_NAMES[t]} Lv${lv}+`).join(' · ')}. 초반 던전에는 흔한 아이템만, 적 Lv${HIGH_LV}+ 층에는 흔한 아이템 대신 식량·회복(사과·오랭열매 등)만. 한 층에 ${ITEMS_PER_FLOOR[0]}~${ITEMS_PER_FLOOR[1]}개, 쓰러뜨린 적이 ${Math.round(ENEMY_DROP_CHANCE * 100)}% 확률로 떨어뜨린다.</td></tr>
       <tr><td>전용 도구</td><td>금강옥·전기구슬처럼 정해진 포켓몬만 쓰는 도구. 그 포켓몬이 나오는 던전에서만 드물게 떨어지고(보스가 주인이면 ${Math.round(SIG_DROP.boss * 100)}%), 마을 상점에 가끔 진열된다.</td></tr>
       <tr><td>진화</td><td>마을의 캐릭터 탭에서. 레벨 진화는 레벨만, 아이템 진화는 진화의돌, 통신 진화는 연결의끈이 필요. 그 외 조건(친밀도 등)은 Lv25.</td></tr>
       <tr><td>기술</td><td>레벨업으로 배우고, 마을의 기술 설정에서 배운 기술 중 4개를 자유롭게 고른다. 기술머신으로 배운 기술도 영구히 기억한다.</td></tr>

@@ -49,12 +49,22 @@ service cloud.firestore {
     match /sos/{id} {
       allow read: if signedIn();
       // 요청 올리기: 본인 이름으로, 열린 상태로만
+      // 값의 형식도 확인한다: 다른 사람 화면에 그대로 보이는 값이라 조작된 값(HTML 등)을 받지 않는다
       allow create: if signedIn()
         && request.resource.data.keys().hasOnly(['owner', 'name', 'dungeon', 'floor', 'sp', 'lv', 'shiny', 'ver', 'key', 'status', 'created'])
         && request.resource.data.owner == request.auth.uid
         && request.resource.data.status == 'open'
         && ownsName(request.resource.data.name)
-        && request.resource.data.floor is int && request.resource.data.sp is int && request.resource.data.lv is int;
+        && request.resource.data.floor is int && request.resource.data.floor >= 1 && request.resource.data.floor <= 99
+        && request.resource.data.sp is int && request.resource.data.sp > 0 && request.resource.data.sp < 5000
+        && request.resource.data.lv is int && request.resource.data.lv >= 1 && request.resource.data.lv <= 100
+        && request.resource.data.shiny is bool && request.resource.data.created is int
+        // 문서 이름은 "올린 시각_요청 번호"이고 그 시각은 지금이어야 한다 (게시판 순서를 속여 맨 앞에 오지 못하게)
+        && id.matches('^[0-9]{14}_[0-9]{1,12}$') && int(id.split('_')[0]) == request.resource.data.created
+        && request.resource.data.created > request.time.toMillis() - 300000 && request.resource.data.created < request.time.toMillis() + 300000
+        && request.resource.data.dungeon is string && request.resource.data.dungeon.matches('^[a-z]{1,16}$')
+        && request.resource.data.ver is string && request.resource.data.ver.size() <= 8
+        && request.resource.data.key == request.resource.data.ver + '|open';
       allow update: if signedIn() && (
         // 구조: 다른 사람이, 열린 요청을 구조됨으로 (한 번만)
         (resource.data.status == 'open' && resource.data.owner != request.auth.uid
@@ -62,7 +72,11 @@ service cloud.firestore {
           && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'key', 'rescuer'])
           && request.resource.data.rescuer.keys().hasOnly(['uid', 'name', 'sp', 'lv', 'shiny'])
           && request.resource.data.rescuer.uid == request.auth.uid
-          && ownsName(request.resource.data.rescuer.name))
+          && ownsName(request.resource.data.rescuer.name)
+          && request.resource.data.rescuer.sp is int && request.resource.data.rescuer.sp > 0 && request.resource.data.rescuer.sp < 5000
+          && request.resource.data.rescuer.lv is int && request.resource.data.rescuer.lv >= 1 && request.resource.data.rescuer.lv <= 100
+          && request.resource.data.rescuer.shiny is bool
+          && request.resource.data.key == resource.data.ver + '|done')
         ||
         // 구조하러 간다: 다른 사람이, 열린 요청을 2시간 동안 맡는다 (아무도 안 맡았거나, 맡은 지 2시간이 지났거나, 내가 맡은 것)
         (resource.data.status == 'open' && resource.data.owner != request.auth.uid
