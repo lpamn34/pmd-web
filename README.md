@@ -1,7 +1,7 @@
 # 불가사의 던전 웹 (비상업 팬 게임)
 
 ## 온라인으로 플레이
-**https://lpamn34.github.io/pmd-web/** — 설치 없이 바로 플레이할 수 있습니다. 로그인하면 세이브가 클라우드에 저장되고 구조 게시판을 쓸 수 있어요 (로그인은 선택).
+**https://pmd-fan-web.github.io/** — 설치 없이 바로 플레이할 수 있습니다. 로그인하면 세이브가 클라우드에 저장되고 구조 게시판을 쓸 수 있어요 (로그인은 선택).
 
 GitHub Pages에 올리면 설치 없이 링크로 바로 플레이할 수 있습니다: `https://<GitHub아이디>.github.io/<저장소이름>/`
 (웹에서는 로컬 서버와 같아서 배경음악 루프도 정확하게 동작합니다.)
@@ -52,6 +52,9 @@ npx http-server -p 8765
 - 던전 타일은 기본적으로 `js/tiles.js`에서 코드로 그립니다. `tiles/던전ID.png`(DTEF 형식)를 넣거나 정보 탭에서 불러오면 그 타일셋을 씁니다 (`tiles/README.txt` 참고).
 - 배경음은 기본적으로 합성하지만, `music/이름.ogg` 등을 넣거나 정보 탭에서 불러오면 그 파일을 반복 재생합니다 (`music/README.txt` 참고). 인트로 뒤 루프 구간은 파일 안의 루프 정보나 `music/loops.js`로 정합니다.
 - 배포용 zip은 `python make_release.py`로 만듭니다. 게임 파일과 `tiles/`, `music/` 폴더를 묶고, 빠진 타일셋·음악이 있으면 알려 줍니다.
+
+## 문의 · 삭제 요청
+버그 제보, 문의, 권리자의 삭제 요청은 [GitHub Issues](https://github.com/pmd-fan-web/pmd-fan-web.github.io/issues)에 남겨 주세요.
 
 ## 크레딧과 라이선스
 - **이 게임의 소스 코드**(`index.html`, `css/`, `js/`, 스크립트 파일. 단 `js/data.js`에 담긴 포켓몬 데이터는 제외): [GNU AGPL-3.0](LICENSE). 자유롭게 보고, 고치고, 다시 배포할 수 있지만, 고친 버전을 배포하거나 웹사이트로 서비스하면 그 소스 코드도 같은 라이선스로 공개해야 합니다.
