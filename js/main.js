@@ -1583,6 +1583,8 @@ const Game = (() => {
         { label: '돌아가기', fn: () => {} },
         { label: '가방', fn: () => Dungeon.floor && document.querySelector('#actions [data-k=bag]').click() },
         { label: '📜 임무 확인 (J)', fn: () => setTimeout(showMissions, 0) },
+        { label: '💬 메시지 기록 (U)', fn: () => setTimeout(Dungeon.showLog, 0) },
+        { label: '📊 내 상태 (P)', fn: () => setTimeout(Dungeon.showStatus, 0) },
         { label: '조작법', fn: Dungeon.showHelp },
         { label: '게임 가이드 (타입 상성표 등)', fn: Guide.menu },
         { label: `빠른 연출: ${s.fast ? '켜짐' : '꺼짐'}`, fn: () => { s.fast = !s.fast; persist(); dungeonMenu(); } },

@@ -21,7 +21,7 @@ const Dungeon = (() => {
   // cls: 로그 색 구분 (super 효과가 굉장함 / weak 효과가 별로)
   function log(text, at, cls) {
     LOG.push({ text, at: at ?? Math.max(T.cursor, now()), cls });
-    if (LOG.length > 60) LOG.shift();
+    if (LOG.length > 300) LOG.shift();
   }
 
   // ───────────────────────── 맵 생성 ─────────────────────────
@@ -272,7 +272,8 @@ const Dungeon = (() => {
       const kinds = Object.keys(TRAPS);
       for (let i = rint(2, 4) + Math.floor(lvl / 25); i > 0; i--) {
         const t = randomRoomTile({ noItem: true, far: 3 });
-        if (t) D.traps.push({ ...t, kind: pick(kinds), seen: false });
+        // 복도와 붙은 칸(방 출입구 옆)에는 만들지 않는다
+        if (t && !DIRS.some(([dx, dy]) => floorAt(t.x + dx, t.y + dy) && D.room[idx(t.x + dx, t.y + dy)] < 0)) D.traps.push({ ...t, kind: pick(kinds), seen: false });
       }
     }
     // 아이템 / 돈
@@ -518,8 +519,7 @@ const Dungeon = (() => {
       if (t && hostileTo(user, t) && diagOK(user.x, user.y, dx, dy)) targets = [t];
     } else if (move.r === 'p') {
       let x = user.x, y = user.y;
-      for (let i = 0; i < 8; i++) {
-        if (!diagOK(x, y, dx, dy)) break;
+      for (let i = 0; i < 8; i++) {   // 직선 기술은 대각선 벽 모서리를 스쳐 지나간다
         x += dx; y += dy;
         if (!floorAt(x, y)) break;
         const t = creatureAt(x, y);
@@ -637,13 +637,15 @@ const Dungeon = (() => {
       const et = effText(r.eff); if (et) log(et, at, r.eff > 1 ? 'super' : 'weak');
       log(`${jo(nm(tgt), '은')} ${total}의 데미지를 입었다.` + (hits > 1 ? ` (${hits}회)` : ''), at, ec);
       if (total > 0) Sound.play(tgt.player ? 'hurt' : r.crit ? 'crit' : r.eff > 1 ? 'super' : r.eff < 1 ? 'weak' : 'hit', at);
+      const hpBefore = tgt.hp;
       if (total > 0) damage(tgt, total, user, at, r.eff, r.crit);
-      if (move.dr) {
-        const amt = Math.max(1, Math.floor(total * Math.abs(move.dr) / 100 * (move.dr < 0 ? RECOIL_MUL : 1)));
+      const dealt = Math.max(0, hpBefore - Math.max(0, tgt.hp));   // 실제로 깎인 HP
+      if (move.dr && dealt > 0) {
+        const amt = Math.max(1, Math.floor(dealt * Math.abs(move.dr) / 100 * (move.dr < 0 ? RECOIL_MUL : 1)));
         if (move.dr > 0) {
           if (abilityOf(tgt).liquidOoze) { abLog(tgt, `${jo(nm(user), '은')} 해감액을 흡수했다!`, at); damage(user, amt, tgt, at); }
           else heal(user, amt, at);
-        } else if (total > 0 && !A.rockHead) { log(`${jo(nm(user), '은')} 반동으로 데미지를 입었다.`, at); damage(user, amt, null, at); }
+        } else if (!A.rockHead) { log(`${jo(nm(user), '은')} 반동으로 데미지를 입었다.`, at); damage(user, amt, null, at); }
       }
       if (tgt.hp > 0 && secondary) {
         if (move.ail && Math.random() * 100 < move.ac * serene) inflict(tgt, AILMENT_MAP[move.ail], at, false, user);
@@ -787,6 +789,7 @@ const Dungeon = (() => {
     if (src && src.player) { Progress.add('kills'); Progress.beaten(c.sp); run.kills = (run.kills || 0) + 1; checkLater(); }
     D.mons = D.mons.filter(m => m !== c);
     D.corpses.push(c);
+    if (c.item) { landItem(c.x, c.y, c.item, 1, at); c.item = null; }
     if (seen(c) || src === P()) log(`${jo(nm(c), '을')} 쓰러뜨렸다!`, at);
     if (src && src.hp > 0) {
       const sa = abilityOf(src);
@@ -884,6 +887,7 @@ const Dungeon = (() => {
     if (sees) e.target = { x: p.x, y: p.y };
     const dx = p.x - e.x, dy = p.y - e.y, dist = Math.max(Math.abs(dx), Math.abs(dy));
     const usable = e.moves.map((m, i) => ({ m: DATA.moves[m.id], i, pp: m.pp })).filter(o => o.pp > 0);
+    if (e.item && enemyUseItem(e, p, sees, dist, dx, dy)) return;
     if (sees && dist === 1 && diagOK(e.x, e.y, Math.sign(dx), Math.sign(dy))) {
       const dir = confuse(e, dirIndex(dx, dy));
       const opts = usable.filter(o => (o.m.r !== 's' || !(e.stages[2] > 1)));
@@ -923,15 +927,42 @@ const Dungeon = (() => {
     const fx = e.x, fy = e.y;
     e.x += mx; e.y += my; e.dir = dirIndex(mx, my);
     schedMove(e, fx, fy);
+    enemyPickup(e);
   }
+  // 적이 밟은 아이템을 줍는다 (하나까지)
+  function enemyPickup(e) {
+    if (e.item || e.boss) return;
+    const it = itemAt(e.x, e.y);
+    if (!it || it.money || it.id === 'quest' || it.price || !ITEMS[it.id]) return;
+    if (it.n > 1) it.n--; else D.items = D.items.filter(i => i !== it);
+    e.item = it.id;
+    if (seen(e)) log(`${jo(nm(e), '은')} ${jo(ITEMS[it.id].n, '을')} 주웠다!`, T.moveEnd || T.base);
+  }
+  // 적이 가진 아이템을 쓸지: 쓰면 true (그 턴의 행동)
+  function enemyUseItem(e, p, sees, dist, dx, dy) {
+    const id = e.item, it = id && ITEMS[id]; if (!it) return false;
+    const at = Math.max(T.cursor, T.moveEnd, T.base);
+    const eat = () => { e.item = null; if (seen(e)) log(`${jo(nm(e), '은')} ${jo(it.n, '을')} ${isEdible(it) ? '먹었다' : '사용했다'}!`, at); };
+    if ((it.use === 'heal' || it.use === 'healPct' || it.use === 'fullheal') && e.hp < e.maxhp * 0.4) {
+      eat(); heal(e, it.use === 'heal' ? it.v : it.use === 'healPct' ? Math.floor(e.maxhp * it.v / 100) : e.maxhp, at); return true;
+    }
+    if (e.status && ((it.use === 'cureOne' && it.st === e.status) || it.use === 'cure' || it.use === 'fullheal')) {
+      eat(); e.status = null; if (seen(e)) log(`${nm(e)}의 상태가 나았다!`, at); return true;
+    }
+    if (it.use === 'stat' && sees && dist <= 3 && !(e.stages[it.st] > 0)) { eat(); statChange(e, it.st, it.v, at, e); return true; }
+    if (it.throw && sees && dist > 1 && dist <= 8 && (dx === 0 || dy === 0 || Math.abs(dx) === Math.abs(dy)) && lineClear(e, dirIndex(dx, dy), dist) && Math.random() < 0.5) {
+      e.item = null; throwItem(e, id, dirIndex(dx, dy)); return true;
+    }
+    return false;
+  }
+  // 직선 기술·던지기가 닿는지 (벽 모서리는 지나간다)
   function lineClear(c, dir, dist) {
     let x = c.x, y = c.y;
     for (let i = 1; i < dist; i++) {
-      if (!diagOK(x, y, DIRS[dir][0], DIRS[dir][1])) return false;
       x += DIRS[dir][0]; y += DIRS[dir][1];
       if (!floorAt(x, y) || creatureAt(x, y)) return false;
     }
-    return diagOK(x, y, DIRS[dir][0], DIRS[dir][1]);
+    return true;
   }
 
   // ───────────────────────── 플레이어 행동 ─────────────────────────
@@ -963,6 +994,7 @@ const Dungeon = (() => {
       }
       case 'wait': used = true; break;
       case 'item': used = useItem(action.slot, action.mode); break;
+      case 'foot': used = footAction(action.mode, action.slot); break;
     }
     if (!used) return false;
     afterPlayer();
@@ -1041,6 +1073,12 @@ const Dungeon = (() => {
         break;
       }
       case 'hunger': p.belly = Math.max(0, p.belly - 20); log('배가 급격히 고파졌다!', at); break;
+      case 'reset': {
+        const any = Object.values(p.stages).some(v => v);
+        for (const k of Object.keys(p.stages)) p.stages[k] = 0;
+        log(any ? '능력 변화가 모두 원래대로 돌아갔다!' : '하지만 아무 일도 일어나지 않았다.', at);
+        break;
+      }
       case 'summon': {
         let n = rint(2, 3);
         for (const [dx, dy] of DIRS) {
@@ -1205,7 +1243,11 @@ const Dungeon = (() => {
       }
     }
     const tr = trapAt(p.x, p.y);
-    if (tr && depth < 2 && !abilityOf(p).levitate) triggerTrap(tr, depth);
+    if (tr && depth < 2 && !abilityOf(p).levitate) {
+      // 모르는 함정은 80%, 알고 있는 함정은 40% 확률로 작동한다
+      if (Math.random() < (tr.seen ? TRAP_RATE.seen : TRAP_RATE.hidden)) triggerTrap(tr, depth);
+      else { const was = tr.seen; tr.seen = true; log(was ? `${jo(TRAPS[tr.kind].n, '을')} 밟았지만 작동하지 않았다.` : `${jo(TRAPS[tr.kind].n, '을')} 밟았지만 다행히 작동하지 않았다!`, T.base + 60); }
+    }
     if (D.house && !D.house.triggered && D.room[idx(p.x, p.y)] === D.house.room) triggerHouse();
     if (!D.stairsHidden && D.stairs.x === p.x && D.stairs.y === p.y) {
       if (D.auto && D.auto.kind === 'explore' && Game.save.settings.autoDescend) D.prompts.push(() => descend());
@@ -1337,6 +1379,48 @@ const Dungeon = (() => {
   }
   function takeFromBag(i) { const b = run.bag[i]; if (b.n > 1) b.n--; else run.bag.splice(i, 1); }
 
+  // 떨어진 아이템을 놓는다: 그 칸이 막혀 있으면 가장 가까운 빈 바닥으로 튕겨 나간다 (3칸 안에 없으면 사라진다)
+  function landItem(x, y, id, n, at) {
+    const free = (tx, ty) => floorAt(tx, ty) && !itemAt(tx, ty) && !(D.stairs.x === tx && D.stairs.y === ty) && !(D.shop && D.shop.tiles.has(idx(tx, ty)));
+    for (let r = 0; r <= 3; r++) {
+      const ring = [];
+      for (let yy = y - r; yy <= y + r; yy++) for (let xx = x - r; xx <= x + r; xx++) {
+        if (Math.max(Math.abs(xx - x), Math.abs(yy - y)) === r && free(xx, yy)) ring.push([xx, yy]);
+      }
+      if (ring.length) {
+        const [tx, ty] = pick(ring);
+        D.items.push({ x: tx, y: ty, id, n }); D.ignore.add(idx(tx, ty));
+        if (r && D.visible[idx(x, y)]) log(`${jo(ITEMS[id].n, '은')} 옆으로 튕겨 나갔다.`, at);
+        return true;
+      }
+    }
+    if (D.visible[idx(x, y)]) log(`${jo(ITEMS[id].n, '은')} 어딘가로 사라져 버렸다...`, at);
+    return false;
+  }
+  // 아이템 던지기 (플레이어·적 공통): 앞으로 10칸 날아가 처음 맞은 포켓몬에게 효과, 안 맞으면 떨어진다
+  function throwItem(user, id, dir) {
+    const it = ITEMS[id], [dx, dy] = DIRS[dir];
+    let x = user.x, y = user.y, hit = null;
+    for (let i = 0; i < 10; i++) {   // 직선 기술처럼 벽 모서리는 지나간다
+      if (!floorAt(x + dx, y + dy)) break;
+      x += dx; y += dy;
+      const c = creatureAt(x, y); if (c) { hit = c; break; }
+    }
+    user.dir = dir;
+    const t0 = schedAction(user, 'Attack', 260 * spd());
+    D.fx.push({ kind: 'proj', x0: user.x, y0: user.y, x1: x, y1: y, at: t0 + 60, dur: 200 * spd(), color: '#ddd', icon: it.icon });
+    log(`${jo(nm(user), '은')} ${jo(it.n, '을')} 던졌다!`, t0);
+    const ht = t0 + 260 * spd();
+    if (hit && !hit.npc) {
+      if (it.throw === 'dmg') {
+        let v = Math.floor(it.v * (abilityOf(user).klutz ? 1.5 : 1));
+        if (!user.player) v = Math.min(v, Math.ceil(hit.maxhp * 0.3));   // 적이 던진 건 최대 HP의 30%까지 (초반에 한 방에 쓰러지지 않게)
+        log(`${jo(nm(hit), '은')} ${v}의 데미지를 입었다.`, ht); damage(hit, v, user, ht); }
+      else if (it.throw) inflict(hit, it.throw === 'sleep' ? 'slp' : it.throw, ht, true, user);
+      else if (!it.stack) landItem(x, y, id, 1, ht);
+    } else landItem(x, y, id, 1, ht);
+  }
+
   function useItem(slot, mode) {
     const p = P(), b = run.bag[slot]; if (!b) return false;
     const it = ITEMS[b.id];
@@ -1349,24 +1433,7 @@ const Dungeon = (() => {
     }
     if (mode === 'throw') {
       takeFromBag(slot);
-      const [dx, dy] = DIRS[p.dir];
-      let x = p.x, y = p.y, hit = null;
-      for (let i = 0; i < 10; i++) {
-        if (!diagOK(x, y, dx, dy) || !floorAt(x + dx, y + dy)) break;
-        x += dx; y += dy;
-        const c = creatureAt(x, y); if (c) { hit = c; break; }
-      }
-      const t0 = schedAction(p, 'Attack', 260 * spd());
-      D.fx.push({ kind: 'proj', x0: p.x, y0: p.y, x1: x, y1: y, at: t0 + 60, dur: 200 * spd(), color: '#ddd', icon: it.icon });
-      log(`${jo(it.n, '을')} 던졌다!`, t0);
-      const ht = t0 + 260 * spd();
-      if (hit && !hit.npc) {
-        if (it.throw === 'dmg') { const v = Math.floor(it.v * (abilityOf(p).klutz ? 1.5 : 1)); log(`${jo(nm(hit), '은')} ${v}의 데미지를 입었다.`, ht); damage(hit, v, p, ht); }
-        else if (it.throw && it.throw !== 'dmg') inflict(hit, it.throw === 'sleep' ? 'slp' : it.throw, ht, true, p);
-        else if (!it.stack && !itemAt(x, y)) D.items.push({ x, y, id: b.id, n: 1 });
-      } else if (!itemAt(x, y) && !(D.stairs.x === x && D.stairs.y === y)) {
-        D.items.push({ x, y, id: b.id, n: 1 }); D.ignore.add(idx(x, y));
-      }
+      throwItem(p, b.id, p.dir);
       return true;
     }
     // 사용
@@ -1386,7 +1453,8 @@ const Dungeon = (() => {
     }
     takeFromBag(slot);
     if (!['heal', 'healPct', 'fullheal', 'gummy'].includes(it.use)) Sound.play('item', at);
-    log(`${jo(it.n, '을')} 사용했다.`, at);
+    log(`${jo(it.n, '을')} ${isEdible(it) ? '먹었다' : '사용했다'}.`, at);
+    if (isEdible(it)) { const b0 = p.belly; p.belly = Math.min(100, p.belly + BERRY_BELLY); if (p.belly > b0) log(`배가 조금 찼다. (+${Math.round(p.belly - b0)})`, at); }
     switch (it.use) {
       case 'heal': case 'healPct': {
         const pa = abilityOf(p);
@@ -1449,9 +1517,13 @@ const Dungeon = (() => {
     stopAuto();
     const bag = run.bag, p = P();
     const heldHtml = p.held ? `<div class="row">지닌 물건: ${ITEMS[p.held].icon} <b>${esc(ITEMS[p.held].n)}</b> <span class="grow dim">${esc(ITEMS[p.held].d)}</span></div>` : '<div class="row dim">지닌 물건 없음</div>';
+    const foot = footItem();
     UI.open({
       title: `가방 (${bag.length}/${bagMax()})`, wide: true, html: heldHtml,
-      choices: [...(p.held ? [{ label: `지닌 물건을 가방에 넣는다 (${esc(ITEMS[p.held].n)})`, disabled: bag.length >= bagMax(), fn: () => {
+      choices: [
+        ...(foot ? [{ label: `👣 발밑: ${ITEMS[foot.id].icon} ${esc(ITEMS[foot.id].n)}${foot.n > 1 ? ' ×' + foot.n : ''}`, sub: '조사 · 줍기 · 교환 · 던지기', fn: footMenu }] : []),
+        ...(bag.length > 1 ? [{ label: '↕ 가방 정리 (종류별로 정렬)', fn: () => { sortBag(); openBag(); } }] : []),
+        ...(p.held ? [{ label: `지닌 물건을 가방에 넣는다 (${esc(ITEMS[p.held].n)})`, disabled: bag.length >= bagMax(), fn: () => {
         run.bag.push({ id: p.held, n: 1 }); log(`${jo(ITEMS[p.held].n, '을')} 가방에 넣었다.`, now()); p.held = null; openBag();
       } }] : []), ...bag.map((b, i) => ({
         label: `${ITEMS[b.id].icon} ${esc(ITEMS[b.id].n)}${b.n > 1 ? ' ×' + b.n : ''}`, sub: esc(ITEMS[b.id].d),
@@ -1459,6 +1531,60 @@ const Dungeon = (() => {
       }))],
     });
   }
+  const ITEM_ORDER = Object.keys(ITEMS);
+  function sortBag() {
+    run.bag.sort((a, b) => ITEM_ORDER.indexOf(a.id) - ITEM_ORDER.indexOf(b.id));
+    log('가방을 정리했다.', now());
+  }
+  // 발밑의 아이템 (돈·의뢰품·상점 물건 제외)
+  function footItem() {
+    const p = P(), it = itemAt(p.x, p.y);
+    return it && !it.money && it.id !== 'quest' && !it.price && ITEMS[it.id] ? it : null;
+  }
+  function footMenu() {
+    const it = footItem(); if (!it) return openBag();
+    const I = ITEMS[it.id];
+    UI.open({
+      title: `👣 발밑: ${I.icon} ${esc(I.n)}${it.n > 1 ? ' ×' + it.n : ''}`, html: `<p>${esc(I.d)}</p>`,
+      choices: [
+        { label: '줍는다', disabled: run.bag.length >= bagMax() && !(I.stack && run.bag.some(b => b.id === it.id)), fn: () => act({ t: 'foot', mode: 'pick' }) },
+        { label: '가방의 아이템과 바꾼다', disabled: !run.bag.length, fn: () => UI.open({
+          title: `무엇과 바꿀까? (${esc(I.n)})`, wide: true,
+          choices: run.bag.map((b, i) => ({ label: `${ITEMS[b.id].icon} ${esc(ITEMS[b.id].n)}${b.n > 1 ? ' ×' + b.n : ''}`, fn: () => act({ t: 'foot', mode: 'swap', slot: i }) })),
+          cancel: footMenu,
+        }) },
+        { label: '던진다', fn: () => act({ t: 'foot', mode: 'throw' }) },
+        { label: '돌아간다', fn: openBag },
+      ],
+      cancel: openBag,
+    });
+  }
+  function footAction(mode, slot) {
+    const p = P(), it = footItem(); if (!it) return false;
+    const I = ITEMS[it.id];
+    if (mode === 'pick') {
+      if (!addToBag(it.id, it.n)) { log('가방이 가득 찼다.', now()); return false; }
+      D.items = D.items.filter(i => i !== it);
+      Sound.play('pickup', T.base); log(`${jo(I.n, '을')} 주웠다.` + (it.n > 1 ? ` (${it.n}개)` : ''), T.base);
+      return true;
+    }
+    if (mode === 'swap') {
+      const b = run.bag[slot]; if (!b) return false;
+      run.bag.splice(slot, 1);
+      D.items = D.items.filter(i => i !== it);
+      addToBag(it.id, it.n);
+      D.items.push({ x: p.x, y: p.y, id: b.id, n: b.n }); D.ignore.add(idx(p.x, p.y));
+      log(`${jo(ITEMS[b.id].n, '을')} 내려놓고 ${jo(I.n, '을')} 주웠다.`, T.base);
+      return true;
+    }
+    if (mode === 'throw') {
+      if (it.n > 1) it.n--; else D.items = D.items.filter(i => i !== it);
+      throwItem(p, it.id, p.dir);
+      return true;
+    }
+    return false;
+  }
+
   function itemMenu(i) {
     const b = run.bag[i], it = ITEMS[b.id];
     const ch = [];
@@ -1923,6 +2049,9 @@ const Dungeon = (() => {
       case 'KeyH': case 'Slash': showHelp(); return true;
       case 'KeyJ': case 'KeyL': Game.showMissions(); return true;
       case 'KeyN': toggleMap(true); return true;
+      case 'KeyK': toggleLook(); return true;
+      case 'KeyP': showStatus(); return true;
+      case 'Semicolon': case 'KeyU': showLog(); return true;
       case 'KeyV': D.dashNext = !D.dashNext; updateDashBtn(); log(D.dashNext ? '대쉬 준비! 방향을 누르면 쭉 달린다.' : '대쉬를 취소했다.', now()); return true;
     }
     return false;
@@ -1937,6 +2066,7 @@ const Dungeon = (() => {
   }
   function onClick(e) {
     if (!D || UI.isOpen() || D.dead) return;
+    if (D.lookNext) { D.lookNext = false; updateLookBtn(); lookAt(e); return; }
     if (D.auto) { stopAuto(); return; }
     const rect = canvas.getBoundingClientRect();
     const sx = (e.clientX - rect.left) * canvas.width / rect.width, sy = (e.clientY - rect.top) * canvas.height / rect.height;
@@ -1950,6 +2080,70 @@ const Dungeon = (() => {
     if (!D.explored[idx(tx, ty)] || !floorAt(tx, ty)) return;
     startAuto('travel', { x: tx, y: ty });
   }
+  // 화면 좌표 → 칸
+  function tileFromEvent(e) {
+    const rect = canvas.getBoundingClientRect();
+    const sx = (e.clientX - rect.left) * canvas.width / rect.width, sy = (e.clientY - rect.top) * canvas.height / rect.height;
+    const p = P(), pv = vpos(p, now());
+    const ox = Math.round(pv.x * TILE + TILE / 2 - canvas.width / 2), oy = Math.round(pv.y * TILE + TILE / 2 - canvas.height / 2);
+    return { x: Math.floor((sx + ox) / TILE), y: Math.floor((sy + oy) / TILE) };
+  }
+  function toggleLook() {
+    if (!D) return;
+    D.lookNext = !D.lookNext; updateLookBtn();
+    if (D.lookNext) log('조사할 칸을 누르세요.', now());
+  }
+  function updateLookBtn() { document.querySelector('#actions [data-k=look]')?.classList.toggle('on', !!(D && D.lookNext)); }
+  function lookAt(e) {
+    const { x, y } = tileFromEvent(e);
+    if (!inb(x, y) || !D.explored[idx(x, y)]) { UI.alert('조사', '<p>아직 가 보지 않은 곳이라 알 수 없다.</p>'); return; }
+    const vis = D.visible[idx(x, y)], rows = [];
+    const c = vis ? creatureAt(x, y) : null;
+    if (c) rows.push(creatureInfo(c));
+    const it = itemAt(x, y);
+    if (it && (vis || D.radar)) rows.push(it.money ? `<p>💰 ${it.money} 포켓</p>` : it.id === 'quest' ? '<p>📦 의뢰품</p>' : `<p>${ITEMS[it.id].icon} <b>${esc(ITEMS[it.id].n)}</b>${it.n > 1 ? ' ×' + it.n : ''}${it.price ? ` <span class="dim">(상품 ₽${it.price})</span>` : ''}<br><span class="dim">${esc(ITEMS[it.id].d)}</span></p>`);
+    const tr = trapAt(x, y);
+    if (tr && tr.seen) rows.push(`<p>${TRAPS[tr.kind].icon} <b>${esc(TRAPS[tr.kind].n)}</b><br><span class="dim">${esc(TRAPS[tr.kind].d)}</span></p>`);
+    if (!D.stairsHidden && D.stairs.x === x && D.stairs.y === y) rows.push('<p>🪜 다음 층으로 가는 계단</p>');
+    if (!floorAt(x, y)) rows.push('<p>벽이다.</p>');
+    UI.alert('🔍 조사', rows.join('') || `<p>아무것도 없다.${vis ? '' : ' <span class="dim">(지금은 보이지 않는 곳)</span>'}</p>`);
+  }
+  const stageText = c => Object.entries(c.stages).filter(([, v]) => v).map(([k, v]) => `${STAT_NAMES[k] || k} ${v > 0 ? '+' : ''}${v}`).join(', ');
+  function creatureInfo(c) {
+    const d = DATA.species[c.sp], st = stageText(c);
+    return `<div class="row">${portraitImg(c.sp, 'portrait sm', 'Normal', c.shiny)}<div class="grow"><b>${esc(nm(c))}</b> Lv${c.lv} ${typeBadges(d.t)}
+      <div>HP ${Math.max(0, c.hp)}/${c.maxhp}${c.status ? ` · <span class="warn">${STATUS_NAMES[c.status]}</span>` : ''}${c.boss ? ' · 👑 보스' : ''}</div>
+      <div class="dim">특성 ${esc(abilityName(c.ability))}${c.item ? ` · 가진 아이템 ${ITEMS[c.item].icon}${esc(ITEMS[c.item].n)}` : ''}${c.held ? ` · 지닌 물건 ${esc(ITEMS[c.held].n)}` : ''}${st ? ` · 능력 변화 ${esc(st)}` : ''}</div></div></div>`;
+  }
+  // ── 2. 메시지 기록 / 내 상태
+  function showLog() {
+    if (!D) return;
+    const t = now(), rows = LOG.filter(l => l.at <= t).slice(-150);
+    UI.open({
+      title: '💬 메시지 기록', wide: true,
+      html: `<div class="log-history">${rows.map(l => `<div${l.cls ? ` class="${l.cls}"` : ''}>${esc(l.text)}</div>`).join('') || '<p class="dim">아직 메시지가 없다.</p>'}</div>`,
+      choices: [{ label: '닫기', fn: () => {} }],
+      onOpen: box => { const h = box.querySelector('.log-history'); if (h) h.scrollTop = h.scrollHeight; },
+    });
+  }
+  function showStatus() {
+    if (!D) return;
+    const p = P(), d = DATA.species[p.sp], st = stageText(p), need = expFor(p.lv + 1) - expFor(p.lv), have = p.exp - expFor(p.lv);
+    const row = (k, a, b) => `<tr><td>${k}</td><td><b>${a}</b></td><td class="dim">${b || ''}</td></tr>`;
+    UI.open({
+      title: '📊 내 상태', wide: true,
+      html: `<div class="row">${portraitImg(p.sp, 'portrait', 'Normal', p.shiny)}<div class="grow"><b>${esc(spName(p.sp))}</b> Lv${p.lv} ${typeBadges(d.t)}
+          <div>HP ${p.hp}/${p.maxhp} · 배 ${Math.floor(p.belly)}/100${p.status ? ` · <span class="warn">${STATUS_NAMES[p.status]}</span>` : ''}</div>
+          <div class="dim">EXP ${p.lv >= MAX_LEVEL ? '최대' : `${have}/${need}`} · 특성 ${esc(abilityName(p.ability))} · 지닌 물건 ${p.held ? `${ITEMS[p.held].icon}${esc(ITEMS[p.held].n)}` : '없음'}</div></div></div>
+        <table class="md-tbl">${row('공격', p.atk, p.stages[2] ? `(${p.stages[2] > 0 ? '+' : ''}${p.stages[2]}단계)` : '')}${row('방어', p.def, p.stages[3] ? `(${p.stages[3] > 0 ? '+' : ''}${p.stages[3]}단계)` : '')}
+          ${row('특수공격', p.spa, p.stages[4] ? `(${p.stages[4] > 0 ? '+' : ''}${p.stages[4]}단계)` : '')}${row('특수방어', p.spd, p.stages[5] ? `(${p.stages[5] > 0 ? '+' : ''}${p.stages[5]}단계)` : '')}
+          ${row('스피드', p.spe, p.stages[6] ? `(${p.stages[6] > 0 ? '+' : ''}${p.stages[6]}단계)` : '')}</table>
+        ${st ? `<p>능력 변화: ${esc(st)}</p>` : ''}
+        <div class="cc-moves">${p.moves.map(m => `<div class="move-row">${moveLine(m.id, m.pp, m.max)}</div>`).join('')}</div>`,
+      choices: [{ label: '닫기', fn: () => {} }],
+    });
+  }
+
   function showHelp() {
     UI.alert('조작법', `<table class="help">
       <tr><td>이동</td><td>방향키(두 개 동시에 누르면 대각선) / 숫자패드 / WASD + QEZC / 마우스 클릭</td></tr>
@@ -1958,6 +2152,9 @@ const Dungeon = (() => {
       <tr><td>대쉬</td><td>Shift + 방향: 그 방향으로 쭉 달린다 (통로는 굽은 길도 따라감). 적이 보이거나, 갈림길·방 입구·아이템·계단에 닿으면 멈춘다.<br>V 또는 대쉬 버튼을 누른 뒤 방향을 눌러도 된다. 아무 키나 누르면 멈춘다.</td></tr>
       <tr><td>방향만 바꾸기</td><td>Ctrl + 방향키 / 숫자패드</td></tr>
       <tr><td>임무 확인</td><td>J: 받은 임무와 이 층의 임무 대상</td></tr>
+      <tr><td>조사</td><td>K 또는 조사 버튼 → 살펴볼 칸을 누른다 (컴퓨터는 칸을 우클릭). 적의 HP·상태·가진 아이템, 떨어진 아이템, 발견한 함정을 볼 수 있다.</td></tr>
+      <tr><td>메시지 기록 / 내 상태</td><td>U 또는 메시지 창을 누르면 지난 메시지, P 또는 위쪽 상태 표시줄을 누르면 내 능력치·능력 변화·기술.</td></tr>
+      <tr><td>발밑의 아이템</td><td>가방을 열면 맨 위의 "발밑"에서 조사·줍기·가방 아이템과 교환·던지기. 가방 정리 버튼으로 종류별 정렬.</td></tr>
       <tr><td>큰 지도</td><td>N 또는 미니맵 클릭. 큰 지도에서 가 본 곳을 누르면 그곳까지 이동한다. 아무 키나 누르면 닫힌다.</td></tr>
       <tr><td>공격</td><td>Space / Enter, 적 쪽으로 이동해도 공격</td></tr>
       <tr><td>기술</td><td>1 ~ 4 (가까운 적에게 자동으로 방향을 맞춤)</td></tr>
@@ -1983,6 +2180,9 @@ const Dungeon = (() => {
     window.addEventListener('keyup', onKeyUp);
     window.addEventListener('blur', () => heldArrows.clear());
     canvas.addEventListener('click', onClick);
+    canvas.addEventListener('contextmenu', e => { if (!D || UI.isOpen()) return; e.preventDefault(); lookAt(e); });   // 우클릭: 조사
+    document.getElementById('log').addEventListener('click', () => { if (D && !UI.isOpen()) { stopAuto(); showLog(); } });
+    document.getElementById('hud').addEventListener('click', e => { if (D && !UI.isOpen() && !e.target.closest('[title]')) { stopAuto(); showStatus(); } });
     mini.addEventListener('click', onMiniClick);
     initPad();
     document.getElementById('moves').addEventListener('contextmenu', e => {
@@ -2001,7 +2201,7 @@ const Dungeon = (() => {
       ({ attack: () => act({ t: 'attack' }), explore: () => startAuto('explore'), fight: () => startAuto('fight'), rest: () => startAuto('rest'),
         wait: () => act({ t: 'wait' }), stairs: tryStairs, bag: openBag, menu: () => Game.dungeonMenu(), help: showHelp,
         dash: () => { D.dashNext = !D.dashNext; updateDashBtn(); log(D.dashNext ? '대쉬 준비! 방향을 누르면 쭉 달린다.' : '대쉬를 취소했다.', now()); },
-        mission: () => Game.showMissions(), map: () => toggleMap() })[k]?.();
+        mission: () => Game.showMissions(), map: () => toggleMap(), look: toggleLook })[k]?.();
     });
   }
 
@@ -2056,5 +2256,5 @@ const Dungeon = (() => {
     clearInterval(logicTimer); logicTimer = 0;
     pendingKey = null;
   }
-  return { floorCandidates, init, enter, leave, get run() { return run; }, get floor() { return D; }, stopAuto, showHelp, addToBag, _log: LOG };
+  return { showLog, showStatus, floorCandidates, init, enter, leave, get run() { return run; }, get floor() { return D; }, stopAuto, showHelp, addToBag, _log: LOG };
 })();
