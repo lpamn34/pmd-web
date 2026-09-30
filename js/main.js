@@ -460,7 +460,7 @@ const Game = (() => {
     });
     UI.open({
       title: '📋 구조 게시판', wide: true,
-      html: `<p class="dim">v${GAME_VERSION} 플레이어의 구조 요청 중 가장 오래 기다린 ${list.length || ''}건. 누가 구조하러 가면 2시간 동안 다른 사람에게는 보이지 않아요.
+      html: `<p class="dim">구조 요청 중 가장 오래 기다린 ${list.length || ''}건. 누가 구조하러 가면 2시간 동안 다른 사람에게는 보이지 않아요.
         구조 임무는 한 번에 ${ONLINE_RESCUE_MAX}개까지 받을 수 있어요.</p>${rows.join('') || '<p>지금은 구조를 기다리는 탐험대가 없어요.</p>'}`,
       choices: [{ label: '🔄 새로고침', fn: sosBoard }, { label: '닫기', fn: () => {} }],
       onOpen: (box, m) => box.querySelectorAll('[data-sos]').forEach(b => { b.onclick = () => {

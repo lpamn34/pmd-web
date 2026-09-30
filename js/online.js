@@ -205,7 +205,7 @@ const Online = (() => {
 
   // ── 구조 게시판: sos/{올린 시각_요청 번호} ──
   // 문서 이름이 올린 시각으로 시작해서, 이름순으로 읽으면 오래된 요청부터 나온다 (추가 색인 없이)
-  const openKey = () => GAME_VERSION + '|open';
+  const openKey = () => GAME_VERSION + '|open';   // 서버 규칙이 확인하는 값 (게시판은 버전과 상관없이 모든 열린 요청을 보여준다)
   const BOARD_SIZE = 10;               // 게시판에 보이는 요청 수 (가장 오래 기다린 것부터)
   const HOLD_MS = 2 * 3600 * 1000;     // 누가 구조하러 가면 이 시간 동안 다른 사람에게는 안 보인다
   const stamp = t => String(t).padStart(14, '0');
@@ -220,7 +220,8 @@ const Online = (() => {
     return docId;
   }
   const heldByOther = s => s.takenBy && s.takenBy !== user.uid && s.takenAt && s.takenAt.toMillis() > Date.now() - HOLD_MS;
-  // 같은 버전의 열린 요청 중 가장 오래 기다린 것부터 (최근 7일, 내 것과 다른 사람이 구조하러 간 것 제외)
+  // 열린 요청 중 가장 오래 기다린 것부터. 요청에는 던전·층·포켓몬 번호만 있어서 버전이 달라도 구조할 수 있다
+  // (이 버전에 없는 던전·포켓몬이 담긴 요청은 게시판 화면에서 뺀다) (최근 7일, 내 것과 다른 사람이 구조하러 간 것 제외)
   // 게시판을 다시 열어도 2분 안이면 방금 읽은 목록을 보여준다 (읽기 절약). 내가 요청을 맡거나 올리면 새로 읽는다
   const LIST_CACHE_MS = 2 * 60 * 1000;
   let listCache = null;
@@ -228,7 +229,7 @@ const Online = (() => {
   async function listSOS() {
     if (listCache && listCache.uid === user.uid && Date.now() - listCache.at < LIST_CACHE_MS) return listCache.list;
     const since = stamp(Date.now() - SOS_DAYS * 864e5);
-    const q = await db.collection('sos').where('key', '==', openKey())
+    const q = await db.collection('sos').where('status', '==', 'open')
       .orderBy(firebase.firestore.FieldPath.documentId()).startAt(since).limit(30).get();
     const list = q.docs.map(d => ({ id: d.id, sid: idOf(d.id), ...d.data() }))
       .filter(s => s.owner !== user.uid && !heldByOther(s)).slice(0, BOARD_SIZE);
