@@ -399,7 +399,7 @@ const Game = (() => {
     const ids = Object.keys(DATA.species);
     for (let i = 0; i < 7; i++) deco.insertAdjacentHTML('beforeend', portraitImg(pick(ids), 'deco'));
     show('title-screen');
-    Sound.town();
+    Sound.title();
   }
 
   // ───────────────────────── 마을 ─────────────────────────
@@ -784,7 +784,7 @@ const Game = (() => {
 
   // 배경음악 파일 설정: music/ 폴더에 넣거나 여기서 불러온다 (불러온 파일은 이 브라우저에만 저장)
   function musicSection() {
-    const rows = [{ id: 'town', n: '마을 (타이틀 포함)' }, { id: 'boss', n: '보스전' }, { id: 'dungeon', n: '던전 공통 (던전별 파일이 없을 때)' },
+    const rows = [{ id: 'title', n: '타이틀 (없으면 마을 곡)' }, { id: 'town', n: '마을' }, { id: 'boss', n: '보스전' }, { id: 'dungeon', n: '던전 공통 (던전별 파일이 없을 때)' },
       ...DUNGEONS.filter(d => !d.daily).map(d => ({ id: d.id, n: d.n }))];   // 오늘의 도전은 날마다 던전 곡 중 하나
     return `<h3>배경음악 파일 <span class="dim">(선택 사항)</span></h3>
       <p class="dim">기본은 게임이 직접 합성한 배경음입니다. 음악 파일(ogg / mp3 / m4a / wav)을 불러오거나 게임 폴더의 <code>music/이름.ogg</code>에 넣으면 그 곡을 반복 재생합니다.

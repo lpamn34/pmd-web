@@ -366,6 +366,7 @@ const Sound = (() => {
 
   const MOODS = { burned: 'phryg', whirl: 'dorian', seafloor: 'minor', ruins: 'phryg', shrine: 'minor', altar: 'lydian', coronet: 'dorian', spiral: 'minor', areazero: 'lydian', crystal: 'lydian', swamp: 'dorian', volcano: 'phryg', desert: 'phryg', frost: 'minor', storm: 'minor', dark: 'minor', mine: 'dorian',
     canyon: 'phryg', summit: 'lydian', trial: 'dorian', twilight: 'minor', mystery: 'dorian', daily: 'dorian' };
+  const title = () => bgm('title', { mode: 'major', bpm: 96, root: 55, prog: [0, 3, 4, 0], wave: 'triangle', sparse: 0.6, files: ['title', 'town'] });
   const town = () => bgm('town', { mode: 'major', bpm: 96, root: 55, prog: [0, 3, 4, 0], wave: 'triangle', sparse: 0.6, files: ['town'] });
   // 오늘의 도전: 날짜로 정해지는 던전 하나의 곡 (날짜 순서대로 돌며 파일이 있는 첫 곡)
   const dailyFiles = seed => { const ids = DUNGEONS.filter(d => !d.daily).map(d => d.id), k = seed % ids.length; return [...ids.slice(k), ...ids.slice(0, k), 'dungeon']; };
@@ -383,5 +384,5 @@ const Sound = (() => {
   }
   ['pointerdown', 'keydown'].forEach(ev => window.addEventListener(ev, unlock, { capture: true }));
 
-  return { play, bgm, town, dungeon, boss, refresh, importMusic, removeMusic, loopInfo, previewLoop, endPreview, setLoop, get uploaded() { return uploadedKeys; }, get playingFile() { return fileUrl; }, get player() { return player; } };
+  return { play, bgm, title, town, dungeon, boss, refresh, importMusic, removeMusic, loopInfo, previewLoop, endPreview, setLoop, get uploaded() { return uploadedKeys; }, get playingFile() { return fileUrl; }, get player() { return player; } };
 })();
