@@ -38,3 +38,8 @@ window.MUSIC_LOOPS = {
 window.MUSIC_VOLUME = {
   title: 0.8,
 };
+
+// 다른 던전의 곡을 같이 쓰기 (던전 → 곡 이름). 그 던전 이름의 파일이 있으면 그 파일이 우선
+window.MUSIC_ALIAS = {
+  eternal: 'spiral',   // 무한의 회랑 → Temporal Spire
+};

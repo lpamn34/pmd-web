@@ -814,9 +814,11 @@ const Dungeon = (() => {
     if (c.boss) bossDefeated(c, at);
     if (c.outlaw) missionDone(c.mission, `현상수배범 ${jo(spName(c.sp), '을')} 붙잡았다!`);
   }
-  function gainExp(amt, at) {
+  // raw: 이상한사탕처럼 정해진 만큼 (전설 보정 없이)
+  function gainExp(amt, at, raw) {
     const p = P();
     if (p.lv >= MAX_LEVEL) return;
+    if (!raw) amt = Math.max(1, Math.floor(amt / expDiv(p.sp)));
     p.exp += amt;
     log(`경험치를 ${amt} 얻었다.`, at);
     while (p.lv < MAX_LEVEL && p.exp >= expFor(p.lv + 1)) {
@@ -1506,7 +1508,7 @@ const Dungeon = (() => {
       case 'escape': D.prompts.push(() => Game.endRun('escape')); break;
       case 'map': D.explored.fill(1); D.traps.forEach(t => t.seen = true); log('층의 구조와 함정이 밝혀졌다!', at); break;
       case 'allsleep': hostilesVisible().forEach(e => inflict(e, 'slp', at, true)); break;
-      case 'levelup': gainExp(Math.max(0, expFor(p.lv + 1) - p.exp), at); break;
+      case 'levelup': gainExp(Math.max(0, expFor(p.lv + 1) - p.exp), at, true); break;
       case 'fullheal': heal(p, p.maxhp, at); p.status = null; log('몸 상태가 완전히 좋아졌다!', at); break;
       case 'stat': statChange(p, it.st, it.v, at, p); break;
       case 'radar': D.radar = true; log('층의 적과 아이템 위치를 알게 되었다!', at); break;

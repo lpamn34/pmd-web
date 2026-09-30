@@ -5,6 +5,9 @@ const NORMAL_ATTACK = { n: '공격', t: 0, p: 40, a: 100, pp: 0, c: 2, r: 'f', f
 const MAX_LEVEL = 100;
 
 const expFor = lv => lv >= MAX_LEVEL ? Infinity : Math.pow(lv, 3);
+// 전설·환상 포켓몬은 레벨업이 느리다 (원작의 느린 성장 그룹): 얻는 경험치를 이 수로 나눈다 = 필요 경험치 2배
+const LEGEND_EXP_DIV = 2;
+const expDiv = sp => (DATA.species[sp] && DATA.species[sp].lg ? LEGEND_EXP_DIV : 1);
 
 function calcStats(sp, lv, iv) {
   const b = DATA.species[sp].b;

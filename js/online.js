@@ -150,21 +150,45 @@ const Online = (() => {
     profile = { name: profile && profile.name, id: profile && profile.id };
   }
 
-  // ── 구조 게시판: sos/{요청 번호} ──
+  // ── 구조 게시판: sos/{올린 시각_요청 번호} ──
+  // 문서 이름이 올린 시각으로 시작해서, 이름순으로 읽으면 오래된 요청부터 나온다 (추가 색인 없이)
   const openKey = () => GAME_VERSION + '|open';
+  const BOARD_SIZE = 10;               // 게시판에 보이는 요청 수 (가장 오래 기다린 것부터)
+  const HOLD_MS = 2 * 3600 * 1000;     // 누가 구조하러 가면 이 시간 동안 다른 사람에게는 안 보인다
+  const stamp = t => String(t).padStart(14, '0');
+  const idOf = docId => +String(docId).split('_').pop();   // 문서 이름 → 요청 번호 (SOS 코드의 번호)
   async function postSOS(s) {
-    await db.collection('sos').doc(String(s.id)).set({
+    const created = Date.now(), docId = `${stamp(created)}_${s.id}`;
+    await db.collection('sos').doc(docId).set({
       owner: user.uid, name: name(), dungeon: s.dungeon, floor: s.floor, sp: s.sp, lv: s.lv, shiny: !!s.shiny,
-      ver: GAME_VERSION, key: openKey(), status: 'open', created: Date.now(),
+      ver: GAME_VERSION, key: openKey(), status: 'open', created,
+    });
+    return docId;
+  }
+  const heldByOther = s => s.takenBy && s.takenBy !== user.uid && s.takenAt && s.takenAt.toMillis() > Date.now() - HOLD_MS;
+  // 같은 버전의 열린 요청 중 가장 오래 기다린 것부터 (최근 7일, 내 것과 다른 사람이 구조하러 간 것 제외)
+  async function listSOS() {
+    const since = stamp(Date.now() - SOS_DAYS * 864e5);
+    const q = await db.collection('sos').where('key', '==', openKey())
+      .orderBy(firebase.firestore.FieldPath.documentId()).startAt(since).limit(30).get();
+    return q.docs.map(d => ({ id: d.id, sid: idOf(d.id), ...d.data() }))
+      .filter(s => s.owner !== user.uid && !heldByOther(s)).slice(0, BOARD_SIZE);
+  }
+  // 구조하러 간다: 이 요청을 2시간 동안 맡는다. 이미 다른 사람이 맡았거나 끝났으면 false
+  async function takeSOS(docId) {
+    const ref = db.collection('sos').doc(String(docId));
+    return db.runTransaction(async t => {
+      const d = await t.get(ref);
+      if (!d.exists || d.data().status !== 'open' || heldByOther(d.data())) return false;
+      t.update(ref, { takenBy: user.uid, takenAt: firebase.firestore.FieldValue.serverTimestamp() });
+      return true;
     });
   }
-  // 같은 버전의 열린 요청 (내 것 제외, 오래된 것 제외, 최신순)
-  async function listSOS() {
-    const q = await db.collection('sos').where('key', '==', openKey()).limit(40).get();
-    const since = Date.now() - SOS_DAYS * 864e5;
-    return q.docs.map(d => ({ id: d.id, ...d.data() }))
-      .filter(s => s.owner !== user.uid && s.created > since)
-      .sort((a, b) => b.created - a.created);
+  // 구조 임무를 취소: 다른 사람이 받을 수 있게 풀어 준다
+  async function releaseSOS(docId) {
+    const ref = db.collection('sos').doc(String(docId));
+    const d = await ref.get();
+    if (d.exists && d.data().status === 'open' && d.data().takenBy === user.uid) await ref.update({ takenBy: null, takenAt: null });
   }
   async function getSOS(id) {
     const d = await db.collection('sos').doc(String(id)).get();
@@ -187,6 +211,6 @@ const Online = (() => {
     enabled, init, onChange, loggedIn, name, userId, why, nameTaken: () => !!(profile && profile.nameTaken),
     signUp, signIn, signOut, setName, uid: () => user && user.uid,
     fetchCloud, pushCloud, clearCloud,
-    postSOS, listSOS, getSOS, claimRescue, thankSOS, deleteSOS,
+    postSOS, listSOS, takeSOS, releaseSOS, getSOS, claimRescue, thankSOS, deleteSOS, idOf,
   };
 })();

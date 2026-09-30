@@ -303,22 +303,31 @@ const Game = (() => {
       await flushThanks();
       const s = save.sos;
       if (s && s.online && !s.revived) {
-        const d = await Online.getSOS(s.id);
+        const d = await Online.getSOS(s.docId || s.id);
         if (d && d.status === 'rescued' && d.rescuer && DATA.species[d.rescuer.sp]) await receiveAOK({ id: s.id, sp: d.rescuer.sp, lv: d.rescuer.lv, sh: d.rescuer.shiny ? 1 : 0 }, d.rescuer.name);
       }
       for (const [id, r] of Object.entries(save.rescued || {})) {
         if (!r.online || r.thanked) continue;
+        const doc = r.docId || id;
         if (!r.claimed) {
-          const ok = await Online.claimRescue(id, r.me);
-          if (ok) { r.claimed = true; UI.toast(`${spName(r.sp)} 구조 완료를 요청자에게 전했어요!`); }
-          else { r.thanked = true; r.lost = true; UI.toast(`${spName(r.sp)}: 다른 탐험대가 먼저 구조했거나 요청이 취소됐어요.`); }
+          const ok = await Online.claimRescue(doc, r.me);
+          if (ok) {
+            // 구조 보답: 요청자가 게임을 그만둬도 받을 수 있게 바로 준다 (감사 편지는 따로)
+            r.claimed = true;
+            const item = weighted(DROP_TABLE.filter(([k]) => k !== 'quest')), money = 50 + (r.floor || 5) * 15;
+            storeAdd(item); save.money += money;
+            UI.alert('✅ 구조 완료', `<div class="center">${portraitImg(r.sp, 'portrait big', 'Joyous', r.shiny)}</div>
+              <p class="center">${esc(spName(r.sp))}의 구조 완료를 요청자에게 전했어요!</p>
+              <p class="center">구조 보답: ${ITEMS[item].icon} <b>${esc(ITEMS[item].n)}</b> (창고로) · ₽${money}</p>
+              <p class="center dim">요청자가 감사 편지를 보내면 선물이 더 올 수도 있어요.</p>`);
+          } else { r.thanked = true; r.lost = true; UI.toast(`${spName(r.sp)}: 다른 탐험대가 먼저 구조했거나 요청이 취소됐어요.`); }
           persist(); continue;
         }
-        const d = await Online.getSOS(id);
+        const d = await Online.getSOS(doc);
         if (!d) { r.thanked = true; persist(); continue; }
         if (d.status === 'thanked') {
           await gotThanks(r, d.thx && ITEMS[d.thx] && d.thx !== 'quest' ? d.thx : null, d.name);
-          Online.deleteSOS(id).catch(() => {});   // 다 쓴 요청은 지운다
+          Online.deleteSOS(doc).catch(() => {});   // 다 쓴 요청은 지운다
         }
       }
     } catch (e) { console.warn('구조 게시판 확인 실패', e); }
@@ -334,27 +343,29 @@ const Game = (() => {
     }
   }
 
+  const ONLINE_RESCUE_MAX = 2;   // 게시판 구조 임무는 한 번에 이만큼 (한 사람이 요청을 다 가져가지 않게)
   async function sosBoard() {
     if (!Online.loggedIn()) return accountDialog();
     let list;
     try { list = await Online.listSOS(); } catch (e) { UI.alert('📋 구조 게시판', `<p>${esc(Online.why(e))}</p>`); return; }
     list = list.filter(s => dungeonById(s.dungeon) && DATA.species[s.sp]);
-    const taken = id => !!((save.rescued || {})[id] || save.missions.accepted.some(m => m.sosId === +id));
+    const taken = sid => !!((save.rescued || {})[sid] || save.missions.accepted.some(m => m.sosId === sid));
     const ago = t => { const mnt = Math.max(1, Math.round((Date.now() - t) / 60000)); return mnt < 60 ? `${mnt}분 전` : mnt < 1440 ? `${Math.round(mnt / 60)}시간 전` : `${Math.round(mnt / 1440)}일 전`; };
     const rows = list.map(s => {
-      const dg = dungeonById(s.dungeon), ok = unlocked(dg), got = taken(s.id);
+      const dg = dungeonById(s.dungeon), ok = unlocked(dg), got = taken(s.sid);
       return `<div class="row">${portraitImg(s.sp, 'portrait sm', 'Pain', s.shiny)}<div class="grow"><b>${esc(dg.n)} ${s.floor}F</b> · ${esc(s.name)} 님의 ${esc(spName(s.sp))} Lv${s.lv}
         <div class="dim">${ago(s.created)}${ok ? '' : ` · 🔒 ${esc(dungeonById(dg.req).n)} 클리어 필요`}</div></div>
         <button class="btn sm" data-sos="${esc(s.id)}" ${!ok || got ? 'disabled' : ''}>${got ? '받음' : '구조하러 간다'}</button></div>`;
     });
     UI.open({
       title: '📋 구조 게시판', wide: true,
-      html: `<p class="dim">v${GAME_VERSION} 플레이어의 구조 요청 (최근 7일, 최대 40개). 가장 먼저 구조한 한 명이 요청자를 되살릴 수 있어요.</p>${rows.join('') || '<p>지금은 구조를 기다리는 탐험대가 없어요.</p>'}`,
+      html: `<p class="dim">v${GAME_VERSION} 플레이어의 구조 요청 중 가장 오래 기다린 ${list.length || ''}건. 누가 구조하러 가면 2시간 동안 다른 사람에게는 보이지 않아요.
+        구조 임무는 한 번에 ${ONLINE_RESCUE_MAX}개까지 받을 수 있어요.</p>${rows.join('') || '<p>지금은 구조를 기다리는 탐험대가 없어요.</p>'}`,
       choices: [{ label: '🔄 새로고침', fn: sosBoard }, { label: '닫기', fn: () => {} }],
       onOpen: (box, m) => box.querySelectorAll('[data-sos]').forEach(b => { b.onclick = () => {
         const s = list.find(x => x.id === b.dataset.sos); if (!s) return;
         UI.close(m);
-        acceptSOS({ id: +s.id, dg: DUNGEONS.findIndex(d => d.id === s.dungeon), fl: s.floor, sp: s.sp, lv: s.lv, sh: s.shiny ? 1 : 0 }, s.name);
+        acceptSOS({ id: s.sid, dg: DUNGEONS.findIndex(d => d.id === s.dungeon), fl: s.floor, sp: s.sp, lv: s.lv, sh: s.shiny ? 1 : 0 }, s.name, s.id);
       }; }),
     });
   }
@@ -473,7 +484,7 @@ const Game = (() => {
     if (m.kind === 'outlaw') return `<b>현상수배</b> ${esc(dg.n)} ${m.floor}F에 숨은 Lv${m.lv} ${esc(jo(spName(m.target), '을'))} 쓰러뜨려 주세요.`;
     return `<b>탐색</b> ${esc(jo(spName(m.client), '이'))} ${esc(dg.n)} ${m.floor}F에 떨어뜨린 물건을 찾아 주세요.`;
   }
-  const rewardText = m => m.kind === 'sos' ? `₽${m.reward} + ${m.online ? '구조 완료 전달' : 'A-OK 코드'}` : `₽${m.reward}${m.item ? ` + ${ITEMS[m.item].icon}${ITEMS[m.item].n}` : ''}`;
+  const rewardText = m => m.kind === 'sos' ? `₽${m.reward} + ${m.online ? '구조 보답(무작위 아이템·돈)' : 'A-OK 코드'}` : `₽${m.reward}${m.item ? ` + ${ITEMS[m.item].icon}${ITEMS[m.item].n}` : ''}`;
 
   let ccOpen = null;   // 휴대폰에서 캐릭터 카드를 펼쳐 두었는지
   function renderTown() {
@@ -913,6 +924,8 @@ const Game = (() => {
       }
       case 'drop-mission': {
         if (!(await UI.confirm('임무 취소', '<p>이 임무를 취소하시겠습니까?</p>'))) return;
+        const dm = save.missions.accepted.find(m => m.id === arg);
+        if (dm && dm.online && dm.docId) Online.releaseSOS(dm.docId).catch(() => {});   // 게시판 구조: 다른 사람이 받을 수 있게
         save.missions.accepted = save.missions.accepted.filter(m => m.id !== arg);
         break;
       }
@@ -1350,7 +1363,7 @@ const Game = (() => {
     tab = 'mission'; renderTown();
     let posted = false;
     if (Online.loggedIn()) {
-      try { await Online.postSOS(s); s.online = true; posted = true; persist(); renderTown(); }
+      try { s.docId = await Online.postSOS(s); s.online = true; posted = true; persist(); renderTown(); }
       catch (e) { console.warn(e); UI.toast('구조 게시판에 올리지 못했어요. 코드로 친구에게 부탁해 주세요.'); }
     }
     codeBox('🆘 SOS 코드', `<p>${esc(dungeonById(s.dungeon).n)} ${s.floor}F에서 쓰러진 <b>${esc(spName(s.sp))}</b> Lv${s.lv}의 구조 요청입니다.</p>
@@ -1388,20 +1401,26 @@ const Game = (() => {
   }
 
   // 친구의 SOS → 구조 임무
-  async function acceptSOS(d, from) {
+  async function acceptSOS(d, from, docId) {
     const dg = DUNGEONS[d.dg];
     if (!dg || dg.mode !== 'normal' || d.fl < 1 || d.fl > dg.floors || !DATA.species[d.sp]) { UI.alert('코드 오류', '<p>이 게임에서 쓸 수 없는 SOS 코드입니다.</p>'); return; }
     if (save.sos && save.sos.id === d.id) { UI.alert('구조 불가', '<p>자기 자신의 구조 요청은 받을 수 없어요. 친구에게 보내 주세요.</p>'); return; }
     if ((save.rescued || {})[d.id] || save.missions.accepted.some(m => m.sosId === d.id)) { UI.alert('구조 불가', '<p>이미 받았거나 구조를 마친 요청입니다.</p>'); return; }
     if (!unlocked(dg)) { UI.alert('구조 불가', `<p>${esc(jo(dg.n, '은'))} 아직 열리지 않은 던전이라 구조하러 갈 수 없어요.</p><p class="dim">${esc(jo(dungeonById(dg.req).n, '을'))} 클리어하면 열립니다.</p>`); return; }
     if (save.missions.accepted.length >= 4) { UI.alert('구조 불가', '<p>진행 중인 임무가 4개입니다. 하나를 끝내거나 취소한 뒤 받아 주세요.</p>'); return; }
+    if (docId && save.missions.accepted.filter(m => m.online).length >= ONLINE_RESCUE_MAX) { UI.alert('구조 불가', `<p>게시판 구조 임무는 한 번에 ${ONLINE_RESCUE_MAX}개까지 받을 수 있어요. 먼저 받은 구조를 끝내 주세요.</p>`); return; }
     const reward = Math.round((150 + d.fl * 40) * (1 + DUNGEONS.filter(x => x.mode === 'normal').indexOf(dg) * 0.5) / 10) * 10;
     const ok = await UI.confirm('🆘 구조 요청', `<div class="center">${portraitImg(d.sp, 'portrait big', 'Pain', !!d.sh)}</div>
       <p class="center"><b>${esc(dg.n)} ${d.fl}F</b>에서 ${from ? `<b>${esc(from)}</b> 님` : '친구'}의 Lv${d.lv} <b>${esc(jo(spName(d.sp), '이'))}</b> 쓰러져 있습니다.</p>
       <p class="center dim">그 층까지 내려가서 말을 걸면 구조 성공. 보상 ₽${reward} + ${from ? '마을로 돌아오면 구조 완료가 자동으로 전해져요' : 'A-OK 코드'}</p>
-      ${from ? '<p class="center dim">다른 탐험대가 먼저 구조하면 보상 돈만 받습니다.</p>' : ''}`, '구조하러 간다', '그만둔다');
+      ${from ? '<p class="center dim">구조를 마치면 구조 보답(무작위 아이템과 돈)도 받아요. 2시간 동안은 이 요청이 다른 사람에게 보이지 않아요.</p>' : ''}`, '구조하러 간다', '그만둔다');
     if (!ok) return;
-    save.missions.accepted.push({ id: 'sos' + d.id, kind: 'sos', sosId: d.id, dungeon: dg.id, floor: d.fl, client: d.sp, lv: d.lv, shiny: !!d.sh, reward, ...(from ? { online: true, from } : {}) });
+    if (docId) {   // 게시판 요청: 먼저 맡는다 (이미 누가 맡았으면 받을 수 없음)
+      let got = false;
+      try { got = await Online.takeSOS(docId); } catch (e) { UI.alert('구조 불가', `<p>${esc(Online.why(e))}</p>`); return; }
+      if (!got) { UI.alert('구조 불가', '<p>방금 다른 탐험대가 구조하러 갔거나, 이미 구조된 요청이에요.</p>'); return; }
+    }
+    save.missions.accepted.push({ id: 'sos' + d.id, kind: 'sos', sosId: d.id, dungeon: dg.id, floor: d.fl, client: d.sp, lv: d.lv, shiny: !!d.sh, reward, ...(from ? { online: true, from, docId } : {}) });
     const ci = document.getElementById('code-input'); if (ci) ci.value = '';
     persist(); renderTown(); UI.toast('구조 임무를 받았습니다!');
   }
@@ -1413,7 +1432,7 @@ const Game = (() => {
     if (s.revived) { UI.alert('이미 구조됨', '<p>이미 구조되었어요. 임무 탭에서 이어서 탐험할 수 있습니다.</p>'); return; }
     s.revived = { sp: d.sp, lv: d.lv, sh: !!d.sh, ...(from ? { from } : {}) };
     const ci = document.getElementById('code-input'); if (ci) ci.value = '';
-    if (s.online && !from) { s.online = false; Online.deleteSOS(s.id).catch(() => {}); }   // 코드로 구조됨: 게시판에서 내린다
+    if (s.online && !from) { s.online = false; Online.deleteSOS(s.docId || s.id).catch(() => {}); }   // 코드로 구조됨: 게시판에서 내린다
     persist(); renderTown();
     await UI.alert('구조되었다!', `<div class="center">${portraitImg(d.sp, 'portrait big', 'Happy', !!d.sh)} ${portraitImg(s.sp, 'portrait big', 'Joyous', s.shiny)}</div>
       <p class="center">${from ? `<b>${esc(from)}</b> 님` : '친구'}의 <b>${esc(spName(d.sp))}</b> Lv${d.lv} 덕분에 ${esc(jo(spName(s.sp), '이'))} 되살아났다!</p>`);
@@ -1439,7 +1458,7 @@ const Game = (() => {
   }
   function sendThanks(s, itemId) {
     if (s.online) {
-      save.thxQueue = [...(save.thxQueue || []), { id: s.id, item: itemId }];
+      save.thxQueue = [...(save.thxQueue || []), { id: s.docId || s.id, item: itemId }];
       s.thx = 'online'; persist(); renderTown();
       flushThanks().catch(e => console.warn('감사 편지는 다음에 다시 보냅니다', e));
       UI.open({ title: '💌 감사 편지', html: `<p>${s.revived && s.revived.from ? `<b>${esc(s.revived.from)}</b> 님에게` : '구조해 준 탐험대에게'} 감사 편지를 보냈어요.${itemId ? ` 선물: ${ITEMS[itemId].icon} ${esc(ITEMS[itemId].n)}` : ''}</p>`,
@@ -1477,7 +1496,7 @@ const Game = (() => {
     bag.forEach(b => storeAdd(b.id, b.n));
     if (s.snap.held) { if (Math.random() < 0.5) lost.push({ id: s.snap.held, n: 1 }); else storeAdd(s.snap.held); }
     save.money = Math.max(0, save.money - (s.snap.money || 0));
-    if (s.online) Online.deleteSOS(s.id).catch(() => {});
+    if (s.online) Online.deleteSOS(s.docId || s.id).catch(() => {});
     save.sos = null; persist(); renderTown();
     UI.alert('구조를 포기했다', `<p>${lost.length ? `잃어버린 아이템: ${lost.map(b => ITEMS[b.id].icon + esc(ITEMS[b.id].n)).join(', ')}` : '잃어버린 아이템은 없다.'}</p>
       ${s.snap.money ? `<p>주웠던 돈 ₽${jo(s.snap.money, '을')} 잃었다.</p>` : ''}<p class="dim">남은 아이템은 창고로 옮겼습니다.</p>`);
@@ -1531,7 +1550,7 @@ const Game = (() => {
         for (const m of save.missions.accepted.filter(m => r.done.includes(m.id))) {
           if (m.kind === 'sos' && m.online) {
             save.rescued = save.rescued || {};
-            save.rescued[m.sosId] = { sp: m.client, shiny: m.shiny, thanked: false, online: true, claimed: false, me: { sp: p.sp, lv: p.lv, shiny: !!p.shiny } };
+            save.rescued[m.sosId] = { sp: m.client, shiny: m.shiny, thanked: false, online: true, claimed: false, docId: m.docId, floor: m.floor, me: { sp: p.sp, lv: p.lv, shiny: !!p.shiny } };
             Progress.add('rescues');
           } else if (m.kind === 'sos') {
             const code = Codes.encode('aok', { id: m.sosId, sp: p.sp, lv: p.lv, sh: p.shiny ? 1 : 0 });
