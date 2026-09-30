@@ -470,6 +470,7 @@ const Game = (() => {
   }
   const rewardText = m => m.kind === 'sos' ? `₽${m.reward} + ${m.online ? '구조 완료 전달' : 'A-OK 코드'}` : `₽${m.reward}${m.item ? ` + ${ITEMS[m.item].icon}${ITEMS[m.item].n}` : ''}`;
 
+  let ccOpen = null;   // 휴대폰에서 캐릭터 카드를 펼쳐 두었는지
   function renderTown() {
     const sp = save.current, ch = save.roster[sp], d = DATA.species[sp];
     const st = applyBoost(calcStats(sp, ch.lv, 31), ch.boost);
@@ -482,6 +483,7 @@ const Game = (() => {
       <div class="cc-top">${portraitImg(sp, 'portrait big', 'Normal', ch.shiny)}
         <div><div class="cc-name">${esc(d.n)}</div><div class="dim">No.${pad4(sp)} ${esc(d.e)}</div><div>${typeBadges(d.t)}</div>
         <div class="cc-lv">Lv <b>${ch.lv}</b></div></div></div>
+      <details class="cc-more"${(ccOpen ?? !matchMedia('(max-width: 800px)').matches) ? ' open' : ''}><summary>능력치 · 특성 · 기술 보기</summary>
       <div class="bar-l">EXP <span class="bar"><i style="width:${ch.lv >= MAX_LEVEL ? 100 : clamp(have / need * 100, 0, 100)}%;background:#6cf"></i></span></div>
       <table class="stats">
         <tr><td>HP</td><td>${st.maxhp}</td><td>공격</td><td>${st.atk}</td></tr>
@@ -489,7 +491,8 @@ const Game = (() => {
         <tr><td>특방</td><td>${st.spd}</td><td>스피드</td><td>${st.spe}</td></tr></table>
       <div class="cc-ability">지닌 물건 ${ch.held ? `${ITEMS[ch.held].icon} <b>${esc(ITEMS[ch.held].n)}</b>` : '<span class="dim">없음</span>'}</div>
       <div class="cc-ability">특성 <span class="ab-link" data-ability="${entryAbility(sp, ch)}">${esc(abilityName(entryAbility(sp, ch)))}</span></div>
-      <div class="cc-moves">${ch.moves.map(m => `<div class="move-row clickable" data-move="${m}" title="클릭하면 기술 설명">${moveLine(m)}</div>`).join('') || '<div class="dim">배운 기술이 없습니다</div>'}</div>`;
+      <div class="cc-moves">${ch.moves.map(m => `<div class="move-row clickable" data-move="${m}" title="클릭하면 기술 설명">${moveLine(m)}</div>`).join('') || '<div class="dim">배운 기술이 없습니다</div>'}</div></details>`;
+    const det = document.querySelector('#char-card .cc-more'); det.ontoggle = () => { ccOpen = det.open; };
     document.querySelectorAll('#town-tabs button').forEach(b => b.classList.toggle('on', b.dataset.tab === tab));
     const el = document.getElementById('tab-content');
     el.innerHTML = ({ dungeon: tabDungeon, mission: tabMission, shop: tabShop, storage: tabStorage, bag: tabBag, char: tabChar, dex: Dex.render, ach: Progress.renderAch, info: tabInfo })[tab]();
@@ -604,7 +607,7 @@ const Game = (() => {
           ${dg.req ? `<br><span class="dim">${esc(jo(dungeonById(dg.req).n, '을'))} 클리어하면 열림</span>` : ''}</p>
         <ul class="dg-feat">${feat.map(x => `<li>${x}</li>`).join('')}</ul>
         ${bossHtml}
-        <h3>나오는 포켓몬 <span class="dim">${seenIn([...allIds])}/${allIds.size}종 만남 · 층마다 이 중 6종이 무작위로 등장 · 어두운 것은 아직 못 만난 포켓몬</span></h3>
+        <h3>나오는 포켓몬 <span class="dim">${seenIn([...allIds])}/${allIds.size}종 만남 · 층마다 이 중 6종이 무작위로 등장${!dg.extra && [...PARADOX_PAST, ...PARADOX_FUTURE].some(id => allIds.has(id)) ? ' (패러독스 포켓몬은 드물게)' : ''} · 어두운 것은 아직 못 만난 포켓몬</span></h3>
         ${bands.map((b, i) => `<details${i === 0 ? ' open' : ''}><summary><b>${b.a === b.b ? b.a : `${b.a}~${b.b}`}층</b> <span class="dim">Lv${floorLv(b.a)}~${floorLv(b.b)} · ${b.ids.length}종 (만남 ${seenIn(b.ids)})</span></summary>${mon(b.ids)}</details>`).join('')}
         <h3>나오는 아이템 <span class="dim">바닥에 떨어진 아이템이 이 확률로 정해진다 (모든 던전 공통) · 한 층에 아이템 3~6개, 돈 2~4무더기</span></h3>
         ${itemHtml}

@@ -13,6 +13,13 @@ const UI = (() => {
     box.className = 'modal pmd-box' + (opts.wide ? ' wide' : '');
     box.innerHTML = (opts.title ? `<div class="modal-title">${opts.title}</div>` : '') + (opts.html ? `<div class="modal-body">${opts.html}</div>` : '');
     const m = { el, box, opts, sel: 0, items: [], t0: performance.now() };
+    // 닫을 수 있는 창에는 ✕ 버튼 (휴대폰에는 Esc 키가 없다)
+    if (opts.cancel !== false) {
+      const x = document.createElement('button');
+      x.className = 'modal-x'; x.textContent = '✕'; x.title = '닫기 (Esc)';
+      x.onclick = () => { if (performance.now() - m.t0 > 300) cancel(m); };
+      box.prepend(x);
+    }
     if (opts.choices && opts.choices.length) {
       const list = document.createElement('div');
       list.className = 'choice-list';

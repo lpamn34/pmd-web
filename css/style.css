@@ -364,3 +364,37 @@ i.clear { font-style: normal; font-size: 11px; background: #3a9d4d; padding: 1px
 .acct-form input { display: block; width: 100%; box-sizing: border-box; margin-top: 3px; font: inherit; font-size: 15px; background: #0b1633; color: var(--text); border: 1px solid #fff5; border-radius: 6px; padding: 7px 9px; }
 .acct-form input:focus { outline: none; border-color: var(--accent); }
 #ac-msg { min-height: 1.2em; margin: 6px 0 0; font-size: 13px; }
+
+/* 터치 화면: 방향 버튼, 큰 버튼, 단축키 표시 숨김 */
+#dpad { display: none; position: absolute; right: 8px; bottom: 8px; grid-template-columns: repeat(3, 46px); grid-template-rows: repeat(3, 46px); gap: 3px; touch-action: none; user-select: none; -webkit-user-select: none; }
+#dpad button { font: inherit; font-size: 20px; color: #fff; background: #0b1633aa; border: 1px solid #fff5; border-radius: 10px; padding: 0; touch-action: none; -webkit-tap-highlight-color: transparent; }
+#dpad button.held { background: #6cf; color: #0b1633; }
+#dpad button.face { font-size: 18px; background: #0b163366; }
+#dpad button.face.on { background: var(--accent); color: #1b1b1b; }
+button, #view, #minimap { touch-action: manipulation; }
+@media (hover: none) and (pointer: coarse) {
+  #dpad { display: grid; }
+  #actions kbd { display: none; }
+  #actions button { padding: 9px 1px; font-size: 12px; }
+  .mv { min-height: 30px; }
+}
+@media (max-width: 800px) {
+  #dungeon-screen { height: 100dvh; }
+  #town-tabs { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; -webkit-overflow-scrolling: touch; }
+  #town-tabs::-webkit-scrollbar { display: none; }
+  #town-tabs button { flex-shrink: 0; }
+  /* 캐릭터 카드는 짧게: 능력치·기술은 캐릭터 탭에서 */
+  #char-card { padding: 8px 10px; }
+  #char-card .portrait.big { width: 56px; height: 56px; }
+  #char-card .cc-name { font-size: 16px; }
+  .cc-more > summary { display: list-item; cursor: pointer; color: var(--accent); font-size: 12px; margin-top: 6px; }
+  .town-head { gap: 10px; padding: 6px 10px; flex-wrap: wrap; }
+  .modal { min-width: 0; width: 100%; box-sizing: border-box; padding: 12px; }
+  #tab-content { padding: 4px 10px 12px; }
+}
+
+@media (min-width: 801px) { .cc-more > summary { display: none; } }
+.modal { position: relative; }
+.modal-x { position: absolute; top: 6px; right: 6px; width: 30px; height: 30px; font: inherit; font-size: 15px; color: var(--dim); background: transparent; border: 0; border-radius: 6px; cursor: pointer; }
+.modal-x:hover { background: #ffffff1a; color: #fff; }
+.modal-title { padding-right: 30px; }

@@ -112,7 +112,12 @@ const Dungeon = (() => {
   function makePool(dg, floor) {
     const { lvl, target, cand } = floorCandidates(dg, floor);
     const pool = [];
-    for (let i = 0; i < 6 && cand.length; i++) pool.push(cand.splice(rand(cand.length), 1)[0].id);
+    // 패러독스 포켓몬은 테마 던전이 아니면 드물게: 뽑혀도 PARADOX_RATE 확률로만 남기고 아니면 다시 뽑는다
+    const para = new Set(dg.extra ? [] : [...PARADOX_PAST, ...PARADOX_FUTURE]);
+    while (pool.length < 6 && cand.length) {
+      const id = cand.splice(rand(cand.length), 1)[0].id;
+      if (!para.has(id) || Math.random() < PARADOX_RATE) pool.push(id);
+    }
     // 테마 던전: 시리즈 포켓몬을 일반 적으로 섞는다 (강함이 비슷한 쪽 우선)
     if (dg.extra) {
       const ex = dg.extra.filter(id => hasSprite(id) && !pool.includes(id)).sort((a, b) => Math.abs(DATA.species[a].b.reduce((s, v) => s + v, 0) - target) - Math.abs(DATA.species[b].b.reduce((s, v) => s + v, 0) - target));
@@ -1948,6 +1953,8 @@ const Dungeon = (() => {
   function showHelp() {
     UI.alert('조작법', `<table class="help">
       <tr><td>이동</td><td>방향키(두 개 동시에 누르면 대각선) / 숫자패드 / WASD + QEZC / 마우스 클릭</td></tr>
+      <tr><td>휴대폰</td><td>오른쪽 아래 방향 버튼: 누르고 있으면 계속 걷는다 (누른 채 옆 버튼으로 밀면 방향 전환). 가운데 ↻를 누른 뒤 방향을 누르면 제자리에서 방향만 바꾼다.
+        화면의 가 본 곳을 누르면 그곳까지 이동. 대쉬 버튼 → 방향 버튼으로 대쉬. 창은 ✕나 바깥을 눌러 닫는다.</td></tr>
       <tr><td>대쉬</td><td>Shift + 방향: 그 방향으로 쭉 달린다 (통로는 굽은 길도 따라감). 적이 보이거나, 갈림길·방 입구·아이템·계단에 닿으면 멈춘다.<br>V 또는 대쉬 버튼을 누른 뒤 방향을 눌러도 된다. 아무 키나 누르면 멈춘다.</td></tr>
       <tr><td>방향만 바꾸기</td><td>Ctrl + 방향키 / 숫자패드</td></tr>
       <tr><td>임무 확인</td><td>J: 받은 임무와 이 층의 임무 대상</td></tr>
@@ -1977,6 +1984,7 @@ const Dungeon = (() => {
     window.addEventListener('blur', () => heldArrows.clear());
     canvas.addEventListener('click', onClick);
     mini.addEventListener('click', onMiniClick);
+    initPad();
     document.getElementById('moves').addEventListener('contextmenu', e => {
       const b = e.target.closest('.mv'); if (!b || !D) return;
       e.preventDefault();
@@ -1995,6 +2003,42 @@ const Dungeon = (() => {
         dash: () => { D.dashNext = !D.dashNext; updateDashBtn(); log(D.dashNext ? '대쉬 준비! 방향을 누르면 쭉 달린다.' : '대쉬를 취소했다.', now()); },
         mission: () => Game.showMissions(), map: () => toggleMap() })[k]?.();
     });
+  }
+
+  // 터치 화면용 방향 버튼: 누르고 있으면 계속 걷는다. 가운데 ↻를 누른 뒤 방향을 누르면 방향만 바꾼다
+  function initPad() {
+    const pad = document.getElementById('dpad'); if (!pad) return;
+    let timer = null, dir = null, face = false;
+    const faceBtn = pad.querySelector('[data-face]');
+    const setFace = v => { face = v; faceBtn.classList.toggle('on', v); };
+    const fire = () => {
+      if (!D || D.dead || UI.isOpen() || bigMap || dir == null || busy()) return;
+      if (face) { setFace(false); act({ t: 'face', dir }); stop(); return; }
+      if (D.dashNext) { D.dashNext = false; updateDashBtn(); startAuto('dash', { dir }); stop(); return; }
+      act({ t: 'move', dir });
+    };
+    const stop = () => { clearInterval(timer); timer = null; dir = null; pad.querySelectorAll('.held').forEach(b => b.classList.remove('held')); };
+    pad.addEventListener('pointerdown', e => {
+      const b = e.target.closest('button'); if (!b || !D) return;
+      e.preventDefault();
+      if (b.dataset.face != null) { setFace(!face); return; }
+      if (D.auto) { stopAuto(); return; }
+      if (bigMap) { toggleMap(false); return; }
+      stop();
+      dir = dirIndex(+b.dataset.dx, +b.dataset.dy);
+      b.classList.add('held');
+      fire();
+      if (dir != null) timer = setInterval(fire, 40);   // 걷는 연출이 끝나는 대로 다음 칸
+    });
+    // 누른 채로 손가락을 옆 버튼으로 옮기면 방향이 바뀐다
+    pad.addEventListener('pointermove', e => {
+      if (dir == null) return;
+      const b = document.elementFromPoint(e.clientX, e.clientY)?.closest('#dpad button[data-dx]'); if (!b) return;
+      const d = dirIndex(+b.dataset.dx, +b.dataset.dy);
+      if (d !== dir) { pad.querySelectorAll('.held').forEach(x => x.classList.remove('held')); b.classList.add('held'); dir = d; }
+    });
+    for (const ev of ['pointerup', 'pointercancel', 'pointerleave']) pad.addEventListener(ev, stop);
+    pad.addEventListener('contextmenu', e => e.preventDefault());
   }
 
   function enter(r) {
