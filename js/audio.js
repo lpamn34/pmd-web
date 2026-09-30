@@ -172,6 +172,7 @@ const Sound = (() => {
   const found = {};          // 파일 키 → URL 또는 null (한 번 찾으면 기억)
   let uploadedKeys = new Set();
   let fileUrl = null, fileKey = null, player = null, seq = 0, previewing = false;
+  let playTok = 0;   // 재생 요청 번호: 불러오는 사이에 새 요청이나 정지가 있으면 옛 요청은 소리를 내지 않는다
   // 불러온 파일은 용량이 커서 IndexedDB에 저장한다
   const IDB = {
     db: null,
@@ -273,6 +274,7 @@ const Sound = (() => {
   const fileKeyOf = url => urlKey[url] || null;
   // keep: 곡 정보는 남겨 두고 소리만 멈춘다 (배경음을 끈 경우)
   function stopFile(keep) {
+    playTok++;
     if (player) {
       if (player.src) { try { player.src.stop(); } catch (e) { /* 이미 멈춤 */ } }
       if (player.el) { player.el.pause(); clearInterval(player.timer); }
@@ -285,11 +287,11 @@ const Sound = (() => {
     stopFile();
     fileUrl = url; fileKey = key;
     if (!unlocked || set().bgm === false || !ctx()) return;   // 나중에 unlock/refresh에서 다시 시작
-    const my = seq;
+    const my = seq, tok = ++playTok;
     if (canFetch(url)) {
       try {
         const { buf, tags } = await loadBuffer(url);
-        if (my !== seq || fileUrl !== url) return;
+        if (my !== seq || tok !== playTok || fileUrl !== url) return;
         const L = loopFor(key, tags, buf.duration);
         const src = ac.createBufferSource();
         src.buffer = buf; src.loop = true;
