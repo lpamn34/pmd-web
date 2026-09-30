@@ -51,6 +51,7 @@ npx http-server -p 8765
 - 오늘의 도전은 날짜로 난수를 고정합니다 (`js/progress.js`). 던전·아이템을 추가하면 같은 날짜라도 맵이 달라지므로, 친구와는 같은 버전을 쓰세요.
 - 던전 타일은 기본적으로 `js/tiles.js`에서 코드로 그립니다. `tiles/던전ID.png`(DTEF 형식)를 넣거나 정보 탭에서 불러오면 그 타일셋을 씁니다 (`tiles/README.txt` 참고).
 - 배경음은 기본적으로 합성하지만, `music/이름.ogg` 등을 넣거나 정보 탭에서 불러오면 그 파일을 반복 재생합니다 (`music/README.txt` 참고). 인트로 뒤 루프 구간은 파일 안의 루프 정보나 `music/loops.js`로 정합니다.
+- **원작 음악 파일은 이 저장소에 없습니다.** 별도 저장소 [pmd-fan-web/assets](https://github.com/pmd-fan-web/assets)에 두고, 사이트에서는 `/assets/music/`에서 불러옵니다 (`js/config.js`의 `MUSIC_BASE`). 권리자 요청으로 그 저장소를 내려도 게임은 합성 배경음으로 계속 동작합니다. 내 컴퓨터에서 테스트할 때는 게임 폴더의 `music/`에 파일을 넣어 두면 됩니다 (git에는 올라가지 않음).
 - 배포용 zip은 `python make_release.py`로 만듭니다. 게임 파일과 `tiles/`, `music/` 폴더를 묶고, 빠진 타일셋·음악이 있으면 알려 줍니다.
 
 ## 문의 · 삭제 요청
@@ -59,7 +60,7 @@ npx http-server -p 8765
 ## 크레딧과 라이선스
 - **이 게임의 소스 코드**(`index.html`, `css/`, `js/`, 스크립트 파일. 단 `js/data.js`에 담긴 포켓몬 데이터는 제외): [GNU AGPL-3.0](LICENSE). 자유롭게 보고, 고치고, 다시 배포할 수 있지만, 고친 버전을 배포하거나 웹사이트로 서비스하면 그 소스 코드도 같은 라이선스로 공개해야 합니다.
 - 아래 에셋과 데이터는 AGPL 대상이 **아니며** 각자의 권리와 라이선스를 따릅니다.
-- 배포본의 `tiles/`, `music/` 폴더에 들어 있는 원작 던전 타일셋과 음악: Pokémon Mystery Dungeon 시리즈에서 가져온 것으로, 저작권은 Nintendo / Creatures Inc. / GAME FREAK inc. / Spike Chunsoft에 있습니다. 비상업적 팬 게임이며, 권리자의 요청이 있으면 내립니다.
+- 원작 음악(별도 저장소 pmd-fan-web/assets)과 배포본의 `tiles/`, `music/` 폴더에 들어 있는 원작 던전 타일셋·음악: Pokémon Mystery Dungeon 시리즈에서 가져온 것으로, 저작권은 Nintendo / Creatures Inc. / GAME FREAK inc. / Spike Chunsoft에 있습니다. 비상업적 팬 게임이며, 권리자의 요청이 있으면 내립니다.
 - 포켓몬 스프라이트와 초상화: PMD Sprite Repository (SpriteCollab), CC BY-NC 4.0. 제작자별 크레딧은 게임 안에서 볼 수 있습니다.
 - 포켓몬 데이터(이름, 능력치, 기술, 특성): PokeAPI.
 - Pokémon © Nintendo / Creatures Inc. / GAME FREAK inc. Pokémon Mystery Dungeon © Spike Chunsoft.
