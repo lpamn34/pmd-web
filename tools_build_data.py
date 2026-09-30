@@ -29,6 +29,23 @@ species_rows={int(r['id']):r for r in R('pokemon_species')}
 poke={}
 for r in R('pokemon'):
     if r['is_default']=='1': poke[int(r['species_id'])]=r
+# 걷는 모습이 없는 진화형은 진화 전 포켓몬의 걷는 모습을 빌려 쓴다 (sb = 빌린 번호). 능력치·기술·초상화는 자기 것
+borrow={}
+changed=True
+while changed:
+    changed=False
+    for c,row in species_rows.items():
+        f=int(row['evolves_from_species_id'] or 0)
+        if c<=1025 and c in poke and c not in sprite_ids and c not in borrow and (f in sprite_ids or f in borrow):
+            borrow[c]=borrow.get(f,f); changed=True
+for c,b in borrow.items():
+    v=t.get('%04d'%c,{}); pc=v.get('portrait_credit',{})
+    p=[cname(pc['primary'])]+[cname(x) for x in pc.get('secondary',[])] if pc.get('primary') else []
+    credit[c]=[credit[b][0], ', '.join(dict.fromkeys(p))]
+    emo[c]=''.join(EM[e] for e in v.get('portrait_files',{}) if e in EM)
+    sh=v.get('subgroups',{}).get('0000',{}).get('subgroups',{}).get('0001')
+    shiny[c]=[shiny[b][0], ''.join(EM[e] for e in (sh or {}).get('portrait_files',{}) if e in EM)]
+all_ids=sprite_ids|set(borrow)
 pid2sp={int(r['id']):s for s,r in poke.items()}
 stats=collections.defaultdict(lambda:[0]*6)
 for r in R('pokemon_stats'):
@@ -141,11 +158,11 @@ for r in sorted(R('pokemon_abilities'),key=lambda r:int(r['slot'])):
     if p in pid2sp: sp_ab[pid2sp[p]].append([int(r['ability_id']),int(r['is_hidden'])])
 used_ab={}
 sp={}
-for s in sorted(sprite_ids):
+for s in sorted(all_ids):
     if s not in poke: print('skip',s); continue
     evos=[]
     for c,row in species_rows.items():
-        if I(row['evolves_from_species_id'])==s and c in sprite_ids:
+        if I(row['evolves_from_species_id'])==s and c in all_ids:
             rs=evo_rows.get(c,[]); e=rs[0] if rs else {}
             trig=I(e.get('evolution_trigger_id')); ml=I(e.get('minimum_level'))
             if trig==1 and ml: evos.append([c,ml,0])
@@ -157,6 +174,7 @@ for s in sorted(sprite_ids):
            'l':learnset(s),'v':evos,'g':I(species_rows[s]['generation_id']),'cr':credit.get(s),
            'ab':sp_ab.get(s,[]),'em':emo.get(s,'N'),'sh':shiny.get(s,[0,''])[0],'sem':shiny.get(s,[0,''])[1],
            'lg':1 if species_rows[s]['is_legendary']=='1' or species_rows[s]['is_mythical']=='1' else 0}
+    if s in borrow: sp[s]['sb']=borrow[s]
 tm_list=sorted(set().union(*sp_tm.values()))
 tm_index={m:i for i,m in enumerate(tm_list)}
 for s_id,st in sp_tm.items():

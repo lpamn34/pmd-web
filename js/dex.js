@@ -105,6 +105,7 @@ const Dex = (() => {
       html: `<div class="dex-poke">
         <div class="cc-top">${portraitImg(id, 'portrait big')}<div><div class="cc-name">${esc(d.n)}</div><div class="dim">${esc(d.e)} · ${d.g}세대${d.lg ? ' · 전설/환상' : ''}</div>
           <div>${typeBadges(d.t)}</div><div class="dim">📖 ${rec} · 레벨업 ${expDiv(id) > 1.01 ? `느림 (필요 경험치 ${+expDiv(id).toFixed(2)}배)` : expDiv(id) < 0.99 ? `빠름 (필요 경험치 ${+expDiv(id).toFixed(2)}배)` : '보통'}</div>${played ? `<div class="note ms">플레이 기록 Lv${played.lv}</div>` : ''}</div></div>
+        ${borrowNote(id) ? `<p class="note">${esc(borrowNote(id))}</p>` : ''}
         <table class="dex-stats">${d.b.map((v, i) => `<tr><td>${labels[i]}</td><td class="num">${v}</td><td><span class="sbar"><i style="width:${Math.min(100, v / 1.8)}%;background:${v >= 100 ? '#4de36b' : v >= 70 ? '#f5d142' : '#f58a42'}"></i></span></td></tr>`).join('')}
           <tr><td>합계</td><td class="num"><b>${bst(id)}</b></td><td></td></tr></table>
         <h3>특성</h3>${d.ab.map(([aid, hid]) => `<div class="row clickable" data-dexability="${aid}"><div class="grow"><b>${esc(abilityName(aid))}</b>${hid ? ' <span class="dim">(숨겨진 특성)</span>' : ''}<div class="dim">${esc(abilityDesc(aid).dungeon || abilityDesc(aid).exact || abilityDesc(aid).d)}</div></div></div>`).join('')}

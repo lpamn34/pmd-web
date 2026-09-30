@@ -897,7 +897,7 @@ const Game = (() => {
         <button class="btn sm ghost" data-act="unhold">빼기</button>` : '<span class="grow dim">지닌 물건이 없습니다. 상점에서 사거나 던전에서 주울 수 있어요.</span>'}
         <button class="btn sm" data-act="hold">${ch.held ? '바꾸기' : '지니게 하기'}</button></div>
       <h3>진화</h3>
-      ${evos.length ? evos.map(e => `<div class="row">${portraitImg(e.to, 'portrait sm')}<div class="grow"><b>${esc(spName(e.to))}</b> ${typeBadges(DATA.species[e.to].t)}<div class="dim">${e.req}</div></div>
+      ${evos.length ? evos.map(e => `<div class="row">${portraitImg(e.to, 'portrait sm')}<div class="grow"><b>${esc(spName(e.to))}</b> ${typeBadges(DATA.species[e.to].t)}<div class="dim">${e.req}</div>${borrowNote(e.to) ? `<div class="dim tiny">${esc(borrowNote(e.to))}</div>` : ''}</div>
         <button class="btn sm" data-act="evolve" data-arg="${e.to}" ${e.ok ? '' : 'disabled'}>진화</button></div>`).join('') : '<p class="dim">더 이상 진화하지 않습니다.</p>'}
       <h3>영입한 포켓몬 <span class="dim">(각자 레벨이 따로 저장됩니다 · 지금 영입 확률 ${(recruitRate(ch.lv) * 100).toFixed(1)}%)</span></h3>
       <div class="roster">${roster.map(id => `<button class="rcard ${id === sp ? 'on' : ''}" data-act="switch" data-arg="${id}">${portraitImg(id, 'portrait sm')}<span>${esc(spName(id))}</span><span class="dim">Lv${save.roster[id].lv}</span></button>`).join('')}</div>`;
@@ -1332,6 +1332,7 @@ const Game = (() => {
     const sp = save.current, e = evoOptions(sp).find(o => o.to === to);
     if (!e || !e.ok) return;
     let msg = `<p>${esc(jo(spName(sp), '이'))} ${esc(jo(spName(to), '으로'))} 진화합니다.</p>`;
+    if (borrowNote(to)) msg += `<p class="dim">${esc(borrowNote(to))}</p>`;
     if (save.roster[to]) msg += `<p class="warn">이미 있는 ${esc(spName(to))}의 기록(Lv${save.roster[to].lv})을 덮어씁니다.</p>`;
     if (!(await UI.confirm('진화', msg, '진화한다', '그만둔다'))) return;
     if (e.itemId) {

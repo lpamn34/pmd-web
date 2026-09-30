@@ -185,6 +185,7 @@ for base, fk, fv, reg, ident, pid in sorted(targets):
     if (bid, region) in REGION_EVO:
         c = sp_ident[REGION_EVO[(bid, region)]]
         if str(c) in species: evos.append([c] + evo_cond(c))
+        if str(c) in species and species[str(c)].get('sb') == base: species[str(c)]['sb'] = fid   # 빌린 그림도 그 지방 모습으로
     else:
         for e in species.get(str(base), {}).get('v', []):
             if (e[0], region) in form_of: evos.append([form_of[(e[0], region)], e[1], e[2]])

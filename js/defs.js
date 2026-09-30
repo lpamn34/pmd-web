@@ -3,7 +3,7 @@
 
 // 게임 버전: 업데이트할 때 올리고, index.html의 ?v= 숫자도 같이 올린다
 // (친구와 구조 코드·오늘의 도전을 주고받으려면 버전이 같아야 한다)
-const GAME_VERSION = '0.33';
+const GAME_VERSION = '0.34';
 // 버전 비교: '0.25' > '0.9' 처럼 숫자로 비교한다
 function cmpVer(a, b) {
   const x = String(a).split('.').map(Number), y = String(b).split('.').map(Number);
@@ -12,6 +12,7 @@ function cmpVer(a, b) {
 }
 const GAME_DATE = '2026-10-01';
 const VERSION_NOTES = [
+  ['0.34', ['던전 그림이 없어 빠져 있던 진화형 17종 추가 (형사구스, 바오키, 마셰이드 등): 던전에서는 진화 전 모습의 그림을 빌려 쓰고, 종족값·특성·기술은 원래대로', '마임꽁꽁은 가라르 마임맨에서 진화']],
   ['0.33', ['원거리 기술 사거리 8칸 → 5칸', '구조를 기다리는 던전에는 구조받거나 포기할 때까지 들어갈 수 없음', '정보 탭에 스타팅 순위 (로그인한 탐험대가 처음 고른 포켓몬, 하루에 한 번 갱신)']],
   ['0.32', ['닉네임 금칙어 (욕설·비하·운영자 사칭), 다른 사람 화면에서도 가려짐', '계정 삭제 (서버의 세이브·닉네임·구조 요청을 모두 지움, 원하면 이 브라우저의 세이브도)', '가입 화면에 비밀번호 찾기 불가 안내, 정보 탭에 개인정보 안내',
     '포켓몬 그림을 jsDelivr(CDN)로 불러와 더 빠르고 안정적으로 (실패하면 원래 주소로)']],
@@ -440,6 +441,8 @@ const dexNo = id => { const f = formOf(id); return f ? `${pad4(f[0])}-${+f[1]}` 
 const dexKey = id => { const f = formOf(id); return f ? f[0] + (+f[1]) / 100 : +id; };
 const byDex = (a, b) => dexKey(a) - dexKey(b);
 // SpriteCollab 폴더: 0026/ (이로치 0026/0000/0001/), 리전폼 0026/0001/ (이로치 0026/0001/0001/)
+// 던전 그림이 없어 진화 전 포켓몬의 그림을 빌려 쓰는 포켓몬 안내 (species.sb)
+const borrowNote = id => { const b = DATA.species[id]?.sb; return b ? `🖼 아직 ${spName(id)}의 던전 그림이 없어서, 던전에서는 진화 전 모습인 ${spName(b)}의 그림으로 보여요. 종족값·타입·특성·기술은 ${spName(id)}의 것이 그대로 적용돼요. (초상화는 ${spName(id)}의 것)` : ''; };
 const spritePath = (id, shiny) => { const f = formOf(id); return f ? `${pad4(f[0])}/${f[1]}/${shiny ? '0001/' : ''}` : `${pad4(id)}/${shiny ? '0000/0001/' : ''}`; };
 const spName = id => DATA.species[id]?.n || ('#' + id);
 // 폼체인지·메가진화 모습(species.fc)은 따로 나오는 포켓몬이 아니다: 목록을 돌 때는 원래 포켓몬만 (js/forms.js)
