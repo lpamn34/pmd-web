@@ -5,13 +5,28 @@ service cloud.firestore {
   match /databases/{database}/documents {
     function signedIn() { return request.auth != null; }
     function shortName(n) { return n is string && n.size() > 0 && n.size() <= 16; }
+    // 닉네임은 names/{소문자 닉네임} 문서로 먼저 차지한 사람만 쓸 수 있다 (겹치기·사칭 방지)
+    function ownsName(n) {
+      return shortName(n) && get(/databases/$(database)/documents/names/$(n.lower())).data.uid == request.auth.uid;
+    }
+
+    match /names/{name} {
+      allow read: if true;
+      allow create: if signedIn() && name.size() <= 16
+        && request.resource.data.keys().hasOnly(['uid']) && request.resource.data.uid == request.auth.uid;
+      allow delete: if signedIn() && resource.data.uid == request.auth.uid;
+    }
 
     // 계정별 정보와 클라우드 세이브: 본인만 읽고 쓴다
     match /users/{uid} {
       allow read, delete: if signedIn() && request.auth.uid == uid;
-      allow create, update: if signedIn() && request.auth.uid == uid
+      allow create: if signedIn() && request.auth.uid == uid
         && request.resource.data.keys().hasOnly(['name', 'id', 'created', 'save', 'savedAt', 'ver'])
-        && (!('name' in request.resource.data) || shortName(request.resource.data.name))
+        && (!('name' in request.resource.data) || ownsName(request.resource.data.name))
+        && (!('save' in request.resource.data) || (request.resource.data.save is string && request.resource.data.save.size() < 400000));
+      allow update: if signedIn() && request.auth.uid == uid
+        && request.resource.data.keys().hasOnly(['name', 'id', 'created', 'save', 'savedAt', 'ver'])
+        && (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['name']) || ownsName(request.resource.data.name))
         && (!('save' in request.resource.data) || (request.resource.data.save is string && request.resource.data.save.size() < 400000));
     }
 
@@ -23,7 +38,7 @@ service cloud.firestore {
         && request.resource.data.keys().hasOnly(['owner', 'name', 'dungeon', 'floor', 'sp', 'lv', 'shiny', 'ver', 'key', 'status', 'created'])
         && request.resource.data.owner == request.auth.uid
         && request.resource.data.status == 'open'
-        && shortName(request.resource.data.name)
+        && ownsName(request.resource.data.name)
         && request.resource.data.floor is int && request.resource.data.sp is int && request.resource.data.lv is int;
       allow update: if signedIn() && (
         // 구조: 다른 사람이, 열린 요청을 구조됨으로 (한 번만)
@@ -32,7 +47,7 @@ service cloud.firestore {
           && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'key', 'rescuer'])
           && request.resource.data.rescuer.keys().hasOnly(['uid', 'name', 'sp', 'lv', 'shiny'])
           && request.resource.data.rescuer.uid == request.auth.uid
-          && shortName(request.resource.data.rescuer.name))
+          && ownsName(request.resource.data.rescuer.name))
         ||
         // 감사 편지: 요청자가, 구조된 요청에 한 번만
         (resource.data.status == 'rescued' && resource.data.owner == request.auth.uid

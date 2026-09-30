@@ -46,6 +46,11 @@ const Online = (() => {
   async function loadProfile() {
     const d = await db.collection('users').doc(user.uid).get();
     profile = d.exists ? d.data() : {};
+    // 닉네임을 겹치지 않게 하기 전에 만든 계정: 로그인할 때 차지해 둔다 (이미 다른 사람이 쓰면 바꾸라고 안내)
+    if (profile.name) {
+      try { await claimName(profile.name); profile.nameOk = true; }
+      catch (e) { if (e.taken) profile.nameTaken = true; }
+    }
   }
   const name = () => (profile && profile.name) || (user ? user.email.replace(MAIL, '') : '');
   const userId = () => (user ? user.email.replace(MAIL, '') : '');
@@ -65,25 +70,50 @@ const Online = (() => {
   }
 
   const ID_RE = /^[a-z0-9_]{3,16}$/;
-  function checkName(n) {
+  function checkName(n, max = 10) {
     n = String(n || '').trim();
     if (!n) return '닉네임을 입력해 주세요.';
-    if (n.length > 10) return '닉네임은 10자까지입니다.';
-    if (/[<>&"'`\\]/.test(n)) return '닉네임에 쓸 수 없는 기호가 있습니다.';
+    if (n.length > max) return `닉네임은 ${max}자까지입니다.`;
+    if (!/^[\p{L}\p{N} _.\-]+$/u.test(n) || /^\.+$/.test(n) || /^__.*__$/.test(n)) return '닉네임에는 글자, 숫자, 띄어쓰기, _ . - 만 쓸 수 있습니다.';
     return null;
   }
+  // ── 닉네임은 겹치지 않게: names/{소문자 닉네임} = { uid } 로 먼저 차지한다 (아이디는 로그인 기능이 알아서 겹치지 않게 한다)
+  const nameKey = n => String(n).trim().normalize('NFC').toLowerCase();
+  async function nameFree(n) {
+    const d = await db.collection('names').doc(nameKey(n)).get();
+    return !d.exists || (user && d.data().uid === user.uid);
+  }
+  async function claimName(n, old) {
+    const ref = db.collection('names').doc(nameKey(n));
+    await db.runTransaction(async t => {
+      const d = await t.get(ref);
+      if (d.exists && d.data().uid !== user.uid) throw { taken: true };
+      if (!d.exists) t.set(ref, { uid: user.uid });
+    });
+    if (old && nameKey(old) !== nameKey(n)) await db.collection('names').doc(nameKey(old)).delete().catch(() => {});
+  }
+  const TAKEN = '이미 누가 쓰고 있는 닉네임입니다. 다른 닉네임을 골라 주세요.';
   async function signUp(id, pw, nick) {
-    id = String(id || '').trim().toLowerCase(); nick = String(nick || '').trim() || id;
+    id = String(id || '').trim().toLowerCase(); nick = String(nick || '').trim();
     if (!ID_RE.test(id)) throw { msg: '아이디는 영어 소문자, 숫자, _ 로 3~16자입니다.' };
     if (String(pw).length < 6) throw { msg: '비밀번호는 6자 이상이어야 합니다.' };
-    const bad = checkName(nick); if (bad) throw { msg: bad };
+    const bad = nick ? checkName(nick) : null; if (bad) throw { msg: bad };
+    nick = nick || id;
     await init();
-    try {
-      const cred = await auth.createUserWithEmailAndPassword(id + MAIL, pw);
-      user = cred.user;
-      profile = { name: nick, id };
-      await db.collection('users').doc(user.uid).set({ name: nick, id, created: Date.now() }, { merge: true });
-    } catch (e) { throw { msg: why(e) }; }
+    let free;
+    try { free = await nameFree(nick); } catch (e) { throw { msg: why(e) }; }
+    if (!free) throw { msg: nick === id ? '아이디와 같은 닉네임을 이미 누가 쓰고 있어요. 닉네임을 따로 정해 주세요.' : TAKEN };
+    try { user = (await auth.createUserWithEmailAndPassword(id + MAIL, pw)).user; }
+    catch (e) { throw { msg: why(e) }; }
+    profile = { id };
+    try { await claimName(nick); }
+    catch (e) {   // 그 사이에 누가 먼저 가져감: 가입은 됐으니 닉네임만 다시 정하게 한다
+      await db.collection('users').doc(user.uid).set({ id, created: Date.now() }, { merge: true }).catch(() => {});
+      throw { msg: e.taken ? '가입은 됐지만 그 닉네임을 방금 다른 사람이 가져갔어요. 계정 → 닉네임 바꾸기에서 정해 주세요.' : why(e), joined: true };
+    }
+    profile = { name: nick, id, nameOk: true };
+    try { await db.collection('users').doc(user.uid).set({ name: nick, id, created: Date.now() }, { merge: true }); }
+    catch (e) { throw { msg: why(e), joined: true }; }
   }
   async function signIn(id, pw) {
     id = String(id || '').trim().toLowerCase();
@@ -94,9 +124,13 @@ const Online = (() => {
   }
   async function signOut() { if (auth) await auth.signOut(); user = null; profile = null; }
   async function setName(nick) {
+    nick = String(nick || '').trim();
     const bad = checkName(nick); if (bad) throw { msg: bad };
-    try { await db.collection('users').doc(user.uid).set({ name: nick.trim() }, { merge: true }); profile = { ...profile, name: nick.trim() }; }
-    catch (e) { throw { msg: why(e) }; }
+    try {
+      await claimName(nick, profile && profile.nameOk ? profile.name : null);
+      await db.collection('users').doc(user.uid).set({ name: nick }, { merge: true });
+      profile = { ...profile, name: nick, nameOk: true, nameTaken: false };
+    } catch (e) { throw { msg: e.taken ? TAKEN : why(e) }; }
   }
 
   // ── 클라우드 세이브: users/{uid}.save (JSON 문자열), savedAt (저장한 시각) ──
@@ -107,7 +141,7 @@ const Online = (() => {
   }
   async function pushCloud(raw, savedAt) {
     if (!user) return;
-    await db.collection('users').doc(user.uid).set({ save: raw, savedAt, ver: GAME_VERSION, name: name() }, { merge: true });
+    await db.collection('users').doc(user.uid).set({ save: raw, savedAt, ver: GAME_VERSION }, { merge: true });
     profile = { ...profile, save: raw, savedAt, ver: GAME_VERSION };
   }
   async function clearCloud() {
@@ -150,7 +184,7 @@ const Online = (() => {
   const deleteSOS = id => db.collection('sos').doc(String(id)).delete();
 
   return {
-    enabled, init, onChange, loggedIn, name, userId, why,
+    enabled, init, onChange, loggedIn, name, userId, why, nameTaken: () => !!(profile && profile.nameTaken),
     signUp, signIn, signOut, setName, uid: () => user && user.uid,
     fetchCloud, pushCloud, clearCloud,
     postSOS, listSOS, getSOS, claimRescue, thankSOS, deleteSOS,

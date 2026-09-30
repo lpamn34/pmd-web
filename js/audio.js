@@ -23,7 +23,7 @@ const Sound = (() => {
   // 설정의 켜기/끄기와 음량을 반영
   function refresh() {
     const s = set();
-    const mv = s.bgm === false ? 0 : (s.bgmVol ?? 40) / 100 * 0.8;
+    const mv = s.bgm === false ? 0 : (s.bgmVol ?? 40) / 100 * 0.8 * trackVol(fileKey);
     if (musicGain) musicGain.gain.value = mv;
     if (player && player.el) { player.el.volume = mv; if (s.bgm === false) player.el.pause(); else if (unlocked && player.el.paused) player.el.play().catch(() => {}); }
     if (s.bgm === false && player && player.src) stopFile(true);
@@ -248,6 +248,8 @@ const Sound = (() => {
     const start = clamp(+u.start || 0, 0, dur), end = +u.end > start ? Math.min(+u.end, dur) : dur;
     return end - start > 0.2 ? { start, end } : null;
   }
+  // 곡마다 음량 보정 (music/loops.js 의 MUSIC_VOLUME, 1 = 그대로)
+  const trackVol = key => { const v = (window.MUSIC_VOLUME || {})[key]; return v > 0 ? Math.min(v, 2) : 1; };
   const canFetch = url => url.startsWith('blob:') || /^https?:/.test(location.protocol);
   const bufCache = new Map();   // url → { buf, tags } (용량이 커서 최근 2곡만)
   async function loadBuffer(url) {

@@ -218,7 +218,8 @@ const Game = (() => {
         <label>아이디 <input id="ac-id" autocomplete="username" maxlength="16" placeholder="영어 소문자·숫자·_ 3~16자" autocapitalize="off" spellcheck="false"></label>
         <label>비밀번호 <input id="ac-pw" type="password" autocomplete="${su ? 'new-password' : 'current-password'}" placeholder="6자 이상"></label>
         ${su ? `<label>비밀번호 확인 <input id="ac-pw2" type="password" autocomplete="new-password"></label>
-        <label>닉네임 <input id="ac-nick" maxlength="10" placeholder="구조 게시판에 보이는 이름 (한글 가능, 비우면 아이디)"></label>` : ''}
+        <label>닉네임 <input id="ac-nick" maxlength="10" placeholder="구조 게시판에 보이는 이름 (한글 가능, 비우면 아이디)"></label>
+        <p class="dim tiny">아이디와 닉네임은 다른 사람과 겹칠 수 없어요.</p>` : ''}
         <p id="ac-msg" class="warn"></p></div>
         ${su ? '<p class="dim tiny">아이디와 비밀번호만으로 가입해요. 이메일 같은 개인정보는 받지 않아요.<br>※ 그래서 <b>비밀번호 찾기가 없어요.</b> 잊으면 계정을 되찾을 수 없으니 잘 적어 두세요. 다른 사이트에서 쓰는 비밀번호는 쓰지 마세요.</p>'
           : '<p class="dim tiny">로그인하면 세이브가 클라우드에도 저장되어 다른 기기에서 이어할 수 있고, 구조 게시판을 쓸 수 있어요.</p>'}`,
@@ -241,7 +242,10 @@ const Game = (() => {
       try {
         if (su) await Online.signUp(v('ac-id'), v('ac-pw'), v('ac-nick'));
         else await Online.signIn(v('ac-id'), v('ac-pw'));
-      } catch (e) { msg.textContent = e.msg || Online.why(e); busy = false; return; }
+      } catch (e) {
+        if (e.joined) { UI.close(m); UI.alert('☁ 가입', `<p>${esc(e.msg)}</p>`); afterLogin(); return; }
+        msg.textContent = e.msg || Online.why(e); busy = false; return;
+      }
       UI.close(m);
       UI.toast(su ? `가입했어요. ${Online.name()} 님, 환영합니다!` : `${Online.name()} 님, 어서 오세요!`);
       afterLogin();
@@ -253,6 +257,7 @@ const Game = (() => {
       title: '☁ 계정', wide: true,
       html: `<p>아이디 <b>${esc(Online.userId())}</b> · 닉네임 <b>${esc(Online.name())}</b></p>
         <p>클라우드 세이브: ${m && m.uid === Online.uid() ? `${esc(new Date(m.at).toLocaleString())}에 저장한 세이브와 맞춰져 있어요.` : '아직 올리지 않았어요.'}</p>
+        ${Online.nameTaken() ? '<p class="warn">이 닉네임은 다른 사람이 먼저 쓰고 있어요. 구조 게시판을 쓰려면 닉네임을 바꿔 주세요.</p>' : ''}
         ${cloudErr ? `<p class="warn">마지막 오류: ${esc(cloudErr)}</p>` : ''}
         <p class="dim">진행 상황은 1분에 한 번씩, 그리고 창을 닫거나 다른 탭으로 갈 때 자동으로 올라갑니다.</p>`,
       choices: [
