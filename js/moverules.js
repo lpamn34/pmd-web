@@ -2,6 +2,7 @@
 'use strict';
 
 const RECOIL_MUL = 0.5;     // 반동 데미지 완화 (원작의 절반)
+const PROJ_RANGE = 5;       // 원거리 기술 사거리 (직선 칸 수)
 const MOVE_RULES = {};
 function rule(ids, r) { for (const id of ids) MOVE_RULES[id] = { ...(MOVE_RULES[id] || {}), ...r }; }
 

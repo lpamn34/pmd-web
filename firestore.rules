@@ -46,6 +46,26 @@ service cloud.firestore {
       allow delete: if signedIn() && request.auth.uid == uid;   // 계정 삭제
     }
 
+    // 스타팅 순위: 계정마다 한 번 starterVotes/{uid}를 만들면서, 같은 요청에서 집계 문서의 그 포켓몬 수를 정확히 1 올린다
+    function voteDoc() { return /databases/$(database)/documents/starterVotes/$(request.auth.uid); }
+    function statsDoc() { return /databases/$(database)/documents/stats/starters; }
+    match /starterVotes/{uid} {
+      allow read: if signedIn() && request.auth.uid == uid;
+      allow create: if signedIn() && request.auth.uid == uid
+        && request.resource.data.keys().hasOnly(['sp', 'at'])
+        && request.resource.data.sp is int && request.resource.data.sp > 0 && request.resource.data.sp < 5000
+        && request.resource.data.at == request.time
+        && getAfter(statsDoc()).data.c.get(string(request.resource.data.sp), 0)
+           == (exists(statsDoc()) ? get(statsDoc()).data.c.get(string(request.resource.data.sp), 0) : 0) + 1;
+    }
+    match /stats/starters {
+      allow read: if true;
+      allow create, update: if signedIn() && !exists(voteDoc()) && existsAfter(voteDoc())
+        && request.resource.data.keys().hasOnly(['c'])
+        && request.resource.data.c.diff(resource == null ? {} : resource.data.c).affectedKeys()
+             .hasOnly([string(getAfter(voteDoc()).data.sp)]);
+    }
+
     // 구조 게시판
     match /sos/{id} {
       allow read: if signedIn();

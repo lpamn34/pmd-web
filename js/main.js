@@ -13,7 +13,7 @@ const Game = (() => {
   // ───────────────────────── 저장 ─────────────────────────
   function newSave(sp) {
     return {
-      v: SAVE_SCHEMA, gameVersion: GAME_VERSION, money: 500, day: 1, current: sp,
+      v: SAVE_SCHEMA, gameVersion: GAME_VERSION, money: 500, day: 1, current: sp, starter: sp,
       roster: { [sp]: newEntry(sp) },
       bag: [{ id: 'oran', n: 1 }, { id: 'oran', n: 1 }, { id: 'apple', n: 1 }],
       storage: {}, cleared: {}, best: {},
@@ -244,9 +244,17 @@ const Game = (() => {
       : `<button class="btn sm" data-acct>☁ 로그인 / 계정 만들기</button><div class="dim tiny">로그인 없이도 플레이할 수 있어요. 로그인하면 다른 기기에서 이어하고 구조 게시판을 쓸 수 있어요.</div>`;
     el.querySelector('[data-acct]').onclick = () => accountDialog();
   }
+  // 처음 고른 포켓몬을 스타팅 순위에 한 번 넣는다 (로그인한 사람만, 계정마다 한 번)
+  async function voteStarter() {
+    if (!Online.loggedIn() || !save || !save.starter || save.starterVoted) return;
+    try { await Online.voteStarter(save.starter); }
+    catch (e) { if (!/permission/.test(e.code || '')) { console.warn(e); return; } }   // 거절 = 이미 넣었음
+    save.starterVoted = true; persist();
+  }
   async function afterLogin() {
     renderAcct();
     await syncSave();
+    voteStarter();
     renderAcct();
     if (save && document.getElementById('town-screen').classList.contains('active')) { renderTown(); checkOnline(true); }
   }
@@ -424,6 +432,18 @@ const Game = (() => {
   }
 
   const ONLINE_RESCUE_MAX = 2;   // 게시판 구조 임무는 한 번에 이만큼 (한 사람이 요청을 다 가져가지 않게)
+  async function starterRank() {
+    let r;
+    try { r = await Online.starterRanks(); } catch (e) { UI.alert('🏆 스타팅 순위', `<p>${esc(Online.why(e))}</p>`); return; }
+    const list = Object.entries(r.c).map(([sp, n]) => [+sp, +n || 0]).filter(([sp, n]) => n > 0 && hasKey(DATA.species, sp)).sort((a, b) => b[1] - a[1] || a[0] - b[0]);
+    const total = list.reduce((t, [, n]) => t + n, 0);
+    let rank = 0, prev = -1;
+    const rows = list.slice(0, 20).map(([sp, n], i) => { if (n !== prev) { rank = i + 1; prev = n; }
+      return `<div class="row">${rank <= 3 ? ['🥇', '🥈', '🥉'][rank - 1] : `<b class="num">${rank}</b>`} ${portraitImg(sp, 'portrait sm')}<span class="grow"><b>${esc(spName(sp))}</b></span><span>${n}명 <span class="dim">(${Math.round(n * 100 / total)}%)</span></span></div>`; }).join('');
+    UI.alert('🏆 스타팅 순위', `${total ? rows : '<p>아직 집계된 탐험대가 없어요.</p>'}
+      <p class="dim tiny">총 ${total}명 · ${esc(r.day)} 기준 (하루에 한 번 갱신) · 로그인한 탐험대가 처음 고른 포켓몬만 세요 (v0.33부터 시작한 탐험대).</p>`);
+  }
+
   async function sosBoard() {
     if (!Online.loggedIn()) return accountDialog();
     let list;
@@ -470,7 +490,7 @@ const Game = (() => {
       onlineBoot = Online.init().then(async ok => {
         if (!ok) { document.getElementById('title-acct').innerHTML = '<span class="dim tiny">☁ 서버에 연결하지 못했어요. 로그인 없이 플레이할 수 있어요.</span>'; return; }
         renderAcct();
-        if (Online.loggedIn()) { await syncSave(); refreshTitle(); }
+        if (Online.loggedIn()) { await syncSave(); refreshTitle(); voteStarter(); }
         startPresence();
       });
       Online.onChange(() => { renderAcct(); presenceAt = 0; presenceTick(); showOnline(); });
@@ -489,7 +509,7 @@ const Game = (() => {
         return;
       }
       if (save) enterTown();
-      else Starter.begin(sp => { UI.closeAll(); save = newSave(sp); refreshDay(); persist(); enterTown(); UI.alert('환영합니다!', `<p>${esc(jo(spName(sp), '으로'))} 모험을 시작합니다.</p><p>마을에서 임무를 받고, 상점에서 준비한 뒤 던전으로 떠나 보세요.<br>던전 안에서 <b>O</b> 키로 자동 탐색, <b>Tab</b> 키로 자동 전투를 할 수 있습니다.<br>던전에서 쓰러뜨린 적이 가끔 동료가 되고 싶어 해요. 영입하면 캐릭터를 바꿀 수 있어요.</p>`); },
+      else Starter.begin(sp => { UI.closeAll(); save = newSave(sp); refreshDay(); persist(); enterTown(); voteStarter(); UI.alert('환영합니다!', `<p>${esc(jo(spName(sp), '으로'))} 모험을 시작합니다.</p><p>마을에서 임무를 받고, 상점에서 준비한 뒤 던전으로 떠나 보세요.<br>던전 안에서 <b>O</b> 키로 자동 탐색, <b>Tab</b> 키로 자동 전투를 할 수 있습니다.<br>던전에서 쓰러뜨린 적이 가끔 동료가 되고 싶어 해요. 영입하면 캐릭터를 바꿀 수 있어요.</p>`); },
         (cb, back) => chooseCharacter(cb, true, starterIds(), back));
     };
     refreshTitle();
@@ -683,7 +703,8 @@ const Game = (() => {
         ${dg.theme ? `<div class="note theme">👑 ${esc(dg.theme)} — 최종 보스 ${bossPool(dg).map(spName).join(' / ') || '?'}${bossPool(dg).length > 1 ? ' 중 하나' : ''}${midPool(dg).length ? ` · 중간 보스 ${dg.mid.floors.join(', ')}층` : ''}</div>` : ''}
         ${dg.mode === 'rogue' ? `<div class="note">입장 시 Lv${ROGUE_LEVEL}, 가방 초기화. 나오면 원래대로 돌아갑니다.</div>` : ''}
         ${ms ? `<div class="note ms">📜 진행 중인 임무 ${ms}개</div>` : ''}
-        <div class="dg-btns"><button class="btn" data-act="go" data-arg="${dg.id}" ${ok ? '' : 'disabled'}>${ok ? '출발' : `🔒 ${esc(dungeonById(dg.req).n)} 클리어 필요`}</button>
+        <div class="dg-btns">${sosLocked(dg.id) ? '<button class="btn" disabled title="구조를 받거나 포기하면 다시 들어갈 수 있어요">🆘 구조 대기 중</button>'
+          : `<button class="btn" data-act="go" data-arg="${dg.id}" ${ok ? '' : 'disabled'}>${ok ? '출발' : `🔒 ${esc(dungeonById(dg.req).n)} 클리어 필요`}</button>`}
           <button class="btn ghost" data-act="dg-info" data-arg="${dg.id}" title="나오는 적과 아이템">ℹ 정보</button></div></div>`;
     }).join('')}</div>`;
   }
@@ -1016,6 +1037,8 @@ const Game = (() => {
         <button class="btn sm ghost" data-act="version-notes">변경 내역</button></div>
       ${Online.enabled() ? `<h3>☁ 계정</h3><div class="row"><span class="grow">${Online.loggedIn() ? `<b>${esc(Online.name())}</b> 님으로 로그인 · 세이브가 클라우드에도 저장됩니다${cloudErr ? ` <span class="warn">(${esc(cloudErr)})</span>` : ''}` : '로그인하지 않았어요. 로그인하면 다른 기기에서 이어하고 구조 게시판을 쓸 수 있어요.'}</span>
         <button class="btn sm${Online.loggedIn() ? ' ghost' : ''}" data-act="account">${Online.loggedIn() ? '계정' : '로그인 / 가입'}</button></div>` : ''}
+      ${Online.enabled() ? `<h3>🏆 스타팅 순위</h3><div class="row"><span class="grow">탐험대가 처음 고른 포켓몬 순위 <span class="dim">(로그인한 탐험대 기준 · 하루에 한 번 갱신)</span></span>
+        <button class="btn sm ghost" data-act="starter-rank">보기</button></div>` : ''}
       <h3>📖 게임 가이드</h3><div class="btns">${Guide.buttons()}</div>
       <h3>설정</h3>
       <label class="chk"><input type="checkbox" data-set="fast" ${s.fast ? 'checked' : ''}> 빠른 연출</label>
@@ -1045,7 +1068,7 @@ const Game = (() => {
       <h3>개인정보</h3>
       <p class="dim">로그인하지 않으면 모든 기록은 이 브라우저에만 저장되고, 서버로 보내지 않습니다.
         로그인하면 <b>아이디, 닉네임, 세이브, 마지막 접속 시각</b>과 구조 게시판에 올린 요청만 서버(Google Firebase)에 저장합니다. 이메일·전화번호 같은 개인정보는 받지 않고, 광고나 방문 기록 분석도 하지 않습니다.
-        계정 창의 <b>계정 삭제</b>로 언제든 서버의 기록을 모두 지울 수 있습니다.</p>
+        계정 창의 <b>계정 삭제</b>로 언제든 서버의 기록을 모두 지울 수 있습니다. (스타팅 순위에 더해진 포켓몬 번호 하나는 누구 것인지 알 수 없는 형태로 순위에 남습니다.)</p>
       <p class="dim">비상업적 팬 게임입니다. Pokémon © Nintendo / Creatures Inc. / GAME FREAK inc. Pokémon Mystery Dungeon © Spike Chunsoft.</p>`;
   }
 
@@ -1130,6 +1153,7 @@ const Game = (() => {
       case 'code-enter': return enterCode();
       case 'account': return accountDialog();
       case 'sos-board': return sosBoard();
+      case 'starter-rank': return starterRank();
       case 'update': return askUpdate();
       case 'restore-backup': return restoreBackup(+arg);
       case 'dgtab': dgTab = arg; break;
@@ -1369,8 +1393,12 @@ const Game = (() => {
   }
 
   // ───────────────────────── 던전 출입 ─────────────────────────
+  // 구조를 기다리는 던전에는 들어갈 수 없다 (구조받거나 포기하면 풀린다)
+  const sosLocked = id => !!(save.sos && save.sos.dungeon === id);
+
   async function prepareRun(id) {
     const dg = dungeonById(id);
+    if (sosLocked(id)) { UI.alert('🆘 구조 대기 중', `<p>${esc(dg.n)}에서 구조를 기다리고 있어요. 구조를 받아 이어서 탐험하거나, 임무 탭에서 구조 요청을 포기하면 다시 들어갈 수 있어요.</p>`); return; }
     const ch = save.roster[save.current];
     if (dg.mode === 'rogue') {
       const ok = await UI.confirm(esc(dg.n), `<p><b>로그라이크 던전</b>입니다.</p><ul>

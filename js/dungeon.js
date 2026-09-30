@@ -560,7 +560,7 @@ const Dungeon = (() => {
       if (t && hostileTo(user, t) && diagOK(user.x, user.y, dx, dy)) targets = [t];
     } else if (move.r === 'p') {
       let x = user.x, y = user.y;
-      for (let i = 0; i < 8; i++) {   // 직선 기술은 대각선 벽 모서리를 스쳐 지나간다
+      for (let i = 0, n = PROJ_RANGE; i < n; i++) {   // 직선 기술은 대각선 벽 모서리를 스쳐 지나간다
         x += dx; y += dy;
         if (!floorAt(x, y)) break;
         const t = creatureAt(x, y);
@@ -944,7 +944,7 @@ const Dungeon = (() => {
       else useMove(e, -1, dir);
       return;
     }
-    if (sees && dist <= 6 && (dx === 0 || dy === 0 || Math.abs(dx) === Math.abs(dy))) {
+    if (sees && dist <= PROJ_RANGE && (dx === 0 || dy === 0 || Math.abs(dx) === Math.abs(dy))) {
       const proj = usable.filter(o => o.m.r === 'p' && o.m.c !== 1);
       if (proj.length && Math.random() < 0.45 * nerve && lineClear(e, dirIndex(dx, dy), dist)) { useMove(e, pick(proj).i, dirIndex(dx, dy)); return; }
     }
@@ -1059,7 +1059,7 @@ const Dungeon = (() => {
       const adj = vis.find(e => Math.max(Math.abs(e.x - p.x), Math.abs(e.y - p.y)) === 1 && diagOK(p.x, p.y, Math.sign(e.x - p.x), Math.sign(e.y - p.y)));
       if (adj) p.dir = dirIndex(adj.x - p.x, adj.y - p.y);
     } else if (mv.r === 'p') {
-      const al = vis.filter(e => { const dx = e.x - p.x, dy = e.y - p.y; return (dx === 0 || dy === 0 || Math.abs(dx) === Math.abs(dy)) && Math.max(Math.abs(dx), Math.abs(dy)) <= 8 && lineClear(p, dirIndex(dx, dy), Math.max(Math.abs(dx), Math.abs(dy))); })
+      const al = vis.filter(e => { const dx = e.x - p.x, dy = e.y - p.y; return (dx === 0 || dy === 0 || Math.abs(dx) === Math.abs(dy)) && Math.max(Math.abs(dx), Math.abs(dy)) <= PROJ_RANGE && lineClear(p, dirIndex(dx, dy), Math.max(Math.abs(dx), Math.abs(dy))); })
         .sort((a, b) => Math.max(Math.abs(a.x - p.x), Math.abs(a.y - p.y)) - Math.max(Math.abs(b.x - p.x), Math.abs(b.y - p.y)));
       if (al[0]) p.dir = dirIndex(al[0].x - p.x, al[0].y - p.y);
     }
@@ -1745,7 +1745,7 @@ const Dungeon = (() => {
       return;
     }
     const aligned = dx === 0 || dy === 0 || Math.abs(dx) === Math.abs(dy);
-    if (aligned && dist <= 8 && lineClear(p, dir, dist)) {
+    if (aligned && dist <= PROJ_RANGE && lineClear(p, dir, dist)) {
       const best = cands.filter(c => c.slot >= 0 && c.mv.r === 'p').sort((a, b) => b.s - a.s)[0];
       if (best && best.s > 0) { p.dir = dir; act({ t: 'skill', slot: best.slot, autoFace: false }); return; }
     }

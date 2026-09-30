@@ -120,7 +120,7 @@ function portraitImg(sp, cls = 'portrait', emotion = 'Normal', shiny = false) {
   return `<img class="${cls}" loading="lazy" src="${Sprites.portrait(sp, emotion, shiny)}" alt="" onerror="if(!this.dataset.r){this.dataset.r=1;this.src=spriteFallback(this.src)}else this.style.visibility='hidden'">`;
 }
 // 기술 상세 설명 (게임 내 실제 효과 기준)
-const RANGE_DESC = { f: '바로 앞 1칸의 적', p: '바라보는 방향 직선 8칸 안의 첫 번째 적', r: '주변 3칸 안의 모든 적', s: '자기 자신' };
+const RANGE_DESC = { f: '바로 앞 1칸의 적', p: '바라보는 방향 직선 N칸 안의 첫 번째 적', r: '주변 3칸 안의 모든 적', s: '자기 자신' };
 function moveEffects(mid) {
   const m = DATA.moves[mid], out = [];
   if (m.hits) out.push(`${m.hits[0]}~${m.hits[1]}회 연속으로 공격한다.`);
@@ -142,7 +142,7 @@ function moveDetailHtml(mid, pp, max) {
   return `<div class="move-detail">
     <div class="md-head"><span class="type" style="background:${TYPE_COLORS[m.t - 1]}">${typeName(m.t)}</span> <b>${esc(m.n)}</b> <span class="dim">${cls}</span></div>
     <table class="md-tbl"><tr><td>위력</td><td>${m.p || '—'}</td><td>명중</td><td>${m.a || '반드시 명중'}</td><td>PP</td><td>${pp != null ? pp + '/' + max : m.pp}</td></tr></table>
-    <div><span class="dim">범위</span> ${MOVE_RULES[mid]?.selfHeal ? RANGE_DESC.s : RANGE_DESC[m.r]}</div>
+    <div><span class="dim">범위</span> ${MOVE_RULES[mid]?.selfHeal ? RANGE_DESC.s : RANGE_DESC[m.r].replace('N', PROJ_RANGE)}</div>
     ${moveRuleText(mid) ? `<div class="md-rule">⚑ 던전 규칙: ${esc(moveRuleText(mid))}</div>` : ''}
     ${m.d ? `<p class="md-flavor">${esc(m.d)}</p>` : ''}
     ${moveEffects(mid).map(e => `<div class="md-eff">• ${esc(e)}</div>`).join('')}

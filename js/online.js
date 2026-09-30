@@ -293,8 +293,30 @@ const Online = (() => {
     return +((j[0] && j[0].result && j[0].result.aggregateFields.n.integerValue) || 0);
   }
 
+  // ── 스타팅 순위: 계정마다 한 번, starterVotes/{uid}를 만들면서 stats/starters의 그 포켓몬 수를 1 올린다 (규칙이 한 번·1만 허용) ──
+  async function voteStarter(sp) {
+    if (!user) return;
+    const b = db.batch();
+    b.set(db.collection('starterVotes').doc(user.uid), { sp, at: firebase.firestore.FieldValue.serverTimestamp() });
+    b.set(db.collection('stats').doc('starters'), { c: { [String(sp)]: firebase.firestore.FieldValue.increment(1) } }, { merge: true });
+    await b.commit();
+  }
+  // 순위는 하루에 한 번만 읽는다 (브라우저에 저장해 두고 날짜가 바뀌면 다시 읽음)
+  const RANK_KEY = 'pmdweb_starters';
+  async function starterRanks() {
+    const day = new Date().toLocaleDateString('sv');
+    let cached = null;
+    try { cached = JSON.parse(localStorage.getItem(RANK_KEY)); } catch (e) { /* 무시 */ }
+    if (cached && cached.day === day && cached.c) return cached;
+    if (!await init()) throw new Error('offline');
+    const d = await db.collection('stats').doc('starters').get();
+    const out = { day, c: (d.exists && d.data().c) || {} };
+    try { localStorage.setItem(RANK_KEY, JSON.stringify(out)); } catch (e) { /* 무시 */ }
+    return out;
+  }
+
   return {
-    touchPresence, onlineCount, PRESENCE_MIN, ONLINE_WINDOW,
+    touchPresence, onlineCount, PRESENCE_MIN, ONLINE_WINDOW, voteStarter, starterRanks,
     enabled, init, onChange, loggedIn, name, userId, why, nameTaken: () => !!(profile && profile.nameTaken),
     signUp, signIn, signOut, setName, deleteAccount, cleanName, uid: () => user && user.uid,
     fetchCloud, pushCloud, clearCloud,
