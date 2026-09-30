@@ -1,0 +1,5 @@
+# 예전 사본 / 배포용 zip / 작업 파일
+pmd/
+*.zip
+.claude/
+__pycache__/

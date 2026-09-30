@@ -1,0 +1,1240 @@
+// 게임 상태, 저장, 마을 UI
+'use strict';
+
+const SAVE_KEY = 'pmdweb_save_v1';
+// 창고 사용량: 겹치는 아이템은 종류당 1칸, 나머지는 개수만큼
+const storageUsedOf = st => Object.entries(st).reduce((s, [id, n]) => s + (n > 0 ? (ITEMS[id]?.stack ? 1 : n) : 0), 0);
+
+const Game = (() => {
+  let save = null;
+  let tab = 'dungeon';
+  let dgTab = 'normal';   // 던전 탭의 하위 탭
+
+  // ───────────────────────── 저장 ─────────────────────────
+  function newSave(sp) {
+    return {
+      v: 1, money: 500, day: 1, current: sp,
+      roster: { [sp]: newEntry(sp) },
+      bag: [{ id: 'oran', n: 1 }, { id: 'oran', n: 1 }, { id: 'apple', n: 1 }],
+      storage: {}, cleared: {}, best: {},
+      missions: { board: [], accepted: [] }, shop: [], run: null,
+      settings: { fast: false, autoDescend: false }, bagMax: BAG_BASE, storageMax: STORAGE_BASE,
+    };
+  }
+  const newEntry = sp => ({ lv: START_LEVEL, exp: expFor(START_LEVEL), moves: defaultMoves(sp, START_LEVEL), ability: defaultAbility(sp) });
+  // 저장된 특성이 그 포켓몬의 것이 아니면 기본 특성으로
+  const entryAbility = (sp, ch) => (ch && DATA.species[sp].ab.some(a => a[0] === ch.ability) ? ch.ability : defaultAbility(sp));
+  function persist() { try { localStorage.setItem(SAVE_KEY, JSON.stringify(save)); } catch (e) { /* 저장 불가 환경 */ } }
+  function load() { try { const s = localStorage.getItem(SAVE_KEY); return s ? JSON.parse(s) : null; } catch (e) { return null; } }
+
+  function show(id) {
+    document.querySelectorAll('.screen').forEach(s => s.classList.toggle('active', s.id === id));
+  }
+
+  // ───────────────────────── 시작 화면 ─────────────────────────
+  function boot() {
+    Dungeon.init();
+    if (Tiles.CUSTOM) Tiles.probe();
+    save = load();
+    if (save) { save.bagMax = save.bagMax || Math.max(BAG_BASE, save.bag.length); save.storageMax = save.storageMax || Math.max(STORAGE_BASE, storageUsedOf(save.storage)); }
+    document.getElementById('btn-start').onclick = () => {
+      if (save) enterTown();
+      else Starter.begin(sp => { UI.closeAll(); save = newSave(sp); refreshDay(); persist(); enterTown(); UI.alert('환영합니다!', `<p>${esc(jo(spName(sp), '으로'))} 모험을 시작합니다.</p><p>마을에서 임무를 받고, 상점에서 준비한 뒤 던전으로 떠나 보세요.<br>던전 안에서 <b>O</b> 키로 자동 탐색, <b>Tab</b> 키로 자동 전투를 할 수 있습니다.<br>던전에서 쓰러뜨린 적이 가끔 동료가 되고 싶어 해요. 영입하면 캐릭터를 바꿀 수 있어요.</p>`); },
+        (cb, back) => chooseCharacter(cb, true, starterIds(), back));
+    };
+    document.getElementById('btn-start').textContent = save ? '이어하기' : '새로 시작';
+    const n = Object.keys(DATA.species).length;
+    document.getElementById('title-sub').textContent = `v${GAME_VERSION} · 등장 포켓몬 ${n}종 · 스프라이트 PMD SpriteCollab`;
+    // 타이틀 장식
+    const deco = document.getElementById('title-deco');
+    const ids = Object.keys(DATA.species);
+    for (let i = 0; i < 7; i++) deco.insertAdjacentHTML('beforeend', portraitImg(pick(ids), 'deco'));
+    show('title-screen');
+    Sound.town();
+  }
+
+  // ───────────────────────── 마을 ─────────────────────────
+  function enterTown() {
+    show('town-screen');
+    Sound.town();
+    if (Progress.check().length) persist();
+    if (!save.shop.length || !save.missions.board.length) refreshDay();
+    renderTown();
+    if (save.run) {
+      const r = save.run;
+      UI.open({
+        title: '탐험 재개', html: `<p>${esc(dungeonById(r.dungeon).n)} ${r.floor}F 탐험이 중단되어 있습니다.</p><p>이어서 하면 해당 층의 처음부터 다시 시작합니다.</p>`,
+        choices: [{ label: '이어서 탐험한다', fn: resumeRun }, { label: '포기한다 (쓰러진 것으로 처리)', fn: () => { abandonSavedRun(); } }],
+        cancel: false,
+      });
+    }
+  }
+  const unlocked = dg => dg.mode === 'rogue' || !dg.req || !!save.cleared[dg.req];
+
+  function refreshDay() {
+    const stock = new Set(['oran', 'apple', 'escape']);
+    const pool = SHOP_POOL.filter(i => !stock.has(i));
+    while (stock.size < 11) stock.add(pick(pool));
+    const held = HELD_SHOP_POOL.slice().sort(() => Math.random() - 0.5).slice(0, 3);
+    const tms = TM_IDS.slice().sort(() => Math.random() - 0.5).slice(0, 2);
+    const vit = Math.random() < 0.35 ? [pick(Object.keys(VITAMINS))] : [];
+    const abi = [Math.random() < 0.4 ? 'abcapsule' : null, Math.random() < 0.15 ? 'abpatch' : null].filter(Boolean);
+    // 구미: 가끔 하나 (무지개구미는 아주 가끔)
+    const gum = [Math.random() < 0.2 ? pick(Object.keys(GUMMIES).filter(id => id !== 'rainbowgummy')) : null, Math.random() < 0.02 ? 'rainbowgummy' : null].filter(Boolean);
+    save.shop = [...stock, ...held, ...tms, ...vit, ...abi, ...gum];
+    const board = [];
+    for (let i = 0; i < 6; i++) { const m = genMission(); if (m) board.push(m); }
+    save.missions.board = board;
+  }
+
+  function genMission() {
+    const dgs = DUNGEONS.filter(d => d.mode === 'normal' && unlocked(d));
+    const dg = pick(dgs);
+    const tier = DUNGEONS.indexOf(dg);
+    let floor = rint(Math.min(2, dg.floors - 1), Math.max(1, dg.floors - 1));
+    while (floor > 1 && isBossFloor(dg, floor)) floor--;
+    const kind = pick(['rescue', 'outlaw', 'find']);
+    const ids = Object.keys(DATA.species).filter(id => !DATA.species[id].lg);
+    const client = +pick(ids);
+    const prog = (floor - 1) / Math.max(1, dg.floors - 1);
+    const lvl = Math.round(dg.lv[0] + (dg.lv[1] - dg.lv[0]) * prog);
+    const reward = Math.round((80 + floor * 35) * (1 + tier * 0.8) / 20) * 10;
+    const m = { id: Date.now() + '' + rand(1e6), dungeon: dg.id, floor, kind, client, reward, lv: lvl + 3 };
+    if (Math.random() < 0.4) m.item = pick(['sitrus', 'bigapple', 'elixir', 'reviver', 'candy', 'stone', 'link', 'escape', 'foesleep']);
+    if (kind === 'outlaw') {
+      const cand = ids.filter(id => DATA.species[id].t.some(t => dg.types.includes(t)));
+      const bst = id => DATA.species[id].b.reduce((a, b) => a + b, 0);
+      const target = 230 + lvl * 6.5;
+      const near = cand.filter(id => Math.abs(bst(id) - target) < 90);
+      m.target = +pick(near.length ? near : cand);
+    }
+    return m;
+  }
+  function missionText(m) {
+    const dg = dungeonById(m.dungeon);
+    if (m.kind === 'sos') return `<b>🆘 친구 구조</b> ${esc(dg.n)} ${m.floor}F에서 쓰러진 친구의 Lv${m.lv} ${esc(jo(spName(m.client), '을'))} 구해 주세요.`;
+    if (m.kind === 'rescue') return `<b>구조</b> ${esc(dg.n)} ${m.floor}F에서 길을 잃은 ${esc(jo(spName(m.client), '을'))} 구해 주세요.`;
+    if (m.kind === 'outlaw') return `<b>현상수배</b> ${esc(dg.n)} ${m.floor}F에 숨은 Lv${m.lv} ${esc(jo(spName(m.target), '을'))} 쓰러뜨려 주세요.`;
+    return `<b>탐색</b> ${esc(jo(spName(m.client), '이'))} ${esc(dg.n)} ${m.floor}F에 떨어뜨린 물건을 찾아 주세요.`;
+  }
+  const rewardText = m => m.kind === 'sos' ? `₽${m.reward} + A-OK 코드` : `₽${m.reward}${m.item ? ` + ${ITEMS[m.item].icon}${ITEMS[m.item].n}` : ''}`;
+
+  function renderTown() {
+    const sp = save.current, ch = save.roster[sp], d = DATA.species[sp];
+    const st = applyBoost(calcStats(sp, ch.lv, 31), ch.boost);
+    const need = expFor(ch.lv + 1) - expFor(ch.lv), have = ch.exp - expFor(ch.lv);
+    document.getElementById('town-money').textContent = `₽ ${save.money}`;
+    document.getElementById('town-day').textContent = `${save.day}일째`;
+    document.getElementById('char-card').innerHTML = `
+      <div class="cc-top">${portraitImg(sp, 'portrait big', 'Normal', ch.shiny)}
+        <div><div class="cc-name">${esc(d.n)}</div><div class="dim">No.${pad4(sp)} ${esc(d.e)}</div><div>${typeBadges(d.t)}</div>
+        <div class="cc-lv">Lv <b>${ch.lv}</b></div></div></div>
+      <div class="bar-l">EXP <span class="bar"><i style="width:${ch.lv >= MAX_LEVEL ? 100 : clamp(have / need * 100, 0, 100)}%;background:#6cf"></i></span></div>
+      <table class="stats">
+        <tr><td>HP</td><td>${st.maxhp}</td><td>공격</td><td>${st.atk}</td></tr>
+        <tr><td>방어</td><td>${st.def}</td><td>특공</td><td>${st.spa}</td></tr>
+        <tr><td>특방</td><td>${st.spd}</td><td>스피드</td><td>${st.spe}</td></tr></table>
+      <div class="cc-ability">지닌 물건 ${ch.held ? `${ITEMS[ch.held].icon} <b>${esc(ITEMS[ch.held].n)}</b>` : '<span class="dim">없음</span>'}</div>
+      <div class="cc-ability">특성 <span class="ab-link" data-ability="${entryAbility(sp, ch)}">${esc(abilityName(entryAbility(sp, ch)))}</span></div>
+      <div class="cc-moves">${ch.moves.map(m => `<div class="move-row clickable" data-move="${m}" title="클릭하면 기술 설명">${moveLine(m)}</div>`).join('') || '<div class="dim">배운 기술이 없습니다</div>'}</div>`;
+    document.querySelectorAll('#town-tabs button').forEach(b => b.classList.toggle('on', b.dataset.tab === tab));
+    const el = document.getElementById('tab-content');
+    el.innerHTML = ({ dungeon: tabDungeon, mission: tabMission, shop: tabShop, storage: tabStorage, bag: tabBag, char: tabChar, dex: Dex.render, ach: Progress.renderAch, info: tabInfo })[tab]();
+    if (tab === 'dex') Dex.wire(el);
+    el.onclick = e => { const b = e.target.closest('[data-act]'); if (b && !b.disabled) onAction(b.dataset.act, b.dataset.arg); };
+  }
+
+  const bagSlots = () => save.bag.length;
+  function bagAdd(id, n = 1) {
+    if (ITEMS[id].stack) { const e = save.bag.find(b => b.id === id); if (e) { e.n += n; return true; } if (bagSlots() >= bagMax()) return false; save.bag.push({ id, n }); return true; }
+    if (bagSlots() >= bagMax()) return false;
+    save.bag.push({ id, n: 1 }); return true;
+  }
+  const storeAdd = (id, n = 1) => { save.storage[id] = (save.storage[id] || 0) + n; };
+  const storageUsed = () => storageUsedOf(save.storage);
+  const storageRoom = (id, n) => storageUsed() + (ITEMS[id].stack ? (save.storage[id] ? 0 : 1) : n) <= save.storageMax;
+  const itemLabel = id => `<span class="ico">${ITEMS[id].icon}</span> <b>${esc(ITEMS[id].n)}</b>`;
+
+  const DG_TABS = [['normal', '🗺 일반 던전', d => d.mode === 'normal' && !d.theme], ['theme', '👑 테마 던전', d => !!d.theme],
+    ['rogue', '🌀 로그라이크', d => d.mode === 'rogue' && !d.daily], ['daily', '🗓 오늘의 도전', d => false]];
+  function tabDungeon() {
+    const cur = DG_TABS.find(t => t[0] === dgTab) || DG_TABS[0];
+    const nav = `<div class="dex-tabs dg-tabs">${DG_TABS.map(([k, n, f]) => {
+      const list = DUNGEONS.filter(f), open = list.filter(unlocked).length;
+      return `<button class="${k === dgTab ? 'on' : ''}" data-act="dgtab" data-arg="${k}">${n}${list.length ? ` <span class="dim">${open}/${list.length}</span>` : ''}</button>`;
+    }).join('')}</div>`;
+    if (dgTab === 'daily') return nav + `<div class="cards">${Progress.dailyCard()}</div>`;
+    return nav + `<div class="cards">${DUNGEONS.filter(cur[2]).map(dg => {
+      const ok = unlocked(dg);
+      const ms = save.missions.accepted.filter(m => m.dungeon === dg.id).length;
+      const types = dg.types ? typeBadges(dg.types) : '<span class="type" style="background:#777">모든 타입</span>';
+      return `<div class="card dg ${dg.mode} ${ok ? '' : 'locked'}" style="--c1:${dg.pal[1]};--c2:${dg.pal[2]}">
+        <div class="dg-head"><b>${esc(dg.n)}</b> ${dg.mode === 'rogue' ? '<i class="rogue">로그라이크</i>' : save.cleared[dg.id] ? '<i class="clear">클리어</i>' : ''}</div>
+        <div class="dim">${dg.floors}층 · 적 Lv ${dg.lv[0]}~${dg.lv[1]}${save.best[dg.id] ? ` · 최고 ${save.best[dg.id]}F` : ''}</div>
+        <div>${types}</div>
+        ${dg.wx && dg.wx.length ? `<div class="note">날씨: ${dg.wx.map(([w, p]) => `${WEATHERS[w].icon}${WEATHERS[w].n} ${Math.round(p * 100)}%`).join(' · ')}</div>` : ''}
+        ${dg.theme ? `<div class="note theme">👑 ${esc(dg.theme)} — 최종 보스 ${bossPool(dg).map(spName).join(' / ') || '?'}${bossPool(dg).length > 1 ? ' 중 하나' : ''}${midPool(dg).length ? ` · 중간 보스 ${dg.mid.floors.join(', ')}층` : ''}</div>` : ''}
+        ${dg.mode === 'rogue' ? `<div class="note">입장 시 Lv${ROGUE_LEVEL}, 가방 초기화. 나오면 원래대로 돌아갑니다.</div>` : ''}
+        ${ms ? `<div class="note ms">📜 진행 중인 임무 ${ms}개</div>` : ''}
+        <div class="dg-btns"><button class="btn" data-act="go" data-arg="${dg.id}" ${ok ? '' : 'disabled'}>${ok ? '출발' : `🔒 ${esc(dungeonById(dg.req).n)} 클리어 필요`}</button>
+          <button class="btn ghost" data-act="dg-info" data-arg="${dg.id}" title="나오는 적과 아이템">ℹ 정보</button></div></div>`;
+    }).join('')}</div>`;
+  }
+
+  // ── 던전 정보: 나오는 적, 보스, 아이템, 특징 ──
+  function itemGroup(id) {
+    const it = ITEMS[id];
+    if (it.tm) return 'tm';
+    if (it.held) return 'held';
+    if (VITAMINS[id] || GUMMIES[id] || ['candy', 'abcapsule', 'abpatch', 'reviver'].includes(id)) return 'rare';
+    if (it.use === 'cureOne' || it.use === 'chesto' || ['lum', 'leppa', 'liechi', 'ganlon', 'petaya', 'apicot', 'salac', 'starf', 'lansat', 'oran', 'sitrus'].includes(id)) return 'berry';
+    if (it.use === 'food' || it.use === 'heal' || it.use === 'healPct' || it.use === 'fullheal' || it.use === 'cure' || it.use === 'pp') return 'heal';
+    if (it.throw) return 'throw';
+    return 'misc';
+  }
+  function showDungeonInfo(id) {
+    const dg = id === 'daily' ? Progress.setupDaily() : dungeonById(id);
+    if (!dg) return;
+    const floorLv = f => Math.round(dg.lv[0] + (dg.lv[1] - dg.lv[0]) * (dg.floors > 1 ? (f - 1) / (dg.floors - 1) : 0));
+    // 출현 포켓몬: 층 구간마다 후보를 모은다
+    const band = dg.floors <= 10 ? Math.ceil(dg.floors / 2) : 5;
+    const bands = [];
+    for (let a = 1; a <= dg.floors; a += band) {
+      const b = Math.min(dg.floors, a + band - 1), set = new Set();
+      for (let f = a; f <= b; f++) if (!isBossFloor(dg, f) || f !== dg.floors) Dungeon.floorCandidates(dg, f).cand.forEach(o => set.add(o.id));
+      bands.push({ a, b, ids: [...set].sort((x, y) => x - y) });
+    }
+    const mon = ids => `<div class="roster dg-mons">${ids.map(k => `<button class="rcard${Progress.isSeen(k) ? '' : ' unseen'}" data-dexpoke="${k}">${portraitImg(k, 'portrait sm')}<span>${esc(spName(k))}</span></button>`).join('')}</div>`;
+    const seenIn = ids => ids.filter(k => Progress.isSeen(k)).length;
+    // 보스
+    const finals = bossPool(dg).length ? bossPool(dg) : BOSSES[dg.id] && DATA.species[BOSSES[dg.id]] ? [BOSSES[dg.id]] : [];
+    const bossHtml = `<h3>보스</h3>
+      <div class="row"><span class="grow"><b>${dg.floors}층 (최종)</b> ${finals.length ? finals.map(spName).join(' / ') + (finals.length > 1 ? ' 중 하나' : '') : '그 층 후보 중 가장 강한 포켓몬'} · Lv${floorLv(dg.floors) + 3}</span></div>
+      ${finals.length ? mon(finals) : ''}
+      ${midPool(dg).length ? `<div class="row"><span class="grow"><b>중간 보스 ${dg.mid.floors.join(', ')}층</b> 아래 중 하나씩 (한 탐험에서 겹치지 않음)</span></div>${mon(midPool(dg))}` : ''}
+      ${dg.mode === 'rogue' ? '<p class="dim">10층마다 그 층 후보 중 가장 강한 포켓몬이 중간 보스로 나온다.</p>' : ''}
+      <p class="dim">보스는 HP 3.5배, 공격·방어·특공·특방 1.1배, 레벨 +3. 쓰러뜨리면 계단이 나타나고 돈과 좋은 아이템을 준다.</p>`;
+    // 특징
+    const firstAt = lv => { for (let f = 1; f <= dg.floors; f++) if (floorLv(f) >= lv) return f; return 0; };
+    const trapF = firstAt(FEATURE_LV.trap), shopF = firstAt(FEATURE_LV.shop), houseF = firstAt(FEATURE_LV.house);
+    const feat = [
+      `적 레벨 ${dg.lv[0]} ~ ${dg.lv[1]} (층마다 점점 강해짐)`,
+      dg.wx && dg.wx.length ? `날씨: ${dg.wx.map(([w, p]) => `${WEATHERS[w].icon}${WEATHERS[w].n} ${Math.round(p * 100)}%`).join(' · ')} (층마다 결정)` : '날씨 없음',
+      trapF ? `함정: ${trapF}층부터` : '함정 없음',
+      shopF ? `켈리몬 상점: ${shopF}층부터 층마다 ${Math.round(SHOP_CHANCE * 100)}%` : '켈리몬 상점 없음',
+      houseF ? `몬스터하우스: ${houseF}층부터 층마다 ${Math.round(HOUSE_CHANCE * 100)}%` : '몬스터하우스 없음',
+      dg.legend ? '가끔 전설 포켓몬이 일반 적으로 섞여 나온다' : '',
+      dg.extra ? `${dg.theme} 시리즈가 일반 적으로도 섞여 나온다` : '',
+      `한 층에 머물 수 있는 시간: ${WIND.limit}턴 (넘으면 바람에 날려감)`,
+      dg.mode === 'rogue' ? `로그라이크: Lv${ROGUE_LEVEL}, 기본 가방으로 입장` : '',
+    ].filter(Boolean);
+    // 아이템 (모든 던전 공통 드롭 확률)
+    const total = DROP_TABLE.reduce((a, d) => a + d[1], 0);
+    const groups = { heal: ['🍎 회복·음식', []], berry: ['🍒 열매', []], throw: ['📌 던지는 도구', []], misc: ['🔮 씨앗·구슬·기타', []], rare: ['💎 희귀 (영양제·구미·사탕 등)', []], held: ['🎗 지닌 물건', []], tm: ['💿 기술머신', []] };
+    const merged = {};
+    for (const [iid, w] of DROP_TABLE) merged[iid] = (merged[iid] || 0) + w;
+    for (const [iid, w] of Object.entries(merged)) groups[itemGroup(iid)][1].push([iid, w]);
+    const pctT = w => { const p = w / total * 100; return p >= 1 ? p.toFixed(1) + '%' : p >= 0.1 ? p.toFixed(2) + '%' : p.toFixed(3) + '%'; };
+    const itemHtml = Object.values(groups).filter(g => g[1].length).map(([name, list]) => {
+      list.sort((a, b) => b[1] - a[1]);
+      const sum = list.reduce((a, x) => a + x[1], 0);
+      const many = list.length > 14;
+      return `<details${many ? '' : ' open'}><summary><b>${name}</b> <span class="dim">합계 ${pctT(sum)} · ${list.length}종${many ? ' (눌러서 펼치기)' : ''}</span></summary>
+        <div class="dg-items">${list.map(([iid, w]) => `<span class="dg-item" data-dexitem="${iid}">${ITEMS[iid].icon} ${esc(ITEMS[iid].n)} <i class="dim">${pctT(w)}</i></span>`).join('')}</div></details>`;
+    }).join('');
+    const allIds = new Set(bands.flatMap(b => b.ids));
+    UI.open({
+      title: `${esc(dg.n)} 정보`, wide: true,
+      html: `<div class="dg-info">
+        <p>${dg.floors}층 · ${dg.mode === 'rogue' ? '로그라이크' : '일반'} 던전${dg.theme ? ` · 👑 ${esc(dg.theme)}` : ''} · ${dg.types ? typeBadges(dg.types) : '<span class="type" style="background:#777">모든 타입</span>'}
+          ${dg.req ? `<br><span class="dim">${esc(jo(dungeonById(dg.req).n, '을'))} 클리어하면 열림</span>` : ''}</p>
+        <ul class="dg-feat">${feat.map(x => `<li>${x}</li>`).join('')}</ul>
+        ${bossHtml}
+        <h3>나오는 포켓몬 <span class="dim">${seenIn([...allIds])}/${allIds.size}종 만남 · 층마다 이 중 6종이 무작위로 등장 · 어두운 것은 아직 못 만난 포켓몬</span></h3>
+        ${bands.map((b, i) => `<details${i === 0 ? ' open' : ''}><summary><b>${b.a === b.b ? b.a : `${b.a}~${b.b}`}층</b> <span class="dim">Lv${floorLv(b.a)}~${floorLv(b.b)} · ${b.ids.length}종 (만남 ${seenIn(b.ids)})</span></summary>${mon(b.ids)}</details>`).join('')}
+        <h3>나오는 아이템 <span class="dim">바닥에 떨어진 아이템이 이 확률로 정해진다 (모든 던전 공통) · 한 층에 아이템 3~6개, 돈 2~4무더기</span></h3>
+        ${itemHtml}
+      </div>`,
+      choices: [{ label: '닫기', fn: () => {} }],
+    });
+  }
+
+  function tabMission() {
+    const acc = save.missions.accepted;
+    return `${sosSection()}
+      <h3>진행 중인 임무 (${acc.length}/4)</h3>
+      ${acc.length ? acc.map(m => `<div class="row">${portraitImg(m.kind === 'outlaw' ? m.target : m.client, 'portrait sm', m.kind === 'sos' ? 'Pain' : 'Normal', !!m.shiny)}<div class="grow">${missionText(m)}<div class="dim">보상 ${rewardText(m)}</div></div>
+        <button class="btn sm ghost" data-act="drop-mission" data-arg="${m.id}">취소</button></div>`).join('') : '<p class="dim">받은 임무가 없습니다.</p>'}
+      <h3>게시판 <span class="dim">(던전에서 돌아오면 새 의뢰가 붙습니다)</span></h3>
+      ${save.missions.board.map(m => `<div class="row">${portraitImg(m.kind === 'outlaw' ? m.target : m.client, 'portrait sm')}<div class="grow">${missionText(m)}<div class="dim">보상 ${rewardText(m)}</div></div>
+        <button class="btn sm" data-act="take-mission" data-arg="${m.id}" ${acc.length >= 4 ? 'disabled' : ''}>수락</button></div>`).join('') || '<p class="dim">의뢰가 없습니다.</p>'}`;
+  }
+
+  function tabShop() {
+    return `<h3>켈리몬 상점</h3><div class="grid2">
+      ${save.shop.map(id => `<div class="row">${itemLabel(id)}<span class="grow dim">${esc(ITEMS[id].d)}</span>
+        <button class="btn sm" data-act="buy" data-arg="${id}" ${save.money < ITEMS[id].price ? 'disabled' : ''}>₽${ITEMS[id].price}${ITEMS[id].stack ? ' (5개)' : ''}</button></div>`).join('')}</div>
+      <h3>팔기 <span class="dim">(가방의 아이템)</span></h3>
+      ${save.bag.length ? save.bag.map((b, i) => `<div class="row">${itemLabel(b.id)}${b.n > 1 ? ' ×' + b.n : ''}<span class="grow"></span>
+        <button class="btn sm ghost" data-act="sell" data-arg="${i}">₽${sellPrice(b)}에 팔기</button></div>`).join('') : '<p class="dim">가방이 비어 있습니다.</p>'}`;
+  }
+  const sellPrice = b => Math.floor((ITEMS[b.id].sell || ITEMS[b.id].price / 2) * (ITEMS[b.id].stack ? b.n / 5 : 1)) || 1;
+
+  function tabStorage() {
+    const ids = Object.keys(save.storage).filter(k => save.storage[k] > 0);
+    return `${upgradeBox()}<div class="split"><div><h3>창고 (${storageUsed()}/${save.storageMax})</h3>${storageUsed() > save.storageMax ? '<p class="warn">창고가 넘쳤습니다. 정리하기 전까지는 맡길 수 없습니다.</p>' : ''}
+      ${ids.length ? ids.map(id => `<div class="row">${itemLabel(id)} ×${save.storage[id]}<span class="grow"></span>
+        <button class="btn sm" data-act="withdraw" data-arg="${id}" ${bagSlots() >= bagMax() && !ITEMS[id].stack ? 'disabled' : ''}>꺼내기</button></div>`).join('') : '<p class="dim">창고가 비어 있습니다.</p>'}
+      </div><div><h3>가방 (${bagSlots()}/${bagMax()})</h3>
+      ${save.bag.map((b, i) => `<div class="row">${itemLabel(b.id)}${b.n > 1 ? ' ×' + b.n : ''}<span class="grow"></span>
+        <button class="btn sm ghost" data-act="deposit" data-arg="${i}">맡기기</button></div>`).join('') || '<p class="dim">가방이 비어 있습니다.</p>'}
+      ${save.bag.length ? '<button class="btn ghost" data-act="deposit-all">모두 맡기기</button>' : ''}</div></div>`;
+  }
+
+  function upgradeBox() {
+    const bc = bagUpgradeCost(save.bagMax), sc = storageUpgradeCost(save.storageMax);
+    const bFull = save.bagMax >= BAG_LIMIT, sFull = save.storageMax >= STORAGE_LIMIT;
+    return `<div class="upgrades">
+      <div class="row">🎒 <span class="grow">가방 <b>${save.bagMax}</b>칸${bFull ? ' (최대)' : ` → ${save.bagMax + BAG_STEP}칸`}</span>
+        <button class="btn sm" data-act="up-bag" ${bFull || save.money < bc ? 'disabled' : ''}>${bFull ? '최대' : '₽' + bc + ' 확장'}</button></div>
+      <div class="row">📦 <span class="grow">창고 <b>${save.storageMax}</b>칸${sFull ? ' (최대)' : ` → ${save.storageMax + STORAGE_STEP}칸`}</span>
+        <button class="btn sm" data-act="up-storage" ${sFull || save.money < sc ? 'disabled' : ''}>${sFull ? '최대' : '₽' + sc + ' 확장'}</button></div></div>`;
+  }
+
+  function tabBag() {
+    return `${upgradeBox()}<h3>가방 (${bagSlots()}/${bagMax()})</h3>
+      <p class="dim">일반 던전에서 쓰러지면 가방 아이템의 절반을 무작위로 잃습니다. 귀중한 아이템은 창고에 맡기세요.</p>
+      ${save.bag.map((b, i) => `<div class="row">${itemLabel(b.id)}${b.n > 1 ? ' ×' + b.n : ''}<span class="grow dim">${esc(ITEMS[b.id].d)}</span>
+        <button class="btn sm ghost" data-act="deposit" data-arg="${i}">창고로</button>
+        <button class="btn sm ghost danger" data-act="discard" data-arg="${i}">버리기</button></div>`).join('') || '<p class="dim">가방이 비어 있습니다.</p>'}`;
+  }
+
+  function evoOptions(sp) {
+    const ch = save.roster[sp];
+    return DATA.species[sp].v.map(([to, lv, item]) => {
+      const itemId = item === 1 ? 'stone' : item === 2 ? 'link' : null;
+      const hasItem = !itemId || save.bag.some(b => b.id === itemId) || save.storage[itemId] > 0;
+      const req = [lv ? `Lv ${lv} 이상` : '', itemId ? ITEMS[itemId].n + ' 필요' : ''].filter(Boolean).join(', ');
+      return { to, lv, itemId, ok: ch.lv >= lv && hasItem, req };
+    });
+  }
+
+  function tabChar() {
+    const sp = save.current, ch = save.roster[sp];
+    const evos = evoOptions(sp);
+    const roster = Object.keys(save.roster).map(Number);
+    return `<h3>캐릭터 관리</h3>
+      <div class="btns"><button class="btn" data-act="change-char">🔄 캐릭터 변경</button> <button class="btn" data-act="set-moves">📘 기술 설정</button></div>
+      ${DATA.species[sp].sh ? `<h3>모습</h3><div class="row">${portraitImg(sp, 'portrait sm', 'Normal', false)} ${portraitImg(sp, 'portrait sm', 'Normal', true)}
+        <span class="grow">${ch.shiny ? '✨ 이로치(색이 다른 모습)로 탐험합니다.' : '보통 모습으로 탐험합니다.'} <span class="dim">(겉모습만 바뀝니다)</span></span>
+        ${shinyOk(sp) ? `<button class="btn sm" data-act="toggle-shiny">${ch.shiny ? '보통 모습으로' : '✨ 이로치로'}</button>` : '<span class="dim tiny">🔒 이 포켓몬의 이로치를 쓰러뜨리거나 영입하면 고를 수 있어요</span>'}</div>` : ''}
+      <h3>특성 <span class="dim">(누르면 설명. 바꾸려면 ${ITEMS.abcapsule.icon}특성캡슐 ×${ownedCount('abcapsule')}, 숨겨진 특성은 ${ITEMS.abpatch.icon}특성패치 ×${ownedCount('abpatch')}가 필요)</span></h3>
+      ${DATA.species[sp].ab.map(([aid, hid]) => { const cur = entryAbility(sp, save.roster[sp]) === aid, x = abilityDesc(aid); return `<div class="row">
+        <div class="grow"><span class="ab-link" data-ability="${aid}">${esc(x.n)}</span>${hid ? ' <span class="dim">(숨겨진 특성)</span>' : ''}
+        <div class="dim">${esc(x.dungeon || x.exact || x.d)}${x.none ? ' <span class="warn">— 던전에서는 효과 없음</span>' : ''}</div></div>
+        <button class="btn sm${cur ? '' : ' ghost'}" data-act="set-ability" data-arg="${aid}" ${cur || !ownedCount(hid ? 'abpatch' : 'abcapsule') ? 'disabled' : ''}>${cur ? '사용 중' : `${ITEMS[hid ? 'abpatch' : 'abcapsule'].icon} 바꾸기`}</button></div>`; }).join('')}
+      <h3>기술머신 <span class="dim">(한 번 쓰면 사라지고, 배운 기술은 기술 설정에서 언제든 넣고 뺄 수 있습니다)</span></h3>
+      ${tmSection(sp, ch)}
+      <h3>영양제 <span class="dim">(능력치를 영구히 올립니다. 일반 던전에서만 적용되고 로그라이크에서는 무시)</span></h3>
+      ${vitaminSection(ch)}
+      <h3>구미 <span class="dim">(아주 드문 간식. 능력치가 영구히 조금 오르고, 던전에서 먹으면 배도 찹니다)</span></h3>
+      ${gummySection(ch)}
+      <h3>지닌 물건</h3>
+      <div class="row">${ch.held ? `${ITEMS[ch.held].icon} <b>${esc(ITEMS[ch.held].n)}</b><span class="grow dim">${esc(ITEMS[ch.held].d)}</span>
+        <button class="btn sm ghost" data-act="unhold">빼기</button>` : '<span class="grow dim">지닌 물건이 없습니다. 상점에서 사거나 던전에서 주울 수 있어요.</span>'}
+        <button class="btn sm" data-act="hold">${ch.held ? '바꾸기' : '지니게 하기'}</button></div>
+      <h3>진화</h3>
+      ${evos.length ? evos.map(e => `<div class="row">${portraitImg(e.to, 'portrait sm')}<div class="grow"><b>${esc(spName(e.to))}</b> ${typeBadges(DATA.species[e.to].t)}<div class="dim">${e.req}</div></div>
+        <button class="btn sm" data-act="evolve" data-arg="${e.to}" ${e.ok ? '' : 'disabled'}>진화</button></div>`).join('') : '<p class="dim">더 이상 진화하지 않습니다.</p>'}
+      <h3>영입한 포켓몬 <span class="dim">(각자 레벨이 따로 저장됩니다 · 지금 영입 확률 ${(recruitRate(ch.lv) * 100).toFixed(1)}%)</span></h3>
+      <div class="roster">${roster.map(id => `<button class="rcard ${id === sp ? 'on' : ''}" data-act="switch" data-arg="${id}">${portraitImg(id, 'portrait sm')}<span>${esc(spName(id))}</span><span class="dim">Lv${save.roster[id].lv}</span></button>`).join('')}</div>`;
+  }
+
+  const ownedCount = id => (save.storage[id] || 0) + save.bag.filter(b => b.id === id).length;
+  function vitaminSection(ch) {
+    const b = ch.boost || {};
+    return `<div class="vit-grid">${Object.entries(VITAMINS).map(([id, [n, k, sn, v]]) => {
+      const cnt = b[k] || 0, own = ownedCount(id), full = cnt >= VITAMIN_MAX;
+      return `<div class="vit"><div><b>${sn}</b> <span class="dim">+${cnt * v}</span></div>
+        <span class="pips">${'●'.repeat(cnt)}${'○'.repeat(VITAMIN_MAX - cnt)}</span>
+        <button class="btn sm${own ? '' : ' ghost'}" data-act="vitamin" data-arg="${id}" ${own && !full ? '' : 'disabled'} title="${esc(ITEMS[id].d)}">🥤 ${esc(n)} ×${own}</button></div>`;
+    }).join('')}</div>`;
+  }
+  function gummySection(ch) {
+    const b = ch.boost || {};
+    const counts = Object.entries(STAT_KO).map(([k, n]) => `<span class="gm-stat"><b>${n}</b> +${(b['g_' + k] || 0) * gummyAmt(k)} <span class="dim">(${b['g_' + k] || 0}/${GUMMY_MAX})</span></span>`).join('');
+    const own = Object.keys(GUMMIES).filter(id => ownedCount(id));
+    return `<div class="gm-counts">${counts}</div>
+      <div class="btns">${own.length ? own.map(id => `<button class="btn sm" data-act="gummy" data-arg="${id}" title="${esc(ITEMS[id].d)}">${ITEMS[id].icon} ${esc(ITEMS[id].n)} ×${ownedCount(id)}</button>`).join(' ')
+        : '<span class="dim">가진 구미가 없습니다. 던전 깊은 곳에서 아주 드물게 발견됩니다.</span>'}</div>`;
+  }
+  function useGummy(id) {
+    const g = ITEMS[id], ch = save.roster[save.current];
+    ch.boost = { ...(ch.boost || {}) };
+    const up = g.gummy.filter(k => (ch.boost['g_' + k] || 0) < GUMMY_MAX);
+    if (!up.length || !ownedCount(id)) { UI.toast('더 이상 오르지 않습니다.'); return; }
+    takeItem(id);
+    up.forEach(k => { ch.boost['g_' + k] = (ch.boost['g_' + k] || 0) + 1; });
+    Sound.play('levelup');
+    UI.toast(`${jo(spName(save.current), '은')} ${jo(g.n, '을')} 먹었다! ${up.map(k => `${STAT_KO[k]} +${gummyAmt(k)}`).join(', ')}`);
+  }
+  function useVitamin(id) {
+    const [n, k, sn, v] = VITAMINS[id], ch = save.roster[save.current];
+    ch.boost = ch.boost || {};
+    if ((ch.boost[k] || 0) >= VITAMIN_MAX || !ownedCount(id)) return;
+    const bi = save.bag.findIndex(b => b.id === id);
+    if (bi >= 0) save.bag.splice(bi, 1); else { save.storage[id]--; if (save.storage[id] <= 0) delete save.storage[id]; }
+    ch.boost[k] = (ch.boost[k] || 0) + 1;
+    Sound.play('levelup');
+    UI.toast(`${jo(spName(save.current), '은')} ${jo(n, '을')} 먹었다! ${jo(sn, '이')} ${v} 올랐다!`);
+    Progress.check();
+  }
+
+  // 특성 바꾸기: 일반 특성은 특성캡슐, 숨겨진 특성은 특성패치를 하나 쓴다
+  function takeItem(id) {
+    const bi = save.bag.findIndex(b => b.id === id);
+    if (bi >= 0) save.bag.splice(bi, 1); else { save.storage[id]--; if (save.storage[id] <= 0) delete save.storage[id]; }
+  }
+  async function changeAbility(aid) {
+    const sp = save.current, ch = save.roster[sp];
+    const slot = DATA.species[sp].ab.find(a => a[0] === aid); if (!slot) return;
+    const need = slot[1] ? 'abpatch' : 'abcapsule', it = ITEMS[need];
+    if (!ownedCount(need)) { UI.alert('특성 바꾸기', `<p>${it.icon} <b>${esc(jo(it.n, '이'))}</b> 필요합니다.</p><p class="dim">마을 상점에 가끔 진열되고, 던전에서 드물게 주울 수 있어요.</p>`); return; }
+    const ok = await UI.confirm('특성 바꾸기', `<p>${esc(spName(sp))}의 특성을 <b>${esc(abilityName(entryAbility(sp, ch)))}</b> → <b>${esc(jo(abilityName(aid), '으로'))}</b> 바꿉니다.${slot[1] ? ' <span class="dim">(숨겨진 특성)</span>' : ''}</p>
+      <p>${it.icon} ${esc(it.n)} 1개를 사용합니다. <span class="dim">(가진 개수 ${ownedCount(need)})</span></p>`, '바꾼다', '그만둔다');
+    if (!ok) return;
+    takeItem(need);
+    ch.ability = aid;
+    Sound.play('item');
+    persist(); renderTown();
+    UI.toast(`특성을 ${jo(abilityName(aid), '으로')} 바꿨습니다.`);
+  }
+
+  // 사용자 타일셋(DTEF) 설정 화면. 지금은 꺼져 있다 (tiles.js의 CUSTOM_TILESETS)
+  function tilesetSection(s) {
+    return `<h3>던전 타일셋 <span class="dim">(선택 사항)</span></h3>
+      <p class="dim">기본은 게임이 직접 그린 타일입니다. 직접 구한 <b>DTEF 형식</b> 타일셋 PNG(가로:세로 18:8, 예: 432×192)를 불러오면 그 던전의 벽·바닥이 바뀝니다.
+        변형 타일(<code>tileset_1.png</code>, <code>tileset_2.png</code>)도 함께 선택하면 섞어서 그립니다.
+        불러온 파일은 이 브라우저에만 저장되고, 게임 파일에는 포함되지 않습니다. 게임 폴더의 <code>tiles/던전ID.png</code>(변형은 <code>던전ID_1.png</code>, <code>던전ID_2.png</code> / 공통은 <code>default.png</code>)에 넣어도 됩니다.</p>
+      <label class="chk"><input type="checkbox" data-set="useTileset" ${s.useTileset !== false ? 'checked' : ''}> 불러온 타일셋 사용 (끄면 기본 타일)</label>
+      <div class="tileset-list">${[{ id: '*', n: '모든 던전 공통' }, ...DUNGEONS].map(d => {
+        const st = d.id === '*' ? (Tiles.uploaded['*'] ? '불러옴' : '') : Tiles.status(d.id);
+        return `<div class="row"><span class="grow">${esc(d.n)} <span class="dim">${d.id === '*' ? '' : d.id}</span> ${st ? `<span class="tag">${st}</span>` : ''}</span>
+          <label class="btn sm ghost">PNG 불러오기<input type="file" accept="image/png" multiple data-tileset="${d.id}" hidden></label>
+          ${Tiles.uploaded[d.id] ? `<button class="btn sm ghost danger" data-act="tileset-del" data-arg="${d.id}">삭제</button>` : ''}</div>`;
+      }).join('')}</div>`;
+  }
+
+  // 배경음악 파일 설정: music/ 폴더에 넣거나 여기서 불러온다 (불러온 파일은 이 브라우저에만 저장)
+  function musicSection() {
+    const rows = [{ id: 'town', n: '마을 (타이틀 포함)' }, { id: 'boss', n: '보스전' }, { id: 'dungeon', n: '던전 공통 (던전별 파일이 없을 때)' },
+      ...DUNGEONS.filter(d => !d.daily).map(d => ({ id: d.id, n: d.n })), { id: 'daily', n: '오늘의 도전' }];
+    return `<h3>배경음악 파일 <span class="dim">(선택 사항)</span></h3>
+      <p class="dim">기본은 게임이 직접 합성한 배경음입니다. 음악 파일(ogg / mp3 / m4a / wav)을 불러오거나 게임 폴더의 <code>music/이름.ogg</code>에 넣으면 그 곡을 반복 재생합니다.
+        파일이 없는 곳은 합성 배경음이 나옵니다. 불러온 파일은 이 브라우저에만 저장되고 게임 파일에는 포함되지 않습니다.</p>
+      <div class="tileset-list">${rows.map(r => `<div class="row"><span class="grow">${esc(r.n)} <span class="dim">music/${r.id}.ogg</span> ${Sound.uploaded.has(r.id) ? '<span class="tag">불러옴</span>' : ''}</span>
+        <button class="btn sm ghost" data-act="music-loop" data-arg="${r.id}" title="인트로 뒤 반복 구간 설정">🔁 루프</button>
+        <label class="btn sm ghost">파일 불러오기<input type="file" accept="audio/*,.ogg,.mp3,.m4a,.wav" data-music="${r.id}" hidden></label>
+        ${Sound.uploaded.has(r.id) ? `<button class="btn sm ghost danger" data-act="music-del" data-arg="${r.id}">삭제</button>` : ''}</div>`).join('')}</div>`;
+  }
+
+  // 곡의 루프 구간 설정
+  async function musicLoopDialog(key) {
+    const info = await Sound.loopInfo(key);
+    if (!info) { UI.alert('루프 설정', `<p>이 곡의 음악 파일이 없습니다. <code>music/${esc(key)}.ogg</code>에 넣거나 파일을 불러오세요.</p>`); return; }
+    const f = v => (v == null ? '' : (+v).toFixed(3));
+    const src = info.user ? '정보 탭에서 설정한 값' : info.cfg ? 'music/loops.js' : info.tags ? '파일 안의 루프 정보' : '없음 (곡 전체 반복)';
+    const m = UI.open({
+      title: `🔁 루프 구간 — ${esc(key)}`, wide: true,
+      html: `<p>곡 길이 <b>${info.dur.toFixed(2)}초</b> · 지금 쓰는 루프: <b>${info.use ? `${f(info.use.start)}초 ~ ${f(info.use.end)}초` : '곡 전체'}</b> <span class="dim">(${src})</span></p>
+        ${info.tags ? `<p class="dim">파일 안의 루프 정보: ${f(info.tags.start)}초 ~ ${info.tags.end ? f(info.tags.end) + '초' : '끝'}</p>` : ''}
+        ${info.cfg ? `<p class="dim">music/loops.js: ${f(info.cfg.start)}초 ~ ${info.cfg.end ? f(info.cfg.end) + '초' : '끝'}</p>` : ''}
+        <div class="loop-form"><label>루프 시작 <input type="number" step="0.001" min="0" id="lp-s" value="${f(info.use ? info.use.start : 0)}">초</label>
+          <label>루프 끝 <input type="number" step="0.001" min="0" id="lp-e" value="${f(info.use ? info.use.end : info.dur)}">초</label></div>
+        <p class="dim">곡이 루프 끝에 닿으면 루프 시작으로 돌아갑니다. 끝을 비우면 곡 끝까지.
+          ${info.exact ? '' : '<br>⚠ 게임을 파일로 직접 열면(file://) 브라우저 제한 때문에 연결 부분에서 아주 짧게 끊길 수 있어요. 파일 안의 루프 정보도 읽지 못해서, 여기서 설정하거나 music/loops.js에 적어야 합니다.'}</p>`,
+      choices: [
+        { label: '저장', fn: () => { Sound.endPreview(); const s0 = +document.getElementById('lp-s').value || 0, e0 = +document.getElementById('lp-e').value || 0; Sound.setLoop(key, { start: s0, end: e0 }); UI.toast('루프 구간을 저장했습니다.'); renderTown(); } },
+        { label: '🎧 연결 부분 들어 보기 (저장된 값 기준, 끝나기 3초 전부터)', fn: async () => { const ok = await Sound.previewLoop(key); if (!ok) UI.toast('들을 수 없습니다.'); setTimeout(() => musicLoopDialogKeep(key), 0); } },
+        { label: '설정 지우기 (파일 정보·loops.js 사용)', fn: () => { Sound.endPreview(); Sound.setLoop(key, null); UI.toast('설정을 지웠습니다.'); } },
+        { label: '닫기', fn: () => Sound.endPreview() },
+      ],
+    });
+    return m;
+  }
+  // 미리 듣기 중에는 같은 창을 다시 띄운다
+  function musicLoopDialogKeep(key) { musicLoopDialog(key); }
+
+  function tabInfo() {
+    const cr = DATA.species[save.current].cr || ['?', '?'];
+    const s = save.settings;
+    return `<h3>버전</h3>
+      <div class="row"><span class="grow">불가사의 던전 웹 <b>v${GAME_VERSION}</b> <span class="dim">(${GAME_DATE})</span>
+        <div class="dim">친구와 구조 코드나 오늘의 도전 기록을 주고받을 때는 서로 같은 버전인지 확인하세요.</div></span>
+        <button class="btn sm ghost" data-act="version-notes">변경 내역</button></div>
+      <h3>📖 게임 가이드</h3><div class="btns">${Guide.buttons()}</div>
+      <h3>설정</h3>
+      <label class="chk"><input type="checkbox" data-set="fast" ${s.fast ? 'checked' : ''}> 빠른 연출</label>
+      <label class="chk"><input type="checkbox" data-set="autoDescend" ${s.autoDescend ? 'checked' : ''}> 자동 탐색이 계단에 도착하면 바로 내려가기</label>
+      <div class="sound-set">
+        <label class="chk"><input type="checkbox" data-set="sfx" ${s.sfx !== false ? 'checked' : ''}> 효과음</label>
+        <input type="range" min="0" max="100" step="5" data-setnum="sfxVol" value="${s.sfxVol ?? 60}" title="효과음 음량">
+        <label class="chk"><input type="checkbox" data-set="bgm" ${s.bgm !== false ? 'checked' : ''}> 배경음</label>
+        <input type="range" min="0" max="100" step="5" data-setnum="bgmVol" value="${s.bgmVol ?? 40}" title="배경음 음량"></div>
+      <p class="dim tiny">소리는 게임이 직접 합성합니다 (음원 파일 없음). 브라우저 정책상 화면을 한 번 눌러야 소리가 나기 시작합니다.</p>
+      <div class="btns"><button class="btn ghost" data-act="help">⌨ 조작법</button> <button class="btn ghost danger" data-act="reset">저장 데이터 초기화</button></div>
+      <h3>세이브 관리</h3>
+      <p class="dim">세이브는 이 브라우저에만 저장됩니다. 브라우저 데이터를 지우거나 다른 컴퓨터로 옮기기 전에 파일로 내보내 두세요.</p>
+      <div class="btns"><button class="btn" data-act="save-export">💾 세이브 내보내기</button> <button class="btn ghost" data-act="save-import">📂 세이브 불러오기</button>
+        <input type="file" id="save-file" accept=".json,application/json" hidden></div>
+      ${Tiles.CUSTOM ? tilesetSection(s) : ''}
+      ${musicSection()}
+      <h3>크레딧</h3>
+      <p>포켓몬 스프라이트와 초상화: <a href="https://sprites.pmdcollab.org/" target="_blank" rel="noopener">PMD Sprite Repository (SpriteCollab)</a>, CC BY-NC 4.0.<br>
+      현재 캐릭터 ${esc(spName(save.current))}: 스프라이트 by ${esc(cr[0])} / 초상화 by ${esc(cr[1] || '?')}</p>
+      <p>포켓몬 데이터(이름, 능력치, 기술): <a href="https://pokeapi.co/" target="_blank" rel="noopener">PokeAPI</a></p>
+      <p>원작 던전 타일셋·음악 (게임 폴더의 tiles/, music/에 들어 있는 경우): Pokémon Mystery Dungeon 시리즈 © Nintendo / Spike Chunsoft</p>
+      <p class="dim">비상업적 팬 게임입니다. Pokémon © Nintendo / Creatures Inc. / GAME FREAK inc. Pokémon Mystery Dungeon © Spike Chunsoft.</p>`;
+  }
+
+  async function onAction(act, arg) {
+    switch (act) {
+      case 'go': return prepareRun(arg);
+      case 'take-mission': {
+        const i = save.missions.board.findIndex(m => m.id === arg);
+        if (i >= 0 && save.missions.accepted.length < 4) save.missions.accepted.push(save.missions.board.splice(i, 1)[0]);
+        break;
+      }
+      case 'drop-mission': {
+        if (!(await UI.confirm('임무 취소', '<p>이 임무를 취소하시겠습니까?</p>'))) return;
+        save.missions.accepted = save.missions.accepted.filter(m => m.id !== arg);
+        break;
+      }
+      case 'buy': {
+        const it = ITEMS[arg];
+        if (save.money < it.price) return;
+        const n = it.stack ? 5 : 1;
+        if (!bagAdd(arg, n)) {
+          if (!storageRoom(arg, n)) { UI.toast('가방과 창고가 모두 가득 찼습니다.'); return; }
+          storeAdd(arg, n); UI.toast('가방이 가득 차서 창고로 보냈습니다.');
+        }
+        else UI.toast(`${jo(it.n, '을')} 샀습니다.`);
+        save.money -= it.price;
+        break;
+      }
+      case 'sell': {
+        const b = save.bag[+arg]; if (!b) return;
+        save.money += sellPrice(b); save.bag.splice(+arg, 1);
+        break;
+      }
+      case 'withdraw': {
+        const n = ITEMS[arg].stack ? save.storage[arg] : 1;
+        if (!bagAdd(arg, n)) { UI.toast('가방이 가득 찼습니다.'); return; }
+        save.storage[arg] -= n; if (save.storage[arg] <= 0) delete save.storage[arg];
+        break;
+      }
+      case 'deposit': {
+        const b = save.bag[+arg]; if (!b) return;
+        if (!storageRoom(b.id, b.n)) { UI.toast('창고가 가득 찼습니다. 창고를 확장하세요.'); return; }
+        save.bag.splice(+arg, 1); storeAdd(b.id, b.n); break;
+      }
+      case 'deposit-all': {
+        const keep = [];
+        for (const b of save.bag) { if (storageRoom(b.id, b.n)) storeAdd(b.id, b.n); else keep.push(b); }
+        if (keep.length) UI.toast('창고가 가득 차서 일부를 맡기지 못했습니다.');
+        save.bag = keep; break;
+      }
+      case 'up-bag': {
+        const cost = bagUpgradeCost(save.bagMax);
+        if (save.bagMax >= BAG_LIMIT || save.money < cost) return;
+        if (!(await UI.confirm('가방 확장', `<p>₽${cost}을 내고 가방을 ${save.bagMax}칸 → ${save.bagMax + BAG_STEP}칸으로 늘립니다.</p>`, '확장한다', '그만둔다'))) return;
+        save.money -= cost; save.bagMax += BAG_STEP; UI.toast(`가방이 ${save.bagMax}칸이 되었습니다!`);
+        break;
+      }
+      case 'up-storage': {
+        const cost = storageUpgradeCost(save.storageMax);
+        if (save.storageMax >= STORAGE_LIMIT || save.money < cost) return;
+        if (!(await UI.confirm('창고 확장', `<p>₽${cost}을 내고 창고를 ${save.storageMax}칸 → ${save.storageMax + STORAGE_STEP}칸으로 늘립니다.</p>`, '확장한다', '그만둔다'))) return;
+        save.money -= cost; save.storageMax += STORAGE_STEP; UI.toast(`창고가 ${save.storageMax}칸이 되었습니다!`);
+        break;
+      }
+      case 'discard': {
+        if (!(await UI.confirm('버리기', `<p>${esc(jo(ITEMS[save.bag[+arg].id].n, '을'))} 버리시겠습니까?</p>`))) return;
+        save.bag.splice(+arg, 1); break;
+      }
+      case 'change-char': chooseCharacter(sp => switchChar(sp), false, Object.keys(save.roster).map(Number)); return;
+      case 'switch': if (save.roster[+arg]) switchChar(+arg); break;
+      case 'set-moves': return setMoves();
+      case 'code-enter': return enterCode();
+      case 'dgtab': dgTab = arg; break;
+      case 'dg-info': return showDungeonInfo(arg);
+      case 'version-notes': UI.alert('변경 내역', VERSION_NOTES.map(([v, list]) => `<h3>v${v}${v === GAME_VERSION ? ' <span class="tag">지금 버전</span>' : ''}</h3><ul>${list.map(x => `<li>${esc(x)}</li>`).join('')}</ul>`).join('')); return;
+      case 'vitamin': useVitamin(arg); break;
+      case 'gummy': useGummy(arg); break;
+      case 'daily-go': return prepareDaily();
+      case 'daily-share': { const rec = Progress.dailyRecord(); if (rec) codeBox('🗓 오늘의 도전 기록', '<p>친구에게 보내서 기록을 비교해 보세요.</p>', esc(Progress.shareText(rec).replace(/\n/g, ' · ')), '확인'); return; }
+      case 'sos-show': if (save.sos) codeBox('🆘 SOS 코드', `<p>${esc(dungeonById(save.sos.dungeon).n)} ${save.sos.floor}F — ${esc(spName(save.sos.sp))} Lv${save.sos.lv}</p>`, sosCode(save.sos)); return;
+      case 'sos-giveup': return giveUpSOS();
+      case 'sos-resume': return save.sos && save.sos.thx ? resumeSOS() : receiveAOKAgain();
+      case 'aok-show': { const a = (save.aokSent || []).find(x => String(x.id) === arg); if (a) codeBox('✅ A-OK 코드', `<p>친구의 ${esc(spName(a.sp))} 구조 완료 코드입니다.</p>`, a.code); return; }
+      case 'toggle-shiny': { const ch = save.roster[save.current]; if (!shinyOk(save.current)) return; ch.shiny = !ch.shiny; UI.toast(ch.shiny ? '✨ 이로치로 바꿨습니다.' : '보통 모습으로 바꿨습니다.'); break; }
+      case 'save-export': exportSave(); return;
+      case 'save-import': document.getElementById('save-file').click(); return;
+      case 'unhold': { const ch = save.roster[save.current]; if (ch.held) { storeAdd(ch.held); ch.held = null; UI.toast('지닌 물건을 창고에 넣었습니다.'); } break; }
+      case 'hold': return chooseHeld();
+      case 'use-tm': return useTM(arg);
+      case 'set-ability': return changeAbility(+arg);
+      case 'evolve': return evolve(+arg);
+      case 'help': Dungeon.showHelp(); return;
+      case 'guide': Guide.open(arg); return;
+      case 'music-loop': return musicLoopDialog(arg);
+      case 'music-del': await Sound.removeMusic(arg); UI.toast('음악 파일을 삭제했습니다.'); break;
+      case 'tileset-del': Tiles.setUploaded(arg, null); UI.toast('타일셋을 삭제했습니다.'); break;
+      case 'reset': {
+        if (!(await UI.confirm('초기화', '<p>모든 진행 상황을 지우고 처음부터 시작합니다. 계속하시겠습니까?</p>'))) return;
+        try { localStorage.removeItem(SAVE_KEY); } catch (e) { /* 무시 */ }
+        location.reload(); return;
+      }
+    }
+    persist(); renderTown();
+  }
+
+  // 가진 기술머신 목록 (가방 + 창고)
+  function ownedTMs() {
+    const ids = new Set([...save.bag.filter(b => ITEMS[b.id]?.tm).map(b => b.id), ...Object.keys(save.storage).filter(id => ITEMS[id]?.tm && save.storage[id] > 0)]);
+    return [...ids].sort((a, b) => ITEMS[a].no - ITEMS[b].no);
+  }
+  function tmSection(sp, ch) {
+    const own = ownedTMs();
+    const learned = (ch.tms || []).filter(m => DATA.moves[m]);
+    let h = learned.length ? `<div class="dim">배운 기술: ${learned.map(m => `<span class="ab-link" data-move="${m}">${esc(DATA.moves[m].n)}</span>`).join(', ')}</div>` : '';
+    if (!own.length) return h + '<p class="dim">가진 기술머신이 없습니다. 상점에서 매일 2개씩 팔고, 던전에서 드물게 주울 수 있어요.</p>';
+    const rows = own.map(id => {
+      const it = ITEMS[id], ok = canLearnTM(sp, it.mv), known = learned.includes(it.mv) || ch.moves.includes(it.mv);
+      return { id, it, usable: ok && !known, ok, known };
+    }).sort((a, b) => b.usable - a.usable || a.it.no - b.it.no);
+    const usable = rows.filter(r => r.usable).length;
+    const cnt = id => (save.storage[id] || 0) + save.bag.filter(b => b.id === id).length;
+    return h + `<div class="tm-bar"><span>가진 기술머신 <b>${own.length}</b>종 · 지금 배울 수 있는 것 <b>${usable}</b>종</span>
+        <input class="tm-q" placeholder="기술 이름 검색" autocomplete="off">
+        <label class="chk inline"><input type="checkbox" class="tm-only" checked> 배울 수 있는 것만</label></div>
+      <div class="tm-box">${rows.map(r => `<div class="row tm-item" data-s="${esc(r.it.n.toLowerCase())}" data-u="${r.usable ? 1 : 0}"${r.usable ? '' : ' style="display:none"'}>
+        <span class="grow">💿 <span class="ab-link" data-move="${r.it.mv}">${esc(r.it.n)}</span>${cnt(r.id) > 1 ? ` <span class="dim">×${cnt(r.id)}</span>` : ''}
+        <span class="${r.ok ? 'dim' : 'warn'}">${r.known ? '이미 배움' : r.ok ? '' : '배울 수 없음'}</span></span>
+        <button class="btn sm" data-act="use-tm" data-arg="${r.id}" ${r.usable ? '' : 'disabled'}>사용</button></div>`).join('')}
+        <p class="dim tm-empty"${usable ? ' style="display:none"' : ''}>조건에 맞는 기술머신이 없습니다.</p></div>`;
+  }
+  async function useTM(id) {
+    const sp = save.current, ch = save.roster[sp], it = ITEMS[id], mv = DATA.moves[it.mv];
+    if (!canLearnTM(sp, it.mv)) return;
+    if (!(await UI.confirm('기술머신', `<p>${esc(jo(it.n, '을'))} 사용해서 ${esc(spName(sp))}에게 ${esc(jo(mv.n, '을'))} 가르칩니다.</p><p class="dim">기술머신은 사라집니다.</p>`, '사용한다', '그만둔다'))) return;
+    const bi = save.bag.findIndex(b => b.id === id);
+    if (bi >= 0) save.bag.splice(bi, 1); else { save.storage[id]--; if (save.storage[id] <= 0) delete save.storage[id]; }
+    ch.tms = [...new Set([...(ch.tms || []), it.mv])];
+    Progress.add('tms'); Progress.check();
+    if (ch.moves.length < 4) { ch.moves.push(it.mv); persist(); renderTown(); UI.toast(`${jo(mv.n, '을')} 배웠습니다!`); return; }
+    persist(); renderTown();
+    UI.open({
+      title: `${esc(mv.n)} — 잊을 기술 선택`, html: `${moveDetailHtml(it.mv)}<p>기술을 4개 알고 있습니다. 지금 바꿀 기술을 고르세요.</p>`,
+      choices: [...ch.moves.map((m, i) => ({ label: moveLine(m), fn: () => { ch.moves[i] = it.mv; persist(); renderTown(); UI.toast(`${jo(mv.n, '을')} 배웠습니다!`); } })),
+        { label: '지금은 바꾸지 않는다 (나중에 기술 설정에서 넣을 수 있음)', fn: () => {} }],
+    });
+  }
+
+  // 가방/창고의 지닌 물건 중에서 고르기 (원래 지니던 것은 창고로)
+  function chooseHeld() {
+    const ch = save.roster[save.current];
+    const opts = [];
+    save.bag.forEach((b, i) => { if (ITEMS[b.id]?.held) opts.push({ id: b.id, from: 'bag', i }); });
+    Object.keys(save.storage).forEach(id => { if (ITEMS[id]?.held && save.storage[id] > 0) opts.push({ id, from: 'storage' }); });
+    if (!opts.length) { UI.alert('지닌 물건', '<p>가방이나 창고에 지닐 수 있는 물건이 없습니다.</p><p class="dim">상점에서 매일 지닌 물건 몇 개를 팔고, 던전에서도 가끔 주울 수 있어요.</p>'); return; }
+    UI.open({
+      title: '지니게 할 물건', wide: true,
+      choices: opts.map(o => ({ label: `${ITEMS[o.id].icon} ${esc(ITEMS[o.id].n)} <span class="dim">(${o.from === 'bag' ? '가방' : '창고'})</span>`, sub: esc(ITEMS[o.id].d), fn: () => {
+        if (o.from === 'bag') save.bag.splice(o.i, 1); else { save.storage[o.id]--; if (save.storage[o.id] <= 0) delete save.storage[o.id]; }
+        if (ch.held) storeAdd(ch.held);
+        ch.held = o.id; persist(); renderTown(); UI.toast(`${jo(ITEMS[o.id].n, '을')} 지니게 했습니다.`);
+      } })),
+    });
+  }
+
+  function exportSave() {
+    const data = JSON.stringify({ game: 'pmd-web', version: GAME_VERSION, exported: new Date().toISOString(), save }, null, 1);
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob([data], { type: 'application/json' }));
+    const d = new Date(), p2 = n => String(n).padStart(2, '0');
+    a.download = `pmd-web-save-${d.getFullYear()}${p2(d.getMonth() + 1)}${p2(d.getDate())}-${p2(d.getHours())}${p2(d.getMinutes())}.json`;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+    UI.toast('세이브 파일을 저장했습니다.');
+  }
+  async function importSave(file) {
+    let obj = null;
+    try { obj = JSON.parse(await file.text()); } catch (e) { obj = null; }
+    const s = obj && obj.game === 'pmd-web' ? obj.save : obj;
+    if (!s || typeof s !== 'object' || !s.roster || !s.current || !s.roster[s.current]) { UI.alert('불러오기 실패', '<p>이 게임의 세이브 파일이 아닙니다.</p>'); return; }
+    const ch = s.roster[s.current];
+    const ok = await UI.confirm('세이브 불러오기', `<div class="center">${portraitImg(s.current, 'portrait big', 'Normal', ch.shiny)}</div>
+      <p class="center"><b>${esc(spName(s.current))}</b> Lv${ch.lv} · ${s.day || 1}일째 · ₽${s.money || 0}${obj.exported ? `<br><span class="dim">내보낸 시각 ${esc(new Date(obj.exported).toLocaleString())}${obj.version ? ` · 버전 v${esc(obj.version)}` : ''}</span>` : ''}</p>
+      ${obj.version && obj.version !== GAME_VERSION ? `<p class="dim">지금 게임은 v${GAME_VERSION}입니다. 다른 버전의 세이브도 불러올 수 있어요.</p>` : ''}
+      <p class="warn">지금 진행 중인 세이브는 이 파일로 바뀝니다.</p>`, '불러온다', '그만둔다');
+    if (!ok) return;
+    try { localStorage.setItem(SAVE_KEY, JSON.stringify(s)); } catch (e) { UI.alert('불러오기 실패', '<p>브라우저에 저장할 수 없습니다.</p>'); return; }
+    location.reload();
+  }
+  function noteShiny(sp) { save.shinySeen = save.shinySeen || {}; save.shinySeen[sp] = (save.shinySeen[sp] || 0) + 1; }
+  // 이로치 모습: 그 포켓몬의 이로치를 쓰러뜨리거나 영입하면 해금 (이미 이로치로 쓰던 캐릭터는 그대로 인정)
+  const shinyOk = sp => !!((save.shinyOwned && save.shinyOwned[sp]) || save.roster[sp]?.shiny);
+  function unlockShiny(sp) {
+    if (!DATA.species[sp]?.sh || shinyOk(sp)) return false;
+    save.shinyOwned = save.shinyOwned || {}; save.shinyOwned[sp] = true; persist(); return true;
+  }
+  // 영입: Lv5로 합류. 진화체면 진화 전 모습도 함께 해금 (이로치 해금도 같이)
+  function recruit(c) {
+    if (save.roster[c.sp]) return;
+    const ab = DATA.species[c.sp].ab.some(a => a[0] === c.ability) ? c.ability : defaultAbility(c.sp);
+    const entry = sp => ({ lv: RECRUIT_LEVEL, exp: expFor(RECRUIT_LEVEL), moves: defaultMoves(sp, RECRUIT_LEVEL), ability: sp === c.sp ? ab : defaultAbility(sp), shiny: !!c.shiny });
+    save.roster[c.sp] = entry(c.sp);
+    for (const pre of preEvos(c.sp)) if (!save.roster[pre]) save.roster[pre] = entry(pre);
+    if (c.shiny) [c.sp, ...preEvos(c.sp)].forEach(unlockShiny);
+    save.recruited = (save.recruited || 0) + 1;
+    Progress.check();
+    persist();
+  }
+
+  function switchChar(sp) {
+    if (!save.roster[sp]) save.roster[sp] = newEntry(sp);
+    save.current = sp; persist(); renderTown();
+    UI.toast(`${jo(spName(sp), '으로')} 변경했습니다.`);
+  }
+
+  function setMoves() {
+    const sp = save.current, ch = save.roster[sp];
+    const all = [...new Set([...learnableUpTo(sp, ch.lv), ...(ch.tms || []).filter(m => DATA.moves[m])])];
+    if (!all.length) { UI.alert('기술 설정', '<p>배울 수 있는 기술이 없습니다.</p>'); return; }
+    const sel = new Set(ch.moves);
+    UI.open({
+      title: '기술 설정 (최대 4개)', wide: true,
+      html: `<p class="dim">현재 레벨까지 배울 수 있는 기술과 기술머신으로 배운 기술 중에서 자유롭게 고르세요. <b>?</b>를 누르면 기술 설명을 볼 수 있습니다.</p><div class="move-pick">${all.map(id => `<label class="move-row"><input type="checkbox" value="${id}" ${sel.has(id) ? 'checked' : ''}> ${moveLine(id)}<span class="info" data-move="${id}" title="기술 정보">?</span></label>`).join('')}</div>`,
+      choices: [{ label: '저장', fn: () => { ch.moves = [...sel]; persist(); renderTown(); } }, { label: '취소', fn: () => {} }],
+      onOpen: box => {
+        box.querySelectorAll('input[type=checkbox]').forEach(cb => cb.onchange = () => {
+          const id = +cb.value;
+          if (cb.checked) { if (sel.size >= 4) { cb.checked = false; UI.toast('기술은 4개까지 고를 수 있습니다.'); return; } sel.add(id); }
+          else sel.delete(id);
+        });
+      },
+    });
+  }
+
+  async function evolve(to) {
+    const sp = save.current, e = evoOptions(sp).find(o => o.to === to);
+    if (!e || !e.ok) return;
+    let msg = `<p>${esc(jo(spName(sp), '이'))} ${esc(jo(spName(to), '으로'))} 진화합니다.</p>`;
+    if (save.roster[to]) msg += `<p class="warn">이미 있는 ${esc(spName(to))}의 기록(Lv${save.roster[to].lv})을 덮어씁니다.</p>`;
+    if (!(await UI.confirm('진화', msg, '진화한다', '그만둔다'))) return;
+    if (e.itemId) {
+      const bi = save.bag.findIndex(b => b.id === e.itemId);
+      if (bi >= 0) save.bag.splice(bi, 1); else { save.storage[e.itemId]--; if (save.storage[e.itemId] <= 0) delete save.storage[e.itemId]; }
+    }
+    const entry = save.roster[sp];
+    if (shinyOk(sp)) { save.shinyOwned = save.shinyOwned || {}; save.shinyOwned[to] = true; }
+    delete save.roster[sp];
+    // 진화 후 레벨에서 새로 배우는 기술이 있으면 빈 칸에 추가
+    for (const mid of learnedAt(to, entry.lv).concat(learnedAt(to, 1))) if (entry.moves.length < 4 && !entry.moves.includes(mid)) entry.moves.push(mid);
+    const slot = DATA.species[sp].ab.findIndex(a => a[0] === entry.ability);
+    entry.ability = (DATA.species[to].ab[slot] || DATA.species[to].ab[0] || [0])[0];
+    save.roster[to] = entry; save.current = to;
+    Progress.add('evolves'); Progress.check();
+    Sound.play('levelup');
+    persist(); renderTown();
+    UI.alert('축하합니다!', `<div class="center">${portraitImg(to, 'portrait big', 'Joyous', entry.shiny)}</div><p>${esc(jo(spName(sp), '은'))} ${esc(jo(spName(to), '으로'))} 진화했다!</p>`);
+  }
+
+  // ───────────────────────── 캐릭터 선택 ─────────────────────────
+  // only: 고를 수 있는 포켓몬 (캐릭터 변경은 영입한 포켓몬만)
+  function chooseCharacter(cb, first, only, back) {
+    const ids = only || Object.keys(DATA.species).map(Number);
+    const gens = [...new Set(ids.map(id => DATA.species[id].g))].sort((a, b) => a - b);
+    UI.open({
+      title: first ? '함께 모험할 포켓몬을 고르세요' : '캐릭터 변경', wide: true, cancel: first ? false : undefined,
+      html: `${only && !first ? `<p class="dim">영입한 포켓몬 ${ids.length}마리 중에서 고릅니다. 던전에서 쓰러뜨린 적이 가끔 동료가 되고 싶어 해요. (지금 영입 확률 ${(recruitRate(save.roster[save.current].lv) * 100).toFixed(1)}%)</p>` : ''}<div class="picker-bar"><input id="pk-q" placeholder="이름 / 영어 / 번호 검색" autocomplete="off">
+        <select id="pk-g"><option value="">전체 세대</option>${gens.map(g => `<option value="${g}">${g}세대</option>`).join('')}</select>
+        <select id="pk-t"><option value="">전체 타입</option>${DATA.types.map((t, i) => `<option value="${i + 1}">${t}</option>`).join('')}</select>
+        <button class="btn sm ghost" id="pk-r">무작위</button>${back ? ' <button class="btn sm ghost" id="pk-back">← 방법 다시 고르기</button>' : ''}</div>
+        <div class="picker" id="pk-grid">${ids.map(id => `<button class="pk" data-id="${id}" data-s="${(DATA.species[id].n + ' ' + DATA.species[id].e + ' ' + id).toLowerCase()}" data-g="${DATA.species[id].g}" data-t="${DATA.species[id].t.join(',')}">
+          ${portraitImg(id, 'portrait sm', 'Normal', !!(only && !first && save && save.roster[id]?.shiny))}<span>${esc(DATA.species[id].n)}</span>${save && save.roster && save.roster[id] ? `<i>Lv${save.roster[id].lv}</i>` : ''}</button>`).join('')}</div>`,
+      onOpen: (box, m) => {
+        const q = box.querySelector('#pk-q'), g = box.querySelector('#pk-g'), t = box.querySelector('#pk-t');
+        const filter = () => {
+          const s = q.value.trim().toLowerCase();
+          box.querySelectorAll('.pk').forEach(b => {
+            b.style.display = (!s || b.dataset.s.includes(s)) && (!g.value || b.dataset.g === g.value) && (!t.value || b.dataset.t.split(',').includes(t.value)) ? '' : 'none';
+          });
+        };
+        q.oninput = filter; g.onchange = filter; t.onchange = filter;
+        if (back) box.querySelector('#pk-back').onclick = () => { UI.close(m); setTimeout(back, 0); };
+        box.querySelector('#pk-r').onclick = () => { const vis = [...box.querySelectorAll('.pk')].filter(b => b.style.display !== 'none'); if (vis.length) confirmPick(+pick(vis).dataset.id); };
+        const confirmPick = async id => {
+          const d = DATA.species[id], st = calcStats(id, START_LEVEL, 31);
+          const ok = await UI.confirm(esc(d.n), `<div class="center">${portraitImg(id, 'portrait big')}</div><p class="center">${typeBadges(d.t)}</p>
+            <p class="center dim">종족값 HP ${d.b[0]} / 공 ${d.b[1]} / 방 ${d.b[2]} / 특공 ${d.b[3]} / 특방 ${d.b[4]} / 스피드 ${d.b[5]}</p>
+            <p class="center">${save && save.roster && save.roster[id] ? `저장된 기록: Lv${save.roster[id].lv}` : `Lv${START_LEVEL}부터 시작 (HP ${st.maxhp})`}</p>`, '이 포켓몬으로 한다', '다시 고른다');
+          if (ok) { UI.close(m); cb(id); }
+        };
+        box.querySelector('#pk-grid').onclick = e => { const b = e.target.closest('.pk'); if (b) confirmPick(+b.dataset.id); };
+        setTimeout(() => q.focus(), 50);
+      },
+    });
+  }
+
+  // ───────────────────────── 던전 출입 ─────────────────────────
+  async function prepareRun(id) {
+    const dg = dungeonById(id);
+    const ch = save.roster[save.current];
+    if (dg.mode === 'rogue') {
+      const ok = await UI.confirm(esc(dg.n), `<p><b>로그라이크 던전</b>입니다.</p><ul>
+        <li>레벨이 <b>${jo(ROGUE_LEVEL, '으로')}</b>, 가방이 초기화된 상태로 들어갑니다. (오랭열매 2개, 사과 1개 지급)</li>
+        <li>던전에서 나오면 레벨과 가방이 원래대로 돌아옵니다.</li>
+        <li>클리어하거나 탈출하면 주운 돈과 아이템(창고로)을 가져올 수 있습니다. 쓰러지면 아무것도 가져오지 못합니다.</li></ul>`, '들어간다', '그만둔다');
+      if (!ok) return;
+    } else {
+      const ms = save.missions.accepted.filter(m => m.dungeon === id);
+      const ok = await UI.confirm(esc(dg.n), `<p>${dg.floors}층짜리 던전입니다. (적 Lv ${dg.lv[0]}~${dg.lv[1]}, 내 레벨 ${ch.lv})</p>
+        <p>가방: ${save.bag.length}/${bagMax()}칸${save.bag.length ? '' : ' <span class="warn">(비어 있음!)</span>'}</p>
+        ${ms.length ? `<p>이 던전의 임무: ${ms.map(m => m.floor + 'F').join(', ')}</p>` : ''}
+        <p class="dim">쓰러지면 가방 아이템의 절반(무작위)과 이번 탐험에서 주운 돈을 잃습니다. 레벨은 유지됩니다.</p>`, '출발한다', '그만둔다');
+      if (!ok) return;
+    }
+    startRun(dg);
+  }
+
+  function startRun(dg) {
+    const sp = save.current, ch = save.roster[sp];
+    let p, bag;
+    if (dg.mode === 'rogue') {
+      p = makeCreature(sp, ROGUE_LEVEL, { player: true, ability: entryAbility(sp, ch) });
+      p.shiny = !!ch.shiny;
+      bag = [{ id: 'oran', n: 1 }, { id: 'oran', n: 1 }, { id: 'apple', n: 1 }];
+    } else {
+      p = makeCreature(sp, ch.lv, { player: true, exp: ch.exp, moves: ch.moves.length ? ch.moves : undefined, ability: entryAbility(sp, ch), boost: ch.boost });
+      p.held = ch.held || null;
+      p.shiny = !!ch.shiny;
+      p.tms = (ch.tms || []).slice();
+      bag = JSON.parse(JSON.stringify(save.bag));
+    }
+    p.belly = 100;
+    const run = { dungeon: dg.id, floor: 1, mode: dg.mode, p, bag, money: 0, done: [] };
+    show('dungeon-screen');
+    Dungeon.enter(run);
+  }
+
+  // 오늘의 도전: 그날 정해진 포켓몬으로, 하루 한 번
+  async function prepareDaily() {
+    if (Progress.dailyRecord()) return;
+    const dg = Progress.setupDaily();
+    const ok = await UI.confirm(esc(dg.n), `<div class="center">${portraitImg(dg.hero, 'portrait big')}</div>
+      <p class="center">오늘의 주인공 <b>${esc(spName(dg.hero))}</b> Lv${ROGUE_LEVEL}</p><ul>
+      <li>${dg.floors}층짜리 로그라이크 던전입니다. 오늘은 누구나 같은 포켓몬, 같은 맵으로 도전합니다.</li>
+      <li><b>하루 한 번</b>만 도전할 수 있습니다. 도중에 창을 닫으면 그 층의 처음부터 이어집니다.</li>
+      <li>가방은 오랭열매 2개와 사과 1개로 시작합니다. 내 캐릭터와 가방은 그대로 보존됩니다.</li>
+      <li>보상: 도달한 층 × ₽40 (완주하면 ₽1000 추가). 쓰러져도 받을 수 있어요.</li></ul>`, '도전한다', '그만둔다');
+    if (!ok) return;
+    const p = makeCreature(dg.hero, ROGUE_LEVEL, { player: true });
+    p.belly = 100;
+    const run = { dungeon: 'daily', daily: dg.date, floor: 1, mode: 'rogue', p, bag: [{ id: 'oran', n: 1 }, { id: 'oran', n: 1 }, { id: 'apple', n: 1 }], money: 0, done: [], turns: 0, kills: 0 };
+    // 시작하자마자 기록을 남겨서 다시 도전하지 못하게 한다
+    save.daily = { date: dg.date, sp: dg.hero, floor: 1, clear: false, turns: 0, lv: ROGUE_LEVEL, kills: 0 };
+    persist();
+    show('dungeon-screen');
+    Dungeon.enter(run);
+  }
+
+  function saveRunSnapshot(r) {
+    const p = r.p;
+    save.run = { dungeon: r.dungeon, floor: r.floor, mode: r.mode, bag: r.bag, money: r.money, done: r.done, daily: r.daily || null, turns: r.turns || 0, kills: r.kills || 0,
+      p: { sp: p.sp, lv: p.lv, exp: p.exp, hp: p.hp, belly: p.belly, status: p.status, statusT: p.statusT, moves: p.moves.map(m => m.id), pp: p.moves.map(m => m.pp), ability: p.ability, held: p.held || null, tms: p.tms || [], shiny: !!p.shiny, boost: p.boost || null } };
+    // 일반 던전은 층마다 레벨도 저장
+    if (r.mode === 'normal') save.roster[p.sp] = { ...save.roster[p.sp], lv: p.lv, exp: p.exp, moves: p.moves.map(m => m.id), held: p.held || null, tms: p.tms || [], ...(p.boost ? { boost: p.boost } : {}) };
+    persist();
+  }
+
+  function resumeRun() {
+    const s = save.run;
+    if (s.daily) Progress.setupDaily(s.daily);
+    const p = makeCreature(s.p.sp, s.p.lv, { player: true, exp: s.p.exp, moves: s.p.moves, pp: s.p.pp, ability: s.p.ability ?? entryAbility(s.p.sp, save.roster[s.p.sp]), boost: s.p.boost || undefined });
+    p.hp = clamp(s.p.hp, 1, p.maxhp); p.belly = s.p.belly; p.held = s.p.held || null; p.tms = s.p.tms || []; p.shiny = !!s.p.shiny; p.status = s.p.status; p.statusT = s.p.statusT;
+    const run = { dungeon: s.dungeon, floor: s.floor, mode: s.mode, p, bag: s.bag, money: s.money, done: s.done, daily: s.daily || null, turns: s.turns || 0, kills: s.kills || 0 };
+    show('dungeon-screen');
+    Dungeon.enter(run);
+  }
+  function abandonSavedRun() {
+    const s = save.run;
+    if (s.daily) Progress.setupDaily(s.daily);
+    const fake = { dungeon: s.dungeon, floor: s.floor, mode: s.mode, bag: s.bag, money: s.money, done: [], daily: s.daily || null, turns: s.turns || 0, kills: s.kills || 0,
+      p: { sp: s.p.sp, lv: s.p.lv, exp: s.p.exp, ability: s.p.ability, held: s.p.held, moves: s.p.moves.map(id => ({ id })) } };
+    finishRun(fake, 'faint');
+  }
+
+  function endRun(outcome) {
+    const r = Dungeon.run;
+    if (!r) return;
+    Dungeon.leave();
+    UI.closeAll();
+    // 일반 던전에서 쓰러졌을 때: 친구에게 구조를 요청할 수 있다 (요청은 한 번에 하나)
+    if (outcome === 'faint' && r.mode === 'normal') {
+      show('town-screen'); renderTown();
+      if (save.sos) {
+        UI.alert('구조 요청 불가', '<p>이미 기다리고 있는 구조 요청이 있어서 새로 요청할 수 없습니다.</p>').then(() => finishRun(r, 'faint'));
+        return;
+      }
+      UI.open({
+        title: '눈앞이 캄캄해졌다...',
+        html: `<div class="center">${portraitImg(r.p.sp, 'portrait big', 'Pain', r.p.shiny)}</div>
+          <p>친구에게 <b>구조를 요청</b>할 수 있습니다. 요청하면 SOS 코드가 나오고, 구조될 때까지 아이템과 돈을 잃지 않고 기다립니다.
+          기다리는 동안에도 다른 던전은 탐험할 수 있어요.</p>`,
+        choices: [{ label: '🆘 구조를 요청한다 (SOS 코드 만들기)', fn: () => createSOS(r) }, { label: '포기하고 돌아간다', fn: () => finishRun(r, 'faint') }],
+        cancel: false,
+      });
+      return;
+    }
+    finishRun(r, outcome === 'quit' ? 'faint' : outcome);
+  }
+
+  // ───────────────────────── 친구 구조 (코드) ─────────────────────────
+  function codeBox(title, html, code, label, then) {
+    UI.open({
+      title, wide: true,
+      html: `${html}<div class="code-box"><input class="code-text" readonly value="${code}"><button class="btn sm" data-copy>복사</button></div>
+        <p class="dim">코드는 메신저 등으로 친구에게 보내 주세요. 이 화면은 임무 탭에서 다시 볼 수 있습니다.</p>`,
+      choices: [{ label: label || '확인', fn: then || (() => {}) }], cancel: then || (() => {}),
+      onOpen: box => {
+        const inp = box.querySelector('.code-text');
+        inp.onclick = () => inp.select();
+        box.querySelector('[data-copy]').onclick = async () => {
+          try { await navigator.clipboard.writeText(code); UI.toast('복사했습니다.'); }
+          catch (e) { inp.select(); document.execCommand && document.execCommand('copy'); UI.toast('선택된 코드를 Ctrl+C로 복사하세요.'); }
+        };
+      },
+    });
+  }
+  function sosCode(s) { return Codes.encode('sos', { id: s.id, dg: DUNGEONS.findIndex(d => d.id === s.dungeon), fl: s.floor, sp: s.sp, lv: s.lv, sh: s.shiny ? 1 : 0 }); }
+
+  function createSOS(r) {
+    const p = r.p;
+    const s = {
+      id: Codes.newId(), dungeon: r.dungeon, floor: r.floor, sp: p.sp, lv: p.lv, shiny: !!p.shiny, day: save.day,
+      snap: { bag: r.bag, money: r.money, done: r.done, held: p.held || null },
+    };
+    save.sos = s;
+    // 레벨은 그대로 남고, 가방과 지닌 물건은 쓰러진 곳에 남아 구조를 기다린다
+    save.roster[p.sp] = { ...save.roster[p.sp], lv: p.lv, exp: p.exp, moves: p.moves.map(m => m.id), held: null, ...(p.tms ? { tms: p.tms } : {}), ...(p.boost ? { boost: p.boost } : {}) };
+    save.bag = [];   // 가방은 쓰러진 곳에서 구조를 기다린다 (s.snap.bag)
+    save.best[r.dungeon] = Math.max(save.best[r.dungeon] || 0, r.floor);
+    save.run = null; save.day++; refreshDay(); persist();
+    tab = 'mission'; renderTown();
+    codeBox('🆘 SOS 코드', `<p>${esc(dungeonById(s.dungeon).n)} ${s.floor}F에서 쓰러진 <b>${esc(spName(s.sp))}</b> Lv${s.lv}의 구조 요청입니다.</p>
+      <p>친구가 이 코드로 구조해 주면 <b>A-OK 코드</b>를 받게 됩니다. 그 코드를 임무 탭에 입력하면 쓰러진 층부터 이어서 탐험할 수 있어요.</p>`, sosCode(s));
+  }
+
+  function sosSection() {
+    const s = save.sos;
+    let h = '<h3>🆘 친구 구조</h3>';
+    if (s) {
+      const dg = dungeonById(s.dungeon);
+      h += `<div class="row sos-row">${portraitImg(s.sp, 'portrait sm', s.revived ? 'Happy' : 'Pain', s.shiny)}<div class="grow">
+        ${s.revived ? `<b>구조되었습니다!</b> ${esc(dg.n)} ${s.floor}F에서 이어서 탐험할 수 있어요.` : `<b>구조를 기다리는 중</b> — ${esc(dg.n)} ${s.floor}F에서 쓰러진 ${esc(spName(s.sp))} Lv${s.lv}`}
+        <div class="dim">가방 ${s.snap.bag.length}칸${s.snap.held ? ` · 지닌 물건 ${esc(ITEMS[s.snap.held].n)}` : ''}이 함께 기다리고 있습니다.</div></div>
+        ${s.revived ? '<button class="btn sm" data-act="sos-resume">이어서 탐험</button>' : '<button class="btn sm ghost" data-act="sos-show">SOS 코드</button> <button class="btn sm ghost danger" data-act="sos-giveup">포기</button>'}</div>`;
+    }
+    h += `<div class="code-box"><input id="code-input" placeholder="친구에게 받은 코드 입력 (SOS / A-OK / 감사 코드)" autocomplete="off"><button class="btn sm" data-act="code-enter">입력</button></div>`;
+    const sent = (save.aokSent || []).slice(-3);
+    if (sent.length) h += `<div class="dim">보낸 A-OK 코드: ${sent.map(a => `<a href="#" data-act="aok-show" data-arg="${a.id}">${esc(spName(a.sp))} (${a.code.slice(0, 9)}…)</a>`).join(', ')}</div>`;
+    return h;
+  }
+
+  async function enterCode() {
+    const inp = document.getElementById('code-input');
+    const d = Codes.decode(inp ? inp.value : '');
+    if (d.error) { UI.alert('코드 오류', `<p>${esc(d.error)}</p>`); return; }
+    if (d.type === 'sos') return acceptSOS(d);
+    if (d.type === 'aok') return receiveAOK(d);
+    if (d.type === 'thx') return receiveTHX(d);
+  }
+
+  // 친구의 SOS → 구조 임무
+  async function acceptSOS(d) {
+    const dg = DUNGEONS[d.dg];
+    if (!dg || dg.mode !== 'normal' || d.fl < 1 || d.fl > dg.floors || !DATA.species[d.sp]) { UI.alert('코드 오류', '<p>이 게임에서 쓸 수 없는 SOS 코드입니다.</p>'); return; }
+    if (save.sos && save.sos.id === d.id) { UI.alert('구조 불가', '<p>자기 자신의 구조 요청은 받을 수 없어요. 친구에게 보내 주세요.</p>'); return; }
+    if ((save.rescued || {})[d.id] || save.missions.accepted.some(m => m.sosId === d.id)) { UI.alert('구조 불가', '<p>이미 받았거나 구조를 마친 요청입니다.</p>'); return; }
+    if (!unlocked(dg)) { UI.alert('구조 불가', `<p>${esc(jo(dg.n, '은'))} 아직 열리지 않은 던전이라 구조하러 갈 수 없어요.</p><p class="dim">${esc(jo(dungeonById(dg.req).n, '을'))} 클리어하면 열립니다.</p>`); return; }
+    if (save.missions.accepted.length >= 4) { UI.alert('구조 불가', '<p>진행 중인 임무가 4개입니다. 하나를 끝내거나 취소한 뒤 받아 주세요.</p>'); return; }
+    const reward = Math.round((150 + d.fl * 40) * (1 + DUNGEONS.filter(x => x.mode === 'normal').indexOf(dg) * 0.5) / 10) * 10;
+    const ok = await UI.confirm('🆘 구조 요청', `<div class="center">${portraitImg(d.sp, 'portrait big', 'Pain', !!d.sh)}</div>
+      <p class="center"><b>${esc(dg.n)} ${d.fl}F</b>에서 친구의 Lv${d.lv} <b>${esc(jo(spName(d.sp), '이'))}</b> 쓰러져 있습니다.</p>
+      <p class="center dim">그 층까지 내려가서 말을 걸면 구조 성공. 보상 ₽${reward} + A-OK 코드</p>`, '구조하러 간다', '그만둔다');
+    if (!ok) return;
+    save.missions.accepted.push({ id: 'sos' + d.id, kind: 'sos', sosId: d.id, dungeon: dg.id, floor: d.fl, client: d.sp, lv: d.lv, shiny: !!d.sh, reward });
+    document.getElementById('code-input').value = '';
+    persist(); renderTown(); UI.toast('구조 임무를 받았습니다!');
+  }
+
+  // 내 SOS에 대한 A-OK → 부활
+  async function receiveAOK(d) {
+    const s = save.sos;
+    if (!s || s.id !== d.id) { UI.alert('코드 오류', '<p>지금 기다리고 있는 구조 요청에 대한 A-OK 코드가 아닙니다.</p>'); return; }
+    if (s.revived) { UI.alert('이미 구조됨', '<p>이미 구조되었어요. 임무 탭에서 이어서 탐험할 수 있습니다.</p>'); return; }
+    s.revived = { sp: d.sp, lv: d.lv, sh: !!d.sh };
+    document.getElementById('code-input').value = '';
+    persist(); renderTown();
+    await UI.alert('구조되었다!', `<div class="center">${portraitImg(d.sp, 'portrait big', 'Happy', !!d.sh)} ${portraitImg(s.sp, 'portrait big', 'Joyous', s.shiny)}</div>
+      <p class="center">친구의 <b>${esc(spName(d.sp))}</b> Lv${d.lv} 덕분에 ${esc(jo(spName(s.sp), '이'))} 되살아났다!</p>`);
+    // 감사 선물 (선택)
+    const gifts = [...save.bag.map((b, i) => ({ id: b.id, from: 'bag', i })), ...Object.keys(save.storage).filter(id => save.storage[id] > 0).map(id => ({ id, from: 'storage' }))]
+      .filter(g => ITEMS[g.id] && g.id !== 'quest');
+    UI.open({
+      title: '💌 감사 선물', wide: true,
+      html: '<p>구조해 준 친구에게 아이템 하나를 선물할 수 있어요. 감사 코드를 보내면 친구의 창고로 들어갑니다.</p>',
+      choices: [{ label: '선물 없이 감사 코드만 보낸다', fn: () => sendThanks(s, null) },
+        ...gifts.slice(0, 40).map(g => ({ label: `${ITEMS[g.id].icon} ${esc(ITEMS[g.id].n)} <span class="dim">(${g.from === 'bag' ? '가방' : '창고'})</span>`, fn: () => {
+          if (g.from === 'bag') save.bag.splice(g.i, 1); else { save.storage[g.id]--; if (save.storage[g.id] <= 0) delete save.storage[g.id]; }
+          sendThanks(s, g.id);
+        } }))],
+      cancel: false,
+    });
+  }
+  function receiveAOKAgain() {
+    const s = save.sos; if (!s || !s.revived) return;
+    UI.confirm('이어서 탐험', '<p>구조해 준 친구에게 감사 코드를 보내지 않았어요. 선물 없이 감사 코드를 만들고 이어서 탐험할까요?</p>', '그렇게 한다', '그만둔다')
+      .then(ok => { if (ok) sendThanks(s, null); });
+  }
+  function sendThanks(s, itemId) {
+    const code = Codes.encode('thx', { id: s.id, item: Codes.itemToNum(itemId) });
+    s.thx = code; persist(); renderTown();
+    codeBox('💌 감사 코드', `<p>구조해 준 친구에게 보내 주세요.${itemId ? ` 선물: ${ITEMS[itemId].icon} ${esc(ITEMS[itemId].n)}` : ''}</p>`, code, '쓰러진 층부터 이어서 탐험한다', resumeSOS);
+  }
+
+  // 구조된 뒤 이어서 탐험
+  function resumeSOS() {
+    const s = save.sos; if (!s || !s.revived) return;
+    const ch = save.roster[s.sp] || newEntry(s.sp);
+    const p = makeCreature(s.sp, ch.lv, { player: true, exp: ch.exp, moves: ch.moves.length ? ch.moves : undefined, ability: entryAbility(s.sp, ch), boost: ch.boost });
+    Progress.add('rescued');
+    p.held = s.snap.held; p.tms = (ch.tms || []).slice(); p.shiny = !!ch.shiny; p.belly = 100;
+    // 기다리는 동안 모은 가방은 창고로 (구조된 가방을 돌려받기 위해)
+    if (save.bag.length) { save.bag.forEach(b => storeAdd(b.id, b.n)); UI.toast('지금 가방의 아이템은 창고에 넣었습니다.'); save.bag = []; }
+    const run = { dungeon: s.dungeon, floor: s.floor, mode: 'normal', p, bag: s.snap.bag, money: s.snap.money, done: s.snap.done || [] };
+    save.current = s.sp; save.sos = null; persist();
+    UI.closeAll();
+    show('dungeon-screen');
+    Dungeon.enter(run);
+  }
+
+  // 구조를 포기: 그때 쓰러진 것으로 처리
+  async function giveUpSOS() {
+    const s = save.sos; if (!s) return;
+    if (!(await UI.confirm('구조 포기', '<p>구조를 포기하면 쓰러졌을 때의 패널티(가방 아이템 절반, 지닌 물건 50%, 주웠던 돈)를 받습니다. 남은 아이템은 창고로 갑니다.</p>', '포기한다', '계속 기다린다'))) return;
+    const bag = s.snap.bag.slice(), lost = [];
+    const loseN = Math.floor(bag.length / 2) + (bag.length % 2 && Math.random() < 0.5 ? 1 : 0);
+    for (let i = 0; i < loseN; i++) lost.push(bag.splice(rand(bag.length), 1)[0]);
+    bag.forEach(b => storeAdd(b.id, b.n));
+    if (s.snap.held) { if (Math.random() < 0.5) lost.push({ id: s.snap.held, n: 1 }); else storeAdd(s.snap.held); }
+    save.money = Math.max(0, save.money - (s.snap.money || 0));
+    save.sos = null; persist(); renderTown();
+    UI.alert('구조를 포기했다', `<p>${lost.length ? `잃어버린 아이템: ${lost.map(b => ITEMS[b.id].icon + esc(ITEMS[b.id].n)).join(', ')}` : '잃어버린 아이템은 없다.'}</p>
+      ${s.snap.money ? `<p>주웠던 돈 ₽${jo(s.snap.money, '을')} 잃었다.</p>` : ''}<p class="dim">남은 아이템은 창고로 옮겼습니다.</p>`);
+  }
+
+  // 구조해 준 친구에게서 온 감사 코드
+  function receiveTHX(d) {
+    const r = (save.rescued || {})[d.id];
+    if (!r) { UI.alert('코드 오류', '<p>내가 구조한 친구에게서 온 감사 코드가 아닙니다.</p>'); return; }
+    if (r.thanked) { UI.alert('이미 받음', '<p>이미 받은 감사 코드입니다.</p>'); return; }
+    r.thanked = true;
+    const item = Codes.numToItem(d.item);
+    if (item) storeAdd(item);
+    document.getElementById('code-input').value = '';
+    persist(); renderTown();
+    UI.alert('💌 감사 편지', `<div class="center">${portraitImg(r.sp, 'portrait big', 'Joyous', r.shiny)}</div>
+      <p class="center">구조해 준 ${esc(spName(r.sp))}의 친구에게서 감사 편지가 왔다!</p>
+      ${item ? `<p class="center">선물로 ${ITEMS[item].icon} <b>${esc(jo(ITEMS[item].n, '을'))}</b> 받았다! (창고로)</p>` : ''}`);
+  }
+
+  function finishRun(r, outcome) {
+    const dg = dungeonById(r.dungeon);
+    const p = r.p;
+    const success = outcome === 'clear' || outcome === 'escape';
+    const lines = [], aoks = [];
+    const reached = outcome === 'clear' ? dg.floors : r.floor;
+    if (!success) Progress.add('faints');
+    if (!dg.daily) save.best[dg.id] = Math.max(save.best[dg.id] || 0, reached);
+    if (dg.mode === 'normal') {
+      if (save.roster[p.sp] || p.sp === save.current) save.roster[p.sp] = { ...save.roster[p.sp], lv: p.lv, exp: p.exp, moves: p.moves.map(m => m.id), held: p.held || null, ...(p.tms ? { tms: p.tms } : {}), ...(p.boost ? { boost: p.boost } : {}) };
+      if (success) {
+        save.bag = r.bag;
+        if (outcome === 'clear') {
+          const bonus = dg.floors * (5 + dg.lv[1]);
+          save.money += bonus;
+          lines.push(`던전 클리어 보너스 ₽${bonus}`);
+          if (!save.cleared[dg.id]) {
+            save.cleared[dg.id] = true;
+            for (const next of DUNGEONS.filter(d => d.req === dg.id)) lines.push(`새 던전 <b>${esc(jo(next.n, '이'))}</b> 열렸다!`);
+          }
+        }
+        for (const m of save.missions.accepted.filter(m => r.done.includes(m.id))) {
+          if (m.kind === 'sos') {
+            const code = Codes.encode('aok', { id: m.sosId, sp: p.sp, lv: p.lv, sh: p.shiny ? 1 : 0 });
+            save.rescued = save.rescued || {}; save.rescued[m.sosId] = { sp: m.client, shiny: m.shiny, thanked: false };
+            save.aokSent = [...(save.aokSent || []), { id: m.sosId, sp: m.client, code }].slice(-10);
+            aoks.push({ m, code });
+            Progress.add('rescues');
+          }
+          Progress.add('missions');
+          save.money += m.reward;
+          if (m.item) storeAdd(m.item);
+          lines.push(`임무 완료 보상: ${rewardText(m)}${m.item ? ' (창고로)' : ''}`);
+        }
+        save.missions.accepted = save.missions.accepted.filter(m => !r.done.includes(m.id));
+      } else {
+        const bag = r.bag.slice();
+        const half = abilityOf(p).stickyHold ? bag.length / 4 : bag.length / 2;
+        const loseN = Math.floor(half) + (Math.random() < half % 1 ? 1 : 0);
+        if (abilityOf(p).stickyHold) lines.push(`[${abilityName(p.ability)}] 아이템을 꽉 붙잡고 있었다!`);
+        const lost = [];
+        for (let i = 0; i < loseN; i++) lost.push(bag.splice(rand(bag.length), 1)[0]);
+        save.bag = bag;
+        if (p.held && Math.random() < (abilityOf(p).stickyHold ? 0.25 : 0.5)) { lost.push({ id: p.held, n: 1 }); save.roster[p.sp].held = null; }
+        save.money = Math.max(0, save.money - r.money);
+        if (lost.length) lines.push(`가방의 아이템 ${lost.length}개를 잃어버렸다: ${lost.map(b => ITEMS[b.id].icon + esc(ITEMS[b.id].n) + (b.n > 1 ? '×' + b.n : '')).join(', ')}`);
+        else lines.push('가방의 아이템은 무사했다.');
+        if (r.money) lines.push(`주웠던 돈 ₽${jo(r.money, '을')} 잃어버렸다...`);
+        lines.push(`레벨은 유지된다. (Lv${p.lv})`);
+      }
+    } else {
+      if (success) {
+        const items = r.bag.filter(b => ITEMS[b.id]).concat(p.held ? [{ id: p.held, n: 1 }] : []);
+        items.forEach(b => storeAdd(b.id, b.n));
+        if (items.length) lines.push(`가져온 아이템 ${items.length}종을 창고에 넣었다.`);
+        if (r.money) lines.push(`주운 돈 ₽${r.money}`);
+        if (outcome === 'clear') { const bonus = dg.floors * 60; save.money += bonus; lines.push(`완주 보너스 ₽${bonus}`); }
+      } else {
+        save.money = Math.max(0, save.money - r.money);
+        lines.push('쓰러져서 아무것도 가져오지 못했다...');
+      }
+      if (dg.daily) {
+        const { rec, reward } = Progress.recordDaily(r, outcome, reached);
+        lines.push(`오늘의 도전 기록: <b>${rec.floor}F</b>${rec.clear ? ' 완주!' : ''} · ${rec.turns}턴 · ${rec.kills}마리 쓰러뜨림`);
+        lines.push(`도전 보상 ₽${reward}`);
+        lines.push('기록은 던전 탭에서 친구에게 공유할 수 있습니다.');
+      } else lines.push(`레벨과 가방이 원래대로 돌아왔다. (최고 기록 ${save.best[dg.id]}F)`);
+    }
+    save.run = null;
+    save.day++;
+    refreshDay();
+    const got = Progress.check();
+    if (got.length) lines.push(...got.map(a => `🏆 업적 달성: <b>${esc(a.n)}</b>`));
+    persist();
+    Sound.town();
+    show('town-screen');
+    tab = 'dungeon';
+    renderTown();
+    const title = { clear: '던전 클리어!', escape: '무사히 돌아왔다', faint: '눈앞이 캄캄해졌다...', wind: '바람에 날려 쫓겨났다...', quit: '탐험을 포기했다' }[outcome] || '귀환';
+    const face = { clear: 'Joyous', escape: 'Happy', faint: 'Crying', wind: 'Sad' }[outcome] || 'Normal';
+    const res = UI.alert(title, `<div class="center">${portraitImg(p.sp, 'portrait big', face, save.roster[p.sp]?.shiny)}</div><p>${esc(dg.n)} ${reached}F${outcome === 'clear' ? ' 완주' : ''}</p><ul>${lines.map(l => `<li>${l}</li>`).join('')}</ul>`);
+    // 친구 구조 완료 → A-OK 코드 보여주기
+    aoks.reduce((pr, a) => pr.then(() => new Promise(done => codeBox('✅ A-OK 코드', `<p>친구의 <b>${esc(jo(spName(a.m.client), '을'))}</b> 구조했다! 이 코드를 친구에게 보내면 친구가 되살아납니다.</p>`, a.code, '확인', done))), res);
+  }
+
+  // 던전 안에서 받은 임무 보기
+  function showMissions() {
+    const r = Dungeon.run; if (!r || UI.isOpen()) return;
+    Dungeon.stopAuto();
+    const dg = dungeonById(r.dungeon), acc = save.missions.accepted;
+    const mine = acc.filter(m => m.dungeon === dg.id), other = acc.filter(m => m.dungeon !== dg.id);
+    const state = m => r.done.includes(m.id) ? '<span class="tag ok">✅ 완료 · 마을로 돌아가면 보상</span>'
+      : m.floor === r.floor ? '<span class="tag here">📍 이 층</span>'
+      : m.floor > r.floor ? `<span class="tag">${m.floor}F · ${m.floor - r.floor}층 아래</span>` : `<span class="tag dim">${m.floor}F · 이미 지나침</span>`;
+    const row = (m, st) => `<div class="row">${portraitImg(m.kind === 'outlaw' ? m.target : m.client, 'portrait sm', m.kind === 'sos' ? 'Pain' : 'Normal', !!m.shiny)}
+      <div class="grow">${missionText(m)}<div class="dim">보상 ${rewardText(m)}</div>${st ? `<div>${st}</div>` : ''}</div></div>`;
+    let html;
+    if (r.mode !== 'normal') html = '<p>로그라이크 던전에서는 임무를 진행할 수 없습니다.</p>' + (acc.length ? `<p class="dim">받아 둔 임무 ${acc.length}개는 일반 던전에서 진행하세요.</p>` : '');
+    else {
+      html = `<h3>${esc(dg.n)}의 임무 <span class="dim">(지금 ${r.floor}F)</span></h3>
+        ${mine.length ? mine.map(m => row(m, state(m))).join('') : '<p class="dim">이 던전에서 받은 임무가 없습니다.</p>'}
+        ${other.length ? `<h3>다른 던전의 임무</h3>${other.map(m => row(m)).join('')}` : ''}
+        ${r.done.length ? '<p class="dim">완료한 임무의 보상은 계단으로 나가거나 탈출하면 받습니다. 쓰러지면 받을 수 없어요.</p>' : ''}`;
+    }
+    UI.open({ title: '📜 임무 확인', wide: true, html, choices: [{ label: '닫기', fn: () => {} }] });
+  }
+
+  function dungeonMenu() {
+    if (UI.isOpen()) return;
+    Dungeon.stopAuto();
+    const s = save.settings;
+    UI.open({
+      title: '메뉴',
+      choices: [
+        { label: '돌아가기', fn: () => {} },
+        { label: '가방', fn: () => Dungeon.floor && document.querySelector('#actions [data-k=bag]').click() },
+        { label: '📜 임무 확인 (J)', fn: () => setTimeout(showMissions, 0) },
+        { label: '조작법', fn: Dungeon.showHelp },
+        { label: '게임 가이드 (타입 상성표 등)', fn: Guide.menu },
+        { label: `빠른 연출: ${s.fast ? '켜짐' : '꺼짐'}`, fn: () => { s.fast = !s.fast; persist(); dungeonMenu(); } },
+        { label: `계단 자동 하강: ${s.autoDescend ? '켜짐' : '꺼짐'}`, fn: () => { s.autoDescend = !s.autoDescend; persist(); dungeonMenu(); } },
+        { label: `효과음: ${s.sfx !== false ? '켜짐' : '꺼짐'}`, fn: () => { s.sfx = s.sfx === false; persist(); Sound.refresh(); dungeonMenu(); } },
+        { label: `배경음: ${s.bgm !== false ? '켜짐' : '꺼짐'}`, fn: () => { s.bgm = s.bgm === false; persist(); Sound.refresh(); dungeonMenu(); } },
+        { label: '포기하고 돌아간다', fn: async () => {
+          const ok = await UI.confirm('포기', '<p>탐험을 포기합니다. 쓰러진 것과 같이 처리됩니다.</p>', '포기한다', '계속한다');
+          if (ok) endRun('quit');
+        } },
+      ],
+    });
+  }
+
+  function setSetting(k, v) { save.settings[k] = v; persist(); Sound.refresh(); }
+
+  return { recruit, unlockShiny, showMissions, importSave, noteShiny, boot, endRun, saveRunSnapshot, dungeonMenu, setSetting, renderTown, get save() { return save; }, setTab(t) { tab = t; renderTown(); } };
+})();
+
+window.addEventListener('DOMContentLoaded', () => {
+  document.addEventListener('click', e => {
+    const b = e.target.closest('[data-ability]'); if (!b) return;
+    e.preventDefault(); e.stopPropagation();
+    if (Dex && b.closest('#tab-content') && b.dataset.dex) Dex.showAbility(+b.dataset.ability); else showAbilityInfo(+b.dataset.ability);
+  }, true);
+  // 어디서든 data-move 요소를 누르면 기술 설명
+  document.addEventListener('click', e => {
+    const b = e.target.closest('[data-move]'); if (!b) return;
+    e.preventDefault(); e.stopPropagation();
+    showMoveInfo(+b.dataset.move, b.dataset.pp != null ? +b.dataset.pp : undefined, b.dataset.max != null ? +b.dataset.max : undefined);
+  }, true);
+  document.getElementById('town-tabs').onclick = e => { const b = e.target.closest('button'); if (b) Game.setTab(b.dataset.tab); };
+  document.getElementById('town-screen').addEventListener('change', async e => {
+    if (e.target.dataset.set) Game.setSetting(e.target.dataset.set, e.target.checked);
+    if (e.target.dataset.setnum) { Game.setSetting(e.target.dataset.setnum, +e.target.value); Sound.play('menu'); }
+    if (e.target.classList.contains('tm-only')) filterTMs();
+    if (e.target.id === 'save-file' && e.target.files[0]) { Game.importSave(e.target.files[0]); e.target.value = ''; }
+    if (e.target.dataset.music && e.target.files[0]) {
+      const ok = await Sound.importMusic(e.target.dataset.music, e.target.files[0]);
+      if (ok) { UI.toast('음악 파일을 불러왔습니다. 그 장소에 가면 재생됩니다.'); Game.renderTown(); }
+      else UI.alert('불러오기 실패', '<p>음악 파일(ogg / mp3 / m4a / wav)이 아니거나 브라우저에 저장할 수 없습니다.</p>');
+      e.target.value = '';
+    }
+    if (e.target.dataset.tileset && e.target.files[0]) {
+      const r = await Tiles.importFiles(e.target.dataset.tileset, e.target.files);
+      if (r.ok) { UI.toast(`타일셋을 불러왔습니다${r.vars ? ` (변형 ${r.vars}개 포함)` : ''}. 다음 층부터 적용됩니다.`); Game.renderTown(); }
+      else UI.alert('타일셋 불러오기 실패', `<p>${esc(r.msg)}</p>`);
+    }
+  });
+  // 기술머신 목록 검색 (다시 그리지 않고 숨기기만 해서 입력이 끊기지 않게)
+  function filterTMs() {
+    const q = (document.querySelector('.tm-q')?.value || '').trim().toLowerCase(), only = document.querySelector('.tm-only')?.checked;
+    let n = 0;
+    document.querySelectorAll('.tm-item').forEach(r => { const ok = (!q || r.dataset.s.includes(q)) && (!only || r.dataset.u === '1'); r.style.display = ok ? '' : 'none'; if (ok) n++; });
+    const em = document.querySelector('.tm-empty'); if (em) em.style.display = n ? 'none' : '';
+  }
+  document.getElementById('town-screen').addEventListener('input', e => { if (e.target.classList.contains('tm-q')) filterTMs(); });
+  window.addEventListener('keydown', e => { if (!Dungeon.floor && UI.isOpen()) UI.key(e); });
+  Game.boot();
+});

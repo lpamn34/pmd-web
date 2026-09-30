@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>불가사의 던전 웹</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/galmuri@latest/dist/galmuri.css">
+<link rel="stylesheet" href="css/style.css?v=24">
+</head>
+<body>
+<div id="title-screen" class="screen">
+  <div class="title-box">
+    <div id="title-deco"></div>
+    <h1>불가사의 던전<small>웹 에디션</small></h1>
+    <p id="title-sub" class="dim"></p>
+    <button id="btn-start" class="btn big">시작</button>
+    <p class="dim tiny">비상업적 팬 게임 · 스프라이트: PMD SpriteCollab (CC BY-NC 4.0)</p>
+  </div>
+</div>
+
+<div id="town-screen" class="screen">
+  <header class="town-head pmd-box">
+    <span class="town-name">🏠 보물마을</span>
+    <span id="town-day"></span>
+    <span id="town-money" class="money"></span>
+  </header>
+  <div class="town-main">
+    <aside id="char-card" class="pmd-box"></aside>
+    <section class="pmd-box town-panel">
+      <nav id="town-tabs">
+        <button data-tab="dungeon">🗺 던전</button>
+        <button data-tab="mission">📜 임무</button>
+        <button data-tab="shop">🛒 상점</button>
+        <button data-tab="storage">📦 창고</button>
+        <button data-tab="bag">🎒 가방</button>
+        <button data-tab="char">⭐ 캐릭터</button>
+        <button data-tab="dex">📖 도감</button>
+        <button data-tab="ach">🏆 업적</button>
+        <button data-tab="info">⚙ 정보</button>
+      </nav>
+      <div id="tab-content"></div>
+    </section>
+  </div>
+</div>
+
+<div id="dungeon-screen" class="screen">
+  <div id="hud" class="pmd-box"></div>
+  <div id="view-wrap">
+    <canvas id="view"></canvas>
+    <canvas id="minimap"></canvas>
+    <div id="floor-banner"></div>
+    <div id="auto-ind"></div>
+    <div id="wind-ind"></div>
+    <div id="map-legend" class="pmd-box"><span><i style="background:#ff0"></i>나</span><span><i style="background:#f44"></i>적</span><span><i style="background:#39f"></i>계단</span>
+      <span><i style="background:#3fc"></i>아이템</span><span><i style="background:#fc3"></i>돈</span><span><i style="background:#f0f"></i>의뢰품</span><span><i style="background:#f80"></i>함정</span>
+      <span class="dim">가 본 곳을 누르면 이동 · 아무 키나 누르면 닫기</span></div>
+    <div id="face-box" class="pmd-box"><img id="face" alt=""></div>
+  </div>
+  <div id="bottom">
+    <div id="log" class="pmd-box"></div>
+    <div id="controls">
+      <div id="moves"></div>
+      <div id="actions">
+        <button data-k="attack" title="Space">공격</button>
+        <button data-k="explore" title="O">자동탐색 <kbd>O</kbd></button>
+        <button data-k="fight" title="Tab">자동전투 <kbd>Tab</kbd></button>
+        <button data-k="rest" title="R">휴식 <kbd>R</kbd></button>
+        <button data-k="wait" title="X">대기</button>
+        <button data-k="dash" title="V 또는 Shift+방향">대쉬 <kbd>V</kbd></button>
+        <button data-k="stairs" title="G">계단 <kbd>G</kbd></button>
+        <button data-k="mission" title="J">임무 <kbd>J</kbd></button>
+        <button data-k="map" title="N">지도 <kbd>N</kbd></button>
+        <button data-k="bag" title="I">가방 <kbd>I</kbd></button>
+        <button data-k="menu" title="Esc">메뉴</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div id="modal-root"></div>
+
+<script src="js/data.js?v=24"></script>
+<script src="js/defs.js?v=24"></script>
+<script src="js/sprites.js?v=24"></script>
+<script src="js/mechanics.js?v=24"></script>
+<script src="js/moverules.js?v=24"></script>
+<script src="js/abilities.js?v=24"></script>
+<script src="js/ui.js?v=24"></script>
+<script src="music/loops.js?v=24" onerror="window.MUSIC_LOOPS = {}"></script>
+<script src="js/audio.js?v=24"></script>
+<script src="js/progress.js?v=24"></script>
+<script src="js/codes.js?v=24"></script>
+<script src="js/tiles.js?v=24"></script>
+<script src="js/dungeon.js?v=24"></script>
+<script src="js/dex.js?v=24"></script>
+<script src="js/guide.js?v=24"></script>
+<script src="js/starter.js?v=24"></script>
+<script src="js/main.js?v=24"></script>
+</body>
+</html>
