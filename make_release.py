@@ -24,7 +24,7 @@ def main():
     tiles = set(os.listdir(os.path.join(ROOT, 'tiles'))) if os.path.isdir(os.path.join(ROOT, 'tiles')) else set()
     music = set(os.listdir(os.path.join(ROOT, 'music'))) if os.path.isdir(os.path.join(ROOT, 'music')) else set()
     has_music = lambda k: any(k + e in music for e in MUSIC_EXT)
-    print(f'불가사의 던전 웹 v{ver} 배포 준비\n')
+    print(f'미궁 탐험대 v{ver} 배포 준비\n')
     print('타일셋:', '공통(default.png) 있음' if 'default.png' in tiles else '공통 없음')
     miss_t = [n for i, n in dungeons if i + '.png' not in tiles]
     print(f'  던전별 {len(dungeons) - len(miss_t)}/{len(dungeons)}' + (f'  (없음: {", ".join(miss_t)})' if miss_t else ''))

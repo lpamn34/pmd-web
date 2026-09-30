@@ -1,6 +1,6 @@
 @echo off
 chcp 65001 >nul
-rem 불가사의 던전 웹: 로컬 서버로 실행 (배경음악 루프가 정확해지고, 파일 안의 루프 정보도 읽힙니다)
+rem 미궁 탐험대: 로컬 서버로 실행 (배경음악 루프가 정확해지고, 파일 안의 루프 정보도 읽힙니다)
 cd /d "%~dp0"
 set PORT=8765
 set URL=http://localhost:%PORT%/index.html

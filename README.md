@@ -1,4 +1,6 @@
-# 불가사의 던전 웹 (비상업 팬 게임)
+# 미궁 탐험대 (비상업 포켓몬 팬 게임)
+
+포켓몬 불가사의 던전 시리즈에서 영감을 받은 비공식 팬 게임입니다. 공식 제품과 관련이 없습니다.
 
 ## 온라인으로 플레이
 **https://pmd-fan-web.github.io/** — 설치 없이 바로 플레이할 수 있습니다. 로그인하면 세이브가 클라우드에 저장되고 구조 게시판을 쓸 수 있어요 (로그인은 선택).
@@ -45,6 +47,7 @@ npx http-server -p 8765
   - 버전이 바뀌면 세이브를 자동으로 백업(최근 3개)한 뒤 변환합니다. 세이브 구조를 바꿀 때는 `js/main.js`의 `MIGRATIONS`에 변환을 추가하세요.
   - 옛 버전 화면(캐시)이 새 버전 세이브를 덮어쓰지 않도록 막혀 있습니다.
 - **온라인 기능 환경:** `js/config.js`에서 `localhost`·파일로 열면 개발용, 실제 사이트면 서비스용 Firebase 프로젝트를 씁니다. 테스트 데이터가 실제 플레이어에게 섞이지 않게 두 프로젝트를 따로 만드세요 (둘 다 무료 Spark 요금제).
+- 리전폼은 `tools/build_forms.py`, 폼체인지·메가진화 모습은 `tools/build_altforms.py`로 `js/data.js`에 더합니다 (번호는 `tools/form_ids.json`에 고정). 모습이 바뀌는 규칙은 `js/forms.js`.
 - 데이터 재생성: `tools_build_data.py`를 실행합니다. PokeAPI CSV, SpriteCollab `tracker.json`, `credit_names.txt`가 필요하고, 결과로 `js/data.js`가 만들어집니다.
 - 코드를 고친 뒤 배포할 때는 `index.html`의 `?v=` 숫자를 올려야 브라우저 캐시가 갱신됩니다. 게임 버전(`js/defs.js`의 `GAME_VERSION`, `GAME_DATE`, `VERSION_NOTES`)도 같이 올리세요.
 - 효과음과 기본 배경음은 `js/audio.js`에서 Web Audio로 직접 합성합니다. `music/`에 음악 파일이 있으면 그 파일을 재생합니다.

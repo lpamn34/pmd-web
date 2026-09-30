@@ -461,11 +461,11 @@ const Game = (() => {
         (cb, back) => chooseCharacter(cb, true, starterIds(), back));
     };
     refreshTitle();
-    const n = Object.keys(DATA.species).length;
+    const n = SPECIES_IDS.length;
     document.getElementById('title-sub').textContent = `v${GAME_VERSION} · 등장 포켓몬 ${n}종 · 스프라이트 PMD SpriteCollab`;
     // 타이틀 장식
     const deco = document.getElementById('title-deco');
-    const ids = Object.keys(DATA.species);
+    const ids = SPECIES_IDS;
     for (let i = 0; i < 7; i++) deco.insertAdjacentHTML('beforeend', portraitImg(pick(ids), 'deco'));
     show('title-screen');
     Sound.title();
@@ -519,7 +519,7 @@ const Game = (() => {
     let floor = rint(Math.min(2, dg.floors - 1), Math.max(1, dg.floors - 1));
     while (floor > 1 && isBossFloor(dg, floor)) floor--;
     const kind = pick(['rescue', 'outlaw', 'find']);
-    const ids = Object.keys(DATA.species).filter(id => !DATA.species[id].lg);
+    const ids = SPECIES_IDS.filter(id => !DATA.species[id].lg);
     const client = +pick(ids);
     const prog = (floor - 1) / Math.max(1, dg.floors - 1);
     const lvl = Math.round(dg.lv[0] + (dg.lv[1] - dg.lv[0]) * prog);
@@ -827,6 +827,7 @@ const Game = (() => {
       ${DATA.species[sp].sh ? `<h3>모습</h3><div class="row">${portraitImg(sp, 'portrait sm', 'Normal', false)} ${portraitImg(sp, 'portrait sm', 'Normal', true)}
         <span class="grow">${ch.shiny ? '✨ 이로치(색이 다른 모습)로 탐험합니다.' : '보통 모습으로 탐험합니다.'} <span class="dim">(겉모습만 바뀝니다)</span></span>
         ${shinyOk(sp) ? `<button class="btn sm" data-act="toggle-shiny">${ch.shiny ? '보통 모습으로' : '✨ 이로치로'}</button>` : '<span class="dim tiny">🔒 이 포켓몬의 이로치를 쓰러뜨리거나 영입하면 고를 수 있어요</span>'}</div>` : ''}
+      ${formSection(sp, ch)}
       <h3>특성 <span class="dim">(누르면 설명. 바꾸려면 ${ITEMS.abcapsule.icon}특성캡슐 ×${ownedCount('abcapsule')}, 숨겨진 특성은 ${ITEMS.abpatch.icon}특성패치 ×${ownedCount('abpatch')}가 필요)</span></h3>
       ${DATA.species[sp].ab.map(([aid, hid]) => { const cur = entryAbility(sp, save.roster[sp]) === aid, x = abilityDesc(aid); return `<div class="row">
         <div class="grow"><span class="ab-link" data-ability="${aid}">${esc(x.n)}</span>${hid ? ' <span class="dim">(숨겨진 특성)</span>' : ''}
@@ -849,6 +850,16 @@ const Game = (() => {
       <div class="roster">${roster.map(id => `<button class="rcard ${id === sp ? 'on' : ''}" data-act="switch" data-arg="${id}">${portraitImg(id, 'portrait sm')}<span>${esc(spName(id))}</span><span class="dim">Lv${save.roster[id].lv}</span></button>`).join('')}</div>`;
   }
 
+  // 폼체인지·메가진화 (js/forms.js): 고를 수 있는 모습은 여기서 고르고, 나머지는 던전에서 바뀌는 방법을 보여준다
+  function formSection(sp, ch) {
+    const forms = FORMS_OF[sp] || [];
+    if (!forms.length) return '';
+    const sel = forms.filter(id => DATA.species[id].fc === 'select'), other = forms.filter(id => DATA.species[id].fc !== 'select');
+    const card = (id, on, act) => `<button class="rcard ${on ? 'on' : ''}" ${act ? `data-act="set-form" data-arg="${id}"` : `data-dexpoke="${id}"`}>${portraitImg(id, 'portrait sm', 'Normal', ch.shiny)}<span>${esc(id === sp ? '기본 모습' : spName(id))}</span>${id !== sp ? `<span class="dim">${typeBadges(DATA.species[id].t)}</span>` : ''}</button>`;
+    return `<h3>다른 모습 <span class="dim">(능력치·타입·특성이 바뀌고 기술은 그대로)</span></h3>
+      ${sel.length ? `<p class="dim">던전에 들고 갈 모습을 고르세요.</p><div class="roster">${card(sp, !ch.form, true)}${sel.map(id => card(id, ch.form === id, true)).join('')}</div>` : ''}
+      ${other.map(id => `<div class="row">${portraitImg(id, 'portrait sm', 'Normal', ch.shiny)}<div class="grow"><b>${esc(spName(id))}</b> ${typeBadges(DATA.species[id].t)}<div class="dim">${esc(formHowText(id))}</div></div></div>`).join('')}`;
+  }
   const ownedCount = id => (save.storage[id] || 0) + save.bag.filter(b => b.id === id).length;
   function vitaminSection(ch) {
     const b = ch.boost || {};
@@ -968,7 +979,7 @@ const Game = (() => {
     const cr = DATA.species[save.current].cr || ['?', '?'];
     const s = save.settings;
     return `<h3>버전</h3>
-      <div class="row"><span class="grow">불가사의 던전 웹 <b>v${GAME_VERSION}</b> <span class="dim">(${GAME_DATE})</span>${ENV === 'dev' ? ' <span class="tag">개발 환경</span>' : ''}${updateVer ? ` <a href="#" data-act="update">🔔 새 버전 v${esc(updateVer)}</a>` : ''}
+      <div class="row"><span class="grow">미궁 탐험대 <b>v${GAME_VERSION}</b> <span class="dim">(${GAME_DATE})</span>${ENV === 'dev' ? ' <span class="tag">개발 환경</span>' : ''}${updateVer ? ` <a href="#" data-act="update">🔔 새 버전 v${esc(updateVer)}</a>` : ''}
         <div class="dim">친구와 구조 코드나 오늘의 도전 기록을 주고받을 때는 서로 같은 버전인지 확인하세요.</div></span>
         <button class="btn sm ghost" data-act="version-notes">변경 내역</button></div>
       ${Online.enabled() ? `<h3>☁ 계정</h3><div class="row"><span class="grow">${Online.loggedIn() ? `<b>${esc(Online.name())}</b> 님으로 로그인 · 세이브가 클라우드에도 저장됩니다${cloudErr ? ` <span class="warn">(${esc(cloudErr)})</span>` : ''}` : '로그인하지 않았어요. 로그인하면 다른 기기에서 이어하고 구조 게시판을 쓸 수 있어요.'}</span>
@@ -1096,6 +1107,12 @@ const Game = (() => {
       case 'sos-giveup': return giveUpSOS();
       case 'sos-resume': return save.sos && save.sos.thx ? resumeSOS() : receiveAOKAgain();
       case 'aok-show': { const a = (save.aokSent || []).find(x => String(x.id) === arg); if (a) codeBox('✅ A-OK 코드', `<p>친구의 ${esc(spName(a.sp))} 구조 완료 코드입니다.</p>`, a.code); return; }
+      case 'set-form': {
+        const sp = save.current, ch = save.roster[sp], id = +arg;
+        if (id === sp) { delete ch.form; UI.toast('기본 모습으로 탐험합니다.'); break; }
+        if (!(FORMS_OF[sp] || []).includes(id) || DATA.species[id].fc !== 'select') return;
+        ch.form = id; UI.toast(`${spName(id)}의 모습으로 탐험합니다.`); break;
+      }
       case 'toggle-shiny': { const ch = save.roster[save.current]; if (!shinyOk(save.current)) return; ch.shiny = !ch.shiny; UI.toast(ch.shiny ? '✨ 이로치로 바꿨습니다.' : '보통 모습으로 바꿨습니다.'); break; }
       case 'save-export': exportSave(); return;
       case 'save-import': document.getElementById('save-file').click(); return;
@@ -1268,6 +1285,7 @@ const Game = (() => {
     for (const mid of learnedAt(to, entry.lv).concat(learnedAt(to, 1))) if (entry.moves.length < 4 && !entry.moves.includes(mid)) entry.moves.push(mid);
     const slot = DATA.species[sp].ab.findIndex(a => a[0] === entry.ability);
     entry.ability = (DATA.species[to].ab[slot] || DATA.species[to].ab[0] || [0])[0];
+    delete entry.form;   // 골라 둔 모습은 진화 전 포켓몬의 것
     save.roster[to] = entry; save.current = to;
     // 클리어 기록도 진화한 모습으로 옮긴다
     if (save.clears && save.clears[sp]) { save.clears[to] = { ...save.clears[to], ...save.clears[sp] }; delete save.clears[sp]; }
@@ -1280,7 +1298,7 @@ const Game = (() => {
   // ───────────────────────── 캐릭터 선택 ─────────────────────────
   // only: 고를 수 있는 포켓몬 (캐릭터 변경은 영입한 포켓몬만)
   function chooseCharacter(cb, first, only, back) {
-    const ids = (only || Object.keys(DATA.species).map(Number)).slice().sort(byDex);
+    const ids = (only || SPECIES_IDS.map(Number)).slice().sort(byDex);
     const gens = [...new Set(ids.map(id => DATA.species[id].g))].sort((a, b) => a - b);
     UI.open({
       title: first ? '함께 모험할 포켓몬을 고르세요' : '캐릭터 변경', wide: true, cancel: first ? false : undefined,
@@ -1349,6 +1367,7 @@ const Game = (() => {
       p.tms = (ch.tms || []).slice();
       bag = JSON.parse(JSON.stringify(save.bag));
     }
+    p.selForm = ch.form || undefined;   // 캐릭터 탭에서 골라 둔 모습 (로토무 등)
     p.belly = 100;
     const run = { dungeon: dg.id, floor: 1, mode: dg.mode, p, bag, money: 0, done: [] };
     show('dungeon-screen');
@@ -1379,7 +1398,7 @@ const Game = (() => {
   function saveRunSnapshot(r) {
     const p = r.p;
     save.run = { dungeon: r.dungeon, floor: r.floor, mode: r.mode, bag: r.bag, money: r.money, done: r.done, daily: r.daily || null, turns: r.turns || 0, kills: r.kills || 0,
-      p: { sp: p.sp, lv: p.lv, exp: p.exp, hp: p.hp, belly: p.belly, status: p.status, statusT: p.statusT, moves: p.moves.map(m => m.id), pp: p.moves.map(m => m.pp), ability: p.ability, held: p.held || null, tms: p.tms || [], shiny: !!p.shiny, boost: p.boost || null } };
+      p: { sp: p.sp, lv: p.lv, exp: p.exp, hp: p.hp, belly: p.belly, status: p.status, statusT: p.statusT, moves: p.moves.map(m => m.id), pp: p.moves.map(m => m.pp), ability: p.baseAbility ?? p.ability, held: p.held || null, tms: p.tms || [], shiny: !!p.shiny, boost: p.boost || null, form: p.selForm || null } };
     // 일반 던전은 층마다 레벨도 저장
     if (r.mode === 'normal') save.roster[p.sp] = { ...save.roster[p.sp], lv: p.lv, exp: p.exp, moves: p.moves.map(m => m.id), held: p.held || null, tms: p.tms || [], ...(p.boost ? { boost: p.boost } : {}) };
     persist();
@@ -1389,7 +1408,7 @@ const Game = (() => {
     const s = save.run;
     if (s.daily) Progress.setupDaily(s.daily);
     const p = makeCreature(s.p.sp, s.p.lv, { player: true, exp: s.p.exp, moves: s.p.moves, pp: s.p.pp, ability: s.p.ability ?? entryAbility(s.p.sp, save.roster[s.p.sp]), boost: s.p.boost || undefined });
-    p.hp = clamp(s.p.hp, 1, p.maxhp); p.belly = s.p.belly; p.held = s.p.held || null; p.tms = s.p.tms || []; p.shiny = !!s.p.shiny; p.status = s.p.status; p.statusT = s.p.statusT;
+    p.hp = clamp(s.p.hp, 1, p.maxhp); p.belly = s.p.belly; p.held = s.p.held || null; p.tms = s.p.tms || []; p.shiny = !!s.p.shiny; p.status = s.p.status; p.statusT = s.p.statusT; p.selForm = s.p.form || undefined;
     const run = { dungeon: s.dungeon, floor: s.floor, mode: s.mode, p, bag: s.bag, money: s.money, done: s.done, daily: s.daily || null, turns: s.turns || 0, kills: s.kills || 0 };
     show('dungeon-screen');
     Dungeon.enter(run);
@@ -1589,7 +1608,7 @@ const Game = (() => {
     const ch = save.roster[s.sp] || newEntry(s.sp);
     const p = makeCreature(s.sp, ch.lv, { player: true, exp: ch.exp, moves: ch.moves.length ? ch.moves : undefined, ability: entryAbility(s.sp, ch), boost: ch.boost });
     Progress.add('rescued');
-    p.held = s.snap.held; p.tms = (ch.tms || []).slice(); p.shiny = !!ch.shiny; p.belly = 100;
+    p.held = s.snap.held; p.tms = (ch.tms || []).slice(); p.shiny = !!ch.shiny; p.belly = 100; p.selForm = ch.form || undefined;
     // 기다리는 동안 모은 가방은 창고로 (구조된 가방을 돌려받기 위해)
     if (save.bag.length) { save.bag.forEach(b => storeAdd(b.id, b.n)); UI.toast('지금 가방의 아이템은 창고에 넣었습니다.'); save.bag = []; }
     const run = { dungeon: s.dungeon, floor: s.floor, mode: 'normal', p, bag: s.snap.bag, money: s.snap.money, done: s.snap.done || [] };

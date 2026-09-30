@@ -3,7 +3,7 @@
 
 // 게임 버전: 업데이트할 때 올리고, index.html의 ?v= 숫자도 같이 올린다
 // (친구와 구조 코드·오늘의 도전을 주고받으려면 버전이 같아야 한다)
-const GAME_VERSION = '0.30';
+const GAME_VERSION = '0.31';
 // 버전 비교: '0.25' > '0.9' 처럼 숫자로 비교한다
 function cmpVer(a, b) {
   const x = String(a).split('.').map(Number), y = String(b).split('.').map(Number);
@@ -12,6 +12,11 @@ function cmpVer(a, b) {
 }
 const GAME_DATE = '2026-09-30';
 const VERSION_NOTES = [
+  ['0.31', ['메가진화 40종: 메가스톤을 지니면 던전에서 메가진화 (메가스톤은 적 Lv35 이상 층에서 아주 드물게, 레쿠쟈는 화룡점정)',
+    '모습 고르기: 로토무 5종·테오키스·쉐이미·큐레무·후파·루가루암·도롱마담·지가르데 10% (캐릭터 탭)',
+    '도구로 바뀌는 모습: 기라티나·디아루가·펄기아 오리진폼, 자시안·자마젠타 왕의 모습(녹슨검·녹슨방패), 오거폰 가면 3종, 원시가이오가·원시그란돈(쪽빛구슬·주홍구슬)',
+    '던전에서 변신: 캐스퐁·킬가르도·불비달마·약어리·메테노·빙큐보·모르페코·돌핀맨·메로엣타·지가르데·테라파고스',
+    '초상화가 없는 모습은 원래 모습의 초상화로', '도감 아이템 필터에 전용 도구·메가스톤', '게임 이름을 "미궁 탐험대"로 변경']],
   ['0.30', ['경험치 전체 배율 0.5 → 0.3', '적 Lv20 이상 층에는 흔한 아이템(씨앗·자갈 등) 대신 식량·회복 아이템만', '달성 선물: 친구 구조 5번마다, 임무 20번마다 영양제·구미(무지개구미 포함)·특성패치 중 하나 (두 횟수는 따로)', '다른 탭에서 돌아오면 새 버전을 바로 확인']],
   ['0.29', ['경험치 너프: 적에게서 얻는 경험치 절반, 보스·현상수배범 보너스 3배 → 2배', '아이템 등급: 초반 던전에는 흔한 아이템만, 지닌 물건·기술머신 등은 적 Lv20 이상 층부터 (던전 정보·도감에서 확인)', '바닥 아이템 3~6개 → 2~4개, 적이 떨어뜨리는 확률 10% → 5%', '전용 도구(금강옥 등)는 주인 포켓몬이 나오는 던전에서만 드물게, 마을 상점에 가끔 진열', '창고 정렬 (종류·이름·개수·넣은 순), 마을에서도 가방 정리', '혼자 탐험 보정(받는 데미지 0.85배) 삭제', '진화해도 클리어 기록·메달이 이어짐', '배경음이 두 개 겹쳐 들리던 문제 수정',
     '대쉬 삭제, 방향만 바꾸기는 다시 Shift + 방향', '마을 위쪽에 접속 중인 탐험대 수 표시 (로그인한 사람 기준, 10분마다 갱신)', '클라우드 저장은 던전을 마칠 때 · 창을 닫거나 다른 탭으로 갈 때 · 마을에서 10분마다 (던전 진행은 브라우저에 층마다 저장)',
@@ -214,9 +219,17 @@ Object.assign(HELD_ITEMS, {
  ['luckypunch', '럭키펀치', '🥊', [113], { critStage: 2 }, '급소율이 2단계 오른다'],
  ['leek', '대파', '🥬', [83, 865], { critStage: 2 }, '급소율이 2단계 오른다'],
  ['souldew', '마음의물방울', '💧', [380, 381], { typeMul: { 16: 1.2, 14: 1.2 } }, '드래곤·에스퍼 기술의 위력이 1.2배'],
- ['adamantorb', '금강옥', '💎', [483], { typeMul: { 16: 1.2, 9: 1.2 } }, '드래곤·강철 기술의 위력이 1.2배'],
- ['lustrousorb', '백옥', '🔮', [484], { typeMul: { 16: 1.2, 11: 1.2 } }, '드래곤·물 기술의 위력이 1.2배'],
- ['griseousorb', '백금옥', '🌑', [487], { typeMul: { 16: 1.2, 8: 1.2 } }, '드래곤·고스트 기술의 위력이 1.2배'],
+ ['adamantorb', '금강옥', '💎', [483], { typeMul: { 16: 1.2, 9: 1.2 } }, '오리진폼이 되고, 드래곤·강철 기술의 위력이 1.2배'],
+ ['lustrousorb', '백옥', '🔮', [484], { typeMul: { 16: 1.2, 11: 1.2 } }, '오리진폼이 되고, 드래곤·물 기술의 위력이 1.2배'],
+ ['griseousorb', '백금옥', '🌑', [487], { typeMul: { 16: 1.2, 8: 1.2 } }, '오리진폼이 되고, 드래곤·고스트 기술의 위력이 1.2배'],
+ // 폼체인지 도구 (js/forms.js의 FORM_ITEMS): 지니고 있으면 던전에서 그 모습이 된다 (기존 번호 뒤에 추가)
+ ['rustedsword', '녹슨검', '🗡', [888], {}, '검왕의 모습이 된다'],
+ ['rustedshield', '녹슨방패', '🛡', [889], {}, '방패왕의 모습이 된다'],
+ ['wellspringmask', '우물의가면', '💧', [1017], { physMul: 1.2, specMul: 1.2 }, '우물의가면 모습(풀·물)이 되고, 기술의 위력이 1.2배'],
+ ['hearthflamemask', '화덕의가면', '🔥', [1017], { physMul: 1.2, specMul: 1.2 }, '화덕의가면 모습(풀·불꽃)이 되고, 기술의 위력이 1.2배'],
+ ['cornerstonemask', '주춧돌의가면', '🪨', [1017], { physMul: 1.2, specMul: 1.2 }, '주춧돌의가면 모습(풀·바위)이 되고, 기술의 위력이 1.2배'],
+ ['blueorb', '쪽빛구슬', '🔵', [382], {}, '원시회귀해서 원시가이오가가 된다'],
+ ['redorb', '주홍구슬', '🔴', [383], {}, '원시회귀해서 원시그란돈이 된다'],
 ].forEach(([id, n, icon, only, eff, text]) => {
   const who = only.filter(sp => DATA.species[sp]).map(sp => DATA.species[sp].n).join('·');
   HELD_ITEMS[id] = { n, icon, price: 2000, sig: true, d: `[전용] ${who}에게 지니게 하면 ${text}. 다른 포켓몬에게는 효과가 없다.`, hold: { only, ...eff } };
@@ -423,6 +436,10 @@ const byDex = (a, b) => dexKey(a) - dexKey(b);
 // SpriteCollab 폴더: 0026/ (이로치 0026/0000/0001/), 리전폼 0026/0001/ (이로치 0026/0001/0001/)
 const spritePath = (id, shiny) => { const f = formOf(id); return f ? `${pad4(f[0])}/${f[1]}/${shiny ? '0001/' : ''}` : `${pad4(id)}/${shiny ? '0000/0001/' : ''}`; };
 const spName = id => DATA.species[id]?.n || ('#' + id);
+// 폼체인지·메가진화 모습(species.fc)은 따로 나오는 포켓몬이 아니다: 목록을 돌 때는 원래 포켓몬만 (js/forms.js)
+const SPECIES_IDS = Object.keys(DATA.species).filter(id => !DATA.species[id].fc);
+// 보이는 모습: 던전에서 모습이 바뀌면 c.fsp (그림·능력치·타입·이름), 원래 포켓몬 번호 c.sp는 저장·영입용으로 그대로
+const looksOf = c => (c && c.fsp) || (c && c.sp);
 const typeName = t => DATA.types[t - 1];
 const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 // 한국어 조사
@@ -470,7 +487,7 @@ const TIER2 = ['reviver', 'escape', 'foesleep', 'superpotion', 'xattack', 'xdefe
 function itemTier(id) {
   const it = ITEMS[id];
   if (!it) return 1;
-  if (TIER4.includes(id)) return 4;
+  if (TIER4.includes(id) || it.mega) return 4;   // 메가스톤은 js/forms.js에서 추가
   if (it.held || it.tm || VITAMINS[id] || GUMMIES[id] || ['candy', 'fullrestore', 'abcapsule'].includes(id)) return 3;
   if (TIER2.includes(id)) return 2;
   return 1;

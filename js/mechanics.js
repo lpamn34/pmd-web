@@ -64,7 +64,7 @@ function makeCreature(sp, lv, opts = {}) {
 
 function recalc(c) {
   const old = c.maxhp;
-  Object.assign(c, applyBoost(calcStats(c.sp, c.lv, c.iv), c.boost));
+  Object.assign(c, applyBoost(calcStats(looksOf(c), c.lv, c.iv), c.boost));   // 모습이 바뀌면 그 모습의 능력치
   c.hp = clamp(c.hp + (c.maxhp - old), 1, c.maxhp);
 }
 

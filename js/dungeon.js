@@ -16,7 +16,7 @@ const Dungeon = (() => {
   const idx = (x, y) => y * D.w + x;
   const inb = (x, y) => x >= 0 && y >= 0 && x < D.w && y < D.h;
   const floorAt = (x, y) => inb(x, y) && D.tiles[idx(x, y)] === 1;
-  const nm = c => (c.outlaw ? '현상수배범 ' : '') + spName(c.sp);
+  const nm = c => (c.outlaw ? '현상수배범 ' : '') + spName(looksOf(c));
 
   // cls: 로그 색 구분 (super 효과가 굉장함 / weak 효과가 별로)
   function log(text, at, cls) {
@@ -108,7 +108,7 @@ const Dungeon = (() => {
     const prog = dg.floors > 1 ? (floor - 1) / (dg.floors - 1) : 0;
     const lvl = Math.round(dg.lv[0] + (dg.lv[1] - dg.lv[0]) * prog);
     const target = 230 + lvl * 6.5;
-    const all = Object.entries(DATA.species).map(([id, s]) => ({ id: +id, s, bst: s.b.reduce((a, b) => a + b, 0) }))
+    const all = SPECIES_IDS.map(id => ({ id: +id, s: DATA.species[id], bst: DATA.species[id].b.reduce((a, b) => a + b, 0) }))
       .filter(o => !o.s.lg && (!dg.types || o.s.t.some(t => dg.types.includes(t))));
     let cand = [];
     for (const w of [70, 110, 170, 260, 999]) { cand = all.filter(o => Math.abs(o.bst - target) <= w); if (cand.length >= 8) break; }
@@ -130,7 +130,7 @@ const Dungeon = (() => {
     }
     // 전설 던전: 가까운 강함의 전설 포켓몬 하나를 섞음
     if (dg.legend) {
-      const lg = Object.entries(DATA.species).filter(([, s]) => s.lg).map(([id, s]) => ({ id: +id, bst: s.b.reduce((a, b) => a + b, 0) }))
+      const lg = SPECIES_IDS.filter(id => DATA.species[id].lg).map(id => ({ id: +id, bst: DATA.species[id].b.reduce((a, b) => a + b, 0) }))
         .sort((a, b) => Math.abs(a.bst - target) - Math.abs(b.bst - target)).slice(0, 25);
       if (lg.length) pool.push(pick(lg).id);
     }
@@ -143,8 +143,10 @@ const Dungeon = (() => {
     c.enemy = true; c.x = pos.x; c.y = pos.y; c.dir = rand(8);
     c.shiny = !!DATA.species[sp].sh && Math.random() < SHINY_CHANCE;
     Sprites.load(sp, c.shiny);
+    rollEnemyForm(c);
     applyForecast(c);
     D.mons.push(c);
+    updateForm(c);
     return c;
   }
 
@@ -192,8 +194,8 @@ const Dungeon = (() => {
     setFace('Determined', 3000);
     UI.open({
       title: run.floor === D.dg.floors ? '⚠ 보스 층' : '⚠ 중간 보스',
-      html: `<div class="boss-intro">${portraitImg(b.sp, 'portrait big', 'Angry', b.shiny)}<div>
-        <p><b>${esc(spName(b.sp))}</b> Lv${b.lv}</p><p>${esc(jo(spName(b.sp), '이'))} 앞을 가로막고 있다!</p>
+      html: `<div class="boss-intro">${portraitImg(looksOf(b), 'portrait big', 'Angry', b.shiny)}<div>
+        <p><b>${esc(spName(looksOf(b)))}</b> Lv${b.lv}</p><p>${esc(jo(spName(b.sp), '이'))} 앞을 가로막고 있다!</p>
         <p class="dim">쓰러뜨리면 계단이 나타난다. 보스는 상태이상이 절반만 지속된다.</p></div></div>`,
       choices: [{ label: '싸운다!', fn: () => {} }], cancel: () => {},
     });
@@ -238,7 +240,7 @@ const Dungeon = (() => {
     else if (p.status === 'slp') e = 'Sad';
     else if (p.status) e = 'Dizzy';
     else if (p.belly <= 10) e = 'Worried';
-    const src = Sprites.portrait(p.sp, e, p.shiny);
+    const src = Sprites.portrait(looksOf(p), e, p.shiny);
     if (src !== faceShown) { faceShown = src; document.getElementById('face').src = src; }
   }
 
@@ -393,8 +395,26 @@ const Dungeon = (() => {
   function applyForecast(c) {
     if (!abilityOf(c).forecast) return;
     c.types = [{ sun: 10, rain: 11, snow: 15 }[weatherNow()] || 1];
+    if (D && D.player) formCheck(c);
+  }
+  // 폼체인지·메가진화 (js/forms.js): 모습이 바뀌었으면 알림과 효과. quiet면 알림 없이 (모르페코처럼 자주 바뀌는 경우)
+  function formCheck(c, at, quiet) {
+    const r = updateForm(c); if (!r) return;
+    at = at || now();
+    if (quiet || !(c.player || seen(c))) return;
+    // "로토무 (워시로토무)" → "워시로토무"
+    const who = spName(r.from), to = spName(r.to), fi = DATA.species[r.to]?.fi || '', short = (/\(([^)]+)\)/.exec(to) || [, to])[1];
+    log(r.kind === 'back' ? `${jo(who, '은')} 원래 모습으로 돌아왔다!`
+      : r.kind === 'mega' ? `${jo(who, '은')} ${jo(to, '으로')} 메가진화했다!`
+      : fi.endsWith('-primal') ? `${jo(who, '은')} 원시회귀했다! ${to}!`
+      : `${jo(who, '은')} ${jo(short, '으로')} 바뀌었다!`, at);
+    D.fx.push({ kind: 'ring', x: c.x, y: c.y, at, dur: 700 * spd(), color: r.kind === 'mega' ? '#ff9cf0' : '#bfe8ff' });
+    if (r.kind === 'mega' || fi.endsWith('-primal')) { Sound.play('shiny', at); if (c.player) setFace('Determined', 2000); }
   }
   function floorStartAbility(p) {
+    resetBattleForm(p, D.weather);
+    if (run.floor > 1 || run.sos) p.hero = true;   // 돌핀맨: 계단을 내려간 뒤로는 마이티폼
+    formCheck(p, now() + 500);
     const A = abilityOf(p), at = now() + 600;
     if (A.slowStart) p.slowT = 10;
     if (A.setWeather) setWeather(A.setWeather, p, at);
@@ -496,6 +516,8 @@ const Dungeon = (() => {
     if (R.weatherBall && weatherNow() && weatherNow() !== 'fog') move = { ...move, t: { sun: 10, rain: 11, sand: 6, snow: 15 }[weatherNow()], p: 100 };
     if (slot >= 0 && !opts.free) user.moves[slot].pp--;
     user.dir = dir;
+    if (user.sp === 681) { user.blade = move.c !== 1; formCheck(user); }   // 킬가르도: 공격이면 블레이드폼, 변화 기술이면 실드폼
+    if (user.sp === 648 && mid === 547) { user.pirouette = !user.pirouette; formCheck(user); }   // 메로엣타: 옛노래를 쓸 때마다
     if (!R.chain || !user.chain || user.chain.mid !== mid) user.chain = R.chain ? { mid, n: 0 } : null;
     // 조건 판정용: 지난 행동 이후 맞았는지
     const ctx = { hurtSince: (user.lastHurtSeq || 0) > (user.lastActSeq || 0), hurtBy: user.lastHurtBy, prevAct: user.lastActSeq || 0, lastMissed: !!user.lastMissed };
@@ -513,7 +535,7 @@ const Dungeon = (() => {
     }
     user.charging = null;
     const anim = slot < 0 || move.r === 'f' ? 'Attack' : 'Shoot';
-    const dur = clamp(Sprites.animLength(user.sp, anim, user.shiny) * 0.75, 200, 460) * spd();
+    const dur = clamp(Sprites.animLength(looksOf(user), anim, user.shiny) * 0.75, 200, 460) * spd();
     const t0 = schedAction(user, anim, dur);
     const hitAt = t0 + dur * 0.55;
     if (slot >= 0 && visible) log(`${nm(user)}의 ${move.n}!`, t0);
@@ -640,6 +662,9 @@ const Dungeon = (() => {
     const secondary = !(A.sheer && move.c !== 1) && !(Dd.shieldDust && move.c !== 1);
     if (move.c !== 1) {
       if (r.eff === 0) { log(`${nm(tgt)}에게는 효과가 없는 것 같다...`, at, 'weak'); return; }
+      if (move.c === 2 && tgt.sp === 875 && !tgt.noice && (tgt.baseAbility ?? tgt.ability) === 248 && !A.moldBreaker) {
+        abLog(tgt, `${jo(nm(tgt), '은')} 얼음 얼굴로 공격을 막아냈다!`, at); tgt.noice = true; formCheck(tgt, at); return;
+      }
       let total = r.dmg;
       let hits = move.hits ? (A.skillLink ? move.hits[1] : rint(move.hits[0], move.hits[1])) : 1;
       if (R.popBomb && !A.skillLink) { hits = 1; while (hits < move.hits[1] && Math.random() < 0.9) hits++; }
@@ -1364,6 +1389,12 @@ const Dungeon = (() => {
       D.spawnT = rint(30, 45);
       if (D.mons.filter(m => !m.npc).length < 12) { const t = randomRoomTile({ hidden: true, far: 7 }); if (t) spawnEnemy(t); }
     }
+    // 모습 확인 (HP·날씨에 따라 바뀌는 포켓몬, 모르페코는 턴마다)
+    for (const c of [p, ...D.mons]) {
+      if (c.hp <= 0 || !FORMS_OF[c.sp]) continue;
+      if (c.sp === 877) c.hangry = !c.hangry;
+      formCheck(c, T.base, c.sp === 877);
+    }
     computeVis();
     endTurnTiming();
     if (D.learnQueue.length) D.prompts.push(learnPrompt);
@@ -1542,7 +1573,7 @@ const Dungeon = (() => {
         ...(foot ? [{ label: `👣 발밑: ${ITEMS[foot.id].icon} ${esc(ITEMS[foot.id].n)}${foot.n > 1 ? ' ×' + foot.n : ''}`, sub: '조사 · 줍기 · 교환 · 던지기', fn: footMenu }] : []),
         ...(bag.length > 1 ? [{ label: '↕ 가방 정리 (종류별로 정렬)', fn: () => { sortBag(); openBag(); } }] : []),
         ...(p.held ? [{ label: `지닌 물건을 가방에 넣는다 (${esc(ITEMS[p.held].n)})`, disabled: bag.length >= bagMax(), fn: () => {
-        run.bag.push({ id: p.held, n: 1 }); log(`${jo(ITEMS[p.held].n, '을')} 가방에 넣었다.`, now()); p.held = null; openBag();
+        run.bag.push({ id: p.held, n: 1 }); log(`${jo(ITEMS[p.held].n, '을')} 가방에 넣었다.`, now()); p.held = null; formCheck(p); openBag();
       } }] : []), ...bag.map((b, i) => ({
         label: `${ITEMS[b.id].icon} ${esc(ITEMS[b.id].n)}${b.n > 1 ? ' ×' + b.n : ''}`, sub: esc(ITEMS[b.id].d),
         fn: () => itemMenu(i),
@@ -1623,6 +1654,7 @@ const Dungeon = (() => {
       run.bag.splice(i, 1); p.held = b.id;
       if (old) run.bag.push({ id: old, n: 1 });
       log(`${jo(it.n, '을')} 지니게 했다.` + (old ? ` (${jo(ITEMS[old].n, '은')} 가방으로)` : ''), now());
+      formCheck(p, now() + 200);   // 메가스톤·폼체인지 도구
     } });
     ch.push({ label: '던진다', fn: () => act({ t: 'item', slot: i, mode: 'throw' }) });
     const fav = Game.save.settings.quickItem === b.id;
@@ -1749,7 +1781,7 @@ const Dungeon = (() => {
     let alpha = 1;
     if (c.dead) alpha = clamp(1 - (t - c.deadAt) / 350, 0, 1);
     const flash = c.hurtAt && t >= c.hurtAt && t < c.hurtAt + 120;
-    Sprites.draw(ctx, c.sp, anim, c.dir, at, loop, cx, cy, alpha, flash, c.shiny);
+    Sprites.draw(ctx, looksOf(c), anim, c.dir, at, loop, cx, cy, alpha, flash, c.shiny);
     if (c.shiny && !c.dead && Math.floor(t / 180 + c.id * 10) % 6 === 0) { ctx.fillStyle = '#fff6a0'; ctx.font = '9px sans-serif'; ctx.textAlign = 'center'; ctx.fillText('✦', cx - 10, cy - 12); }
     if (!c.player && !c.dead && c.hp < c.maxhp) {
       ctx.fillStyle = '#000a'; ctx.fillRect(cx - 10, cy + 10, 20, 3);
@@ -1859,7 +1891,7 @@ const Dungeon = (() => {
       ctx.fillStyle = '#511'; ctx.fillRect(bx, by + 10, bw, 4);
       ctx.fillStyle = '#ff5a5a'; ctx.fillRect(bx, by + 10, bw * b.hp / b.maxhp, 4);
       ctx.fillStyle = '#fff'; ctx.font = 'bold 9px sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
-      ctx.fillText(`BOSS ${spName(b.sp)} Lv${b.lv}`, W / 2, by + 8);
+      ctx.fillText(`BOSS ${spName(looksOf(b))} Lv${b.lv}`, W / 2, by + 8);
     }
     // 데미지 숫자
     ctx.font = 'bold 11px "Galmuri11", sans-serif';
@@ -2111,8 +2143,8 @@ const Dungeon = (() => {
   }
   const stageText = c => Object.entries(c.stages).filter(([, v]) => v).map(([k, v]) => `${STAT_NAMES[k] || k} ${v > 0 ? '+' : ''}${v}`).join(', ');
   function creatureInfo(c) {
-    const d = DATA.species[c.sp], st = stageText(c);
-    return `<div class="row">${portraitImg(c.sp, 'portrait sm', 'Normal', c.shiny)}<div class="grow"><b>${esc(nm(c))}</b> Lv${c.lv} ${typeBadges(d.t)}
+    const st = stageText(c);
+    return `<div class="row">${portraitImg(looksOf(c), 'portrait sm', 'Normal', c.shiny)}<div class="grow"><b>${esc(nm(c))}</b> Lv${c.lv} ${typeBadges(c.types)}
       <div>HP ${Math.max(0, c.hp)}/${c.maxhp}${c.status ? ` · <span class="warn">${STATUS_NAMES[c.status]}</span>` : ''}${c.boss ? ' · 👑 보스' : ''}</div>
       <div class="dim">특성 ${esc(abilityName(c.ability))}${c.item ? ` · 가진 아이템 ${ITEMS[c.item].icon}${esc(ITEMS[c.item].n)}` : ''}${c.held ? ` · 지닌 물건 ${esc(ITEMS[c.held].n)}` : ''}${st ? ` · 능력 변화 ${esc(st)}` : ''}</div></div></div>`;
   }
@@ -2129,11 +2161,11 @@ const Dungeon = (() => {
   }
   function showStatus() {
     if (!D) return;
-    const p = P(), d = DATA.species[p.sp], st = stageText(p), need = expFor(p.lv + 1) - expFor(p.lv), have = p.exp - expFor(p.lv);
+    const p = P(), st = stageText(p), need = expFor(p.lv + 1) - expFor(p.lv), have = p.exp - expFor(p.lv);
     const row = (k, a, b) => `<tr><td>${k}</td><td><b>${a}</b></td><td class="dim">${b || ''}</td></tr>`;
     UI.open({
       title: '📊 내 상태', wide: true,
-      html: `<div class="row">${portraitImg(p.sp, 'portrait', 'Normal', p.shiny)}<div class="grow"><b>${esc(spName(p.sp))}</b> Lv${p.lv} ${typeBadges(d.t)}
+      html: `<div class="row">${portraitImg(looksOf(p), 'portrait', 'Normal', p.shiny)}<div class="grow"><b>${esc(spName(looksOf(p)))}</b> Lv${p.lv} ${typeBadges(p.types)}
           <div>HP ${p.hp}/${p.maxhp} · 배 ${Math.floor(p.belly)}/100${p.status ? ` · <span class="warn">${STATUS_NAMES[p.status]}</span>` : ''}</div>
           <div class="dim">EXP ${p.lv >= MAX_LEVEL ? '최대' : `${have}/${need}`} · 특성 ${esc(abilityName(p.ability))} · 지닌 물건 ${p.held ? `${ITEMS[p.held].icon}${esc(ITEMS[p.held].n)}` : '없음'}</div></div></div>
         <table class="md-tbl">${row('공격', p.atk, p.stages[2] ? `(${p.stages[2] > 0 ? '+' : ''}${p.stages[2]}단계)` : '')}${row('방어', p.def, p.stages[3] ? `(${p.stages[3] > 0 ? '+' : ''}${p.stages[3]}단계)` : '')}

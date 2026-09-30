@@ -15,8 +15,8 @@ const Dex = (() => {
   }
 
   function renderPokemon() {
-    const ids = Object.keys(DATA.species).map(Number).sort(byDex);
-    const gens = [...new Set(ids.map(id => DATA.species[id].g))].sort((a, b) => a - b);
+    const ids = SPECIES_IDS.map(Number).sort(byDex);
+    const gens =[...new Set(ids.map(id => DATA.species[id].g))].sort((a, b) => a - b);
     const cnt = Progress.dexCounts(), pct = n => (n / cnt.total * 100).toFixed(1);
     const state = id => (Progress.beatCount(id) ? 2 : Progress.isSeen(id) ? 1 : 0);
     return `<div class="dex-rate">
@@ -57,10 +57,10 @@ const Dex = (() => {
   function renderItems() {
     const ids = Object.keys(ITEMS).filter(id => id !== 'quest');
     return `<div class="picker-bar"><input class="dex-q" placeholder="아이템 이름 검색" autocomplete="off">
-      <select class="dex-c"><option value="">전체</option><option value="1">도구</option><option value="2">지닌 물건</option><option value="3">기술머신</option></select><span class="dim dex-count"></span></div>
-      ${ids.map(id => { const it = ITEMS[id]; return `<div class="row dex-item clickable" data-dexitem="${id}" data-s="${esc(it.n.toLowerCase())}" data-c="${it.tm ? 3 : it.held ? 2 : 1}">
+      <select class="dex-c"><option value="">전체</option><option value="1">도구</option><option value="2,4,5">지닌 물건</option><option value="4">전용 도구 (녹슨검·금강옥 등)</option><option value="5">메가스톤</option><option value="3">기술머신</option></select><span class="dim dex-count"></span></div>
+      ${ids.map(id => { const it = ITEMS[id]; return `<div class="row dex-item clickable" data-dexitem="${id}" data-s="${esc(it.n.toLowerCase())}" data-c="${it.tm ? 3 : it.mega ? 5 : it.sig ? 4 : it.held ? 2 : 1}">
         <span class="ico big">${it.icon}</span><div class="grow"><b>${esc(it.n)}</b><div class="dim">${esc(it.d)}</div></div>
-        <div class="dex-tags">${it.held ? '<span class="tag">지닌 물건</span>' : ''}${shopSet.has(id) ? `<span class="tag">상점 ₽${it.price}</span>` : ''}${dropSet.has(id) ? '<span class="tag">던전</span>' : ''}${it.sig ? '<span class="tag">전용</span>' : ''}</div></div>`; }).join('')}`;
+        <div class="dex-tags">${it.held ? '<span class="tag">지닌 물건</span>' : ''}${shopSet.has(id) ? `<span class="tag">상점 ₽${it.price}</span>` : ''}${dropSet.has(id) ? '<span class="tag">던전</span>' : ''}${it.sig ? '<span class="tag">전용</span>' : ''}${it.mega ? '<span class="tag">메가스톤</span>' : ''}</div></div>`; }).join('')}`;
   }
 
   // 검색/필터 연결 (DOM만 숨겨서 입력 포커스 유지)
@@ -108,6 +108,8 @@ const Dex = (() => {
         <table class="dex-stats">${d.b.map((v, i) => `<tr><td>${labels[i]}</td><td class="num">${v}</td><td><span class="sbar"><i style="width:${Math.min(100, v / 1.8)}%;background:${v >= 100 ? '#4de36b' : v >= 70 ? '#f5d142' : '#f58a42'}"></i></span></td></tr>`).join('')}
           <tr><td>합계</td><td class="num"><b>${bst(id)}</b></td><td></td></tr></table>
         <h3>특성</h3>${d.ab.map(([aid, hid]) => `<div class="row clickable" data-dexability="${aid}"><div class="grow"><b>${esc(abilityName(aid))}</b>${hid ? ' <span class="dim">(숨겨진 특성)</span>' : ''}<div class="dim">${esc(abilityDesc(aid).dungeon || abilityDesc(aid).exact || abilityDesc(aid).d)}</div></div></div>`).join('')}
+        ${d.fc ? `<h3>원래 모습</h3><div class="roster">${mini(d.f[0], '')}</div><p class="dim">${esc(formHowText(id))}</p>` : ''}
+        ${(FORMS_OF[id] || []).length ? `<h3>다른 모습</h3><div class="roster">${FORMS_OF[id].map(k => mini(k, formKindName(k))).join('')}</div>` : ''}
         ${pre.length || d.v.length ? `<h3>진화</h3><div class="roster">${pre.map(k => mini(k, '진화 전')).join('')}${d.v.map(v => mini(v[0], evoText(v))).join('')}</div>` : ''}
         <h3>레벨업으로 배우는 기술</h3>
         <table class="dex-table"><tbody>${d.l.map(([lv, mid]) => { const m = DATA.moves[mid]; return `<tr data-dexmove="${mid}"><td class="num">Lv${lv}</td>
@@ -122,12 +124,12 @@ const Dex = (() => {
 
   function showMove(mid) {
     const learners = [];
-    for (const [id, s] of Object.entries(DATA.species)) {
-      const e = s.l.find(x => x[1] === mid);
+    for (const id of SPECIES_IDS) {
+      const e = DATA.species[id].l.find(x => x[1] === mid);
       if (e) learners.push([+id, e[0]]);
     }
     learners.sort((a, b) => a[1] - b[1] || a[0] - b[0]);
-    const tmLearners = ITEMS['tm' + mid] ? Object.keys(DATA.species).map(Number).filter(s => canLearnTM(s, mid)) : [];
+    const tmLearners = ITEMS['tm' + mid] ? SPECIES_IDS.map(Number).filter(s => canLearnTM(s, mid)) : [];
     UI.open({
       title: '기술 도감', wide: true,
       html: `${moveDetailHtml(mid)}${ITEMS['tm' + mid] ? `<p>💿 ${esc(ITEMS['tm' + mid].n)} — 기술머신으로 배우는 포켓몬 ${tmLearners.length}종</p>` : ''}<h3>레벨업으로 배우는 포켓몬 (${learners.length})</h3>
@@ -152,7 +154,7 @@ const Dex = (() => {
     const sig = it.sig ? it.hold.only.filter(sp => DATA.species[sp]).map(spName).join('·') : '';
     const where = sig ? [`마을 상점에 가끔 진열 (₽${it.price})`, `${sig}이(가) 나오는 던전에서 드물게 발견`]
       : [shopSet.has(id) ? `상점에서 ₽${it.price}에 구매` : '', dropSet.has(id) ? `던전 바닥에서 발견 (${TIER_NAMES[itemTier(id)]}${itemTier(id) > 1 ? ` · 적 Lv${TIER_LV[itemTier(id)]} 이상 층` : ''})` : ''].filter(Boolean);
-    const how = it.vit ? '마을의 캐릭터 탭에서 먹인다. 효과는 그 포켓몬에게 영구히 남는다.' : it.tm ? `마을의 캐릭터 탭이나 던전 가방에서 사용한다. 배울 수 있는 포켓몬 ${Object.keys(DATA.species).filter(s => canLearnTM(+s, it.mv)).length}종.` : it.held ? '마을의 캐릭터 탭이나 던전 가방에서 지니게 하면 효과를 발휘한다. (한 번에 하나)' : it.use && it.use !== 'none' ? '던전에서 사용하거나 던질 수 있다.' : it.throw ? '던전에서 적에게 던져서 사용한다.' : id === 'stone' || id === 'link' ? '마을의 캐릭터 탭에서 진화할 때 소모된다.' : id === 'reviver' ? '가방에 있으면 쓰러질 때 자동으로 사용된다.' : '';
+    const how = it.vit ? '마을의 캐릭터 탭에서 먹인다. 효과는 그 포켓몬에게 영구히 남는다.' : it.tm ? `마을의 캐릭터 탭이나 던전 가방에서 사용한다. 배울 수 있는 포켓몬 ${SPECIES_IDS.filter(s => canLearnTM(+s, it.mv)).length}종.` : it.held ? '마을의 캐릭터 탭이나 던전 가방에서 지니게 하면 효과를 발휘한다. (한 번에 하나)' : it.use && it.use !== 'none' ? '던전에서 사용하거나 던질 수 있다.' : it.throw ? '던전에서 적에게 던져서 사용한다.' : id === 'stone' || id === 'link' ? '마을의 캐릭터 탭에서 진화할 때 소모된다.' : id === 'reviver' ? '가방에 있으면 쓰러질 때 자동으로 사용된다.' : '';
     const sell = Math.floor(sellOf(id));
     UI.open({
       title: '아이템 도감',

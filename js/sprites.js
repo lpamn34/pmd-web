@@ -89,8 +89,13 @@ const Sprites = (() => {
   }
 
   // 표정 초상화: 없는 표정이면 Normal로
+  // 폼체인지·메가진화 모습에 그 표정이 없으면 원래 모습의 초상화 (초상화가 아예 없는 모습도)
   function portrait(id, emotion = 'Normal', shiny = false) {
     const d = DATA.species[id] || {};
+    if (d.fc) {
+      const have = shiny && d.sem ? d.sem : d.em;
+      if (!have || !have.includes(EMOTIONS[emotion] || 'N')) return portrait(d.f[0], emotion, shiny);
+    }
     const useShiny = shiny && d.sem;
     const have = (useShiny ? d.sem : d.em) || 'N';
     const e = have.includes(EMOTIONS[emotion]) ? emotion : 'Normal';

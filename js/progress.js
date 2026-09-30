@@ -21,7 +21,7 @@ const Progress = (() => {
   const isSeen = sp => !!(ensure().dex.seen[sp] || S().roster[sp]);
   const beatCount = sp => ensure().dex.beaten[sp] || 0;
   function dexCounts() {
-    const ids = Object.keys(DATA.species);
+    const ids = SPECIES_IDS;
     let seenN = 0, beatN = 0;
     for (const id of ids) { if (isSeen(id)) seenN++; if (beatCount(id)) beatN++; }
     return { total: ids.length, seen: seenN, beaten: beatN };
@@ -127,7 +127,7 @@ const Progress = (() => {
     const w = pk(['rain', 'sun', 'sand', 'snow', 'fog', null]);
     // 주인공: 진화 전 모습(다른 포켓몬에서 진화하지 않는)이면서 진화할 수 있는 포켓몬
     const evolved = new Set(Object.values(DATA.species).flatMap(s => s.v.map(v => v[0])));
-    const cand = Object.keys(DATA.species).map(Number).filter(id => !evolved.has(id) && DATA.species[id].v.length && !DATA.species[id].lg).sort((a, b) => a - b);
+    const cand = SPECIES_IDS.map(Number).filter(id => !evolved.has(id) && DATA.species[id].v.length && !DATA.species[id].lg).sort((a, b) => a - b);
     Object.assign(DAILY, { date, seed: seedOf(date), types, wx: w ? [[w, 0.4]] : [], pal: pk(pal), hero: pk(cand), n: `오늘의 도전 (${date.slice(5).replace('-', '/')})` });
     return DAILY;
   }
@@ -157,7 +157,7 @@ const Progress = (() => {
         : `<button class="btn" data-act="daily-go">도전한다</button>`} <button class="btn ghost" data-act="dg-info" data-arg="daily">ℹ 정보</button></div></div>`;
   }
   function shareText(rec) {
-    return `🗓 불가사의 던전 웹 · 오늘의 도전 ${rec.date}\n${spName(rec.sp)} · ${rec.clear ? '완주! ' : ''}${rec.floor}F / ${DAILY_FLOORS}F · ${rec.turns}턴 · Lv${rec.lv}${rec.kills != null ? ` · ${rec.kills}마리 쓰러뜨림` : ''}`;
+    return `🗓 미궁 탐험대 · 오늘의 도전 ${rec.date}\n${spName(rec.sp)} · ${rec.clear ? '완주! ' : ''}${rec.floor}F / ${DAILY_FLOORS}F · ${rec.turns}턴 · Lv${rec.lv}${rec.kills != null ? ` · ${rec.kills}마리 쓰러뜨림` : ''}`;
   }
   function recordDaily(r, outcome, reached) {
     const s = ensure();
