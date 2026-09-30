@@ -13,7 +13,7 @@ const Game = (() => {
   // ───────────────────────── 저장 ─────────────────────────
   function newSave(sp) {
     return {
-      v: 1, money: 500, day: 1, current: sp,
+      v: SAVE_SCHEMA, gameVersion: GAME_VERSION, money: 500, day: 1, current: sp,
       roster: { [sp]: newEntry(sp) },
       bag: [{ id: 'oran', n: 1 }, { id: 'oran', n: 1 }, { id: 'apple', n: 1 }],
       storage: {}, cleared: {}, best: {},
@@ -24,8 +24,77 @@ const Game = (() => {
   const newEntry = sp => ({ lv: START_LEVEL, exp: expFor(START_LEVEL), moves: defaultMoves(sp, START_LEVEL), ability: defaultAbility(sp) });
   // 저장된 특성이 그 포켓몬의 것이 아니면 기본 특성으로
   const entryAbility = (sp, ch) => (ch && DATA.species[sp].ab.some(a => a[0] === ch.ability) ? ch.ability : defaultAbility(sp));
-  function persist() { try { localStorage.setItem(SAVE_KEY, JSON.stringify(save)); } catch (e) { /* 저장 불가 환경 */ } }
-  function load() { try { const s = localStorage.getItem(SAVE_KEY); return s ? JSON.parse(s) : null; } catch (e) { return null; } }
+  let newerSave = null;   // 세이브가 이 화면보다 새 버전에서 저장됐으면 그 버전 (덮어쓰지 않는다)
+  function persist() { if (newerSave) return; try { localStorage.setItem(SAVE_KEY, JSON.stringify(save)); } catch (e) { /* 저장 불가 환경 */ } }
+  function load() { try { const s = localStorage.getItem(SAVE_KEY); return s ? migrateSave(JSON.parse(s), s) : null; } catch (e) { return null; } }
+
+  // ── 세이브 변환: 버전이 바뀌면 먼저 백업하고, 새 버전에 맞게 고친다 ──
+  const BACKUP_KEY = 'pmdweb_save_backups';
+  const SAVE_SCHEMA = 2;
+  // 세이브 구조가 바뀔 때 여기에 변환을 추가한다 (to: 바뀐 뒤 번호)
+  const MIGRATIONS = [
+    { to: 2, fn: s => { s.settings = s.settings || {}; } },
+  ];
+  function backups() { try { return JSON.parse(localStorage.getItem(BACKUP_KEY) || '[]'); } catch (e) { return []; } }
+  function backupSave(raw, ver) {
+    const list = backups().filter(b => b.data !== raw);
+    list.unshift({ ver, at: new Date().toISOString(), data: raw });
+    try { localStorage.setItem(BACKUP_KEY, JSON.stringify(list.slice(0, 3))); } catch (e) { /* 공간 부족: 백업 생략 */ }
+  }
+  // 새 기능이 추가되며 생긴 항목들: 없으면 기본값
+  function ensureDefaults(s) {
+    s.settings = { fast: false, autoDescend: false, ...(s.settings || {}) };
+    s.bag = s.bag || []; s.storage = s.storage || {}; s.cleared = s.cleared || {}; s.best = s.best || {};
+    s.missions = s.missions || { board: [], accepted: [] }; s.missions.board = s.missions.board || []; s.missions.accepted = s.missions.accepted || [];
+    s.shop = s.shop || []; s.money = s.money || 0; s.day = s.day || 1;
+    s.bagMax = s.bagMax || Math.max(BAG_BASE, s.bag.length); s.storageMax = s.storageMax || Math.max(STORAGE_BASE, storageUsedOf(s.storage));
+    for (const [sp, ch] of Object.entries(s.roster || {})) {
+      if (!DATA.species[sp]) { delete s.roster[sp]; continue; }
+      ch.lv = ch.lv || START_LEVEL; ch.exp = ch.exp ?? expFor(ch.lv); ch.moves = (ch.moves || []).filter(m => DATA.moves[m]);
+      if (!ch.moves.length) ch.moves = defaultMoves(+sp, ch.lv);
+    }
+    s.bag = s.bag.filter(b => ITEMS[b.id]);
+    for (const id of Object.keys(s.storage)) if (!ITEMS[id]) delete s.storage[id];
+  }
+  function migrateSave(s, raw) {
+    if (!s || !s.roster) return s;
+    const from = s.gameVersion || '0';
+    if (cmpVer(from, GAME_VERSION) > 0) { newerSave = from; return s; }   // 옛 화면: 읽기만
+    if (from !== GAME_VERSION) backupSave(raw, from);
+    let v = s.v || 1;
+    for (const m of MIGRATIONS) if (v < m.to) { m.fn(s); v = m.to; }
+    s.v = Math.max(v, SAVE_SCHEMA);
+    ensureDefaults(s);
+    s.gameVersion = GAME_VERSION;
+    return s;
+  }
+  async function restoreBackup(i) {
+    const b = backups()[i]; if (!b) return;
+    const ok = await UI.confirm('백업에서 복원', `<p>v${esc(b.ver)} 세이브 (${esc(new Date(b.at).toLocaleString())})로 되돌립니다.</p><p class="warn">지금 세이브는 이 백업으로 바뀝니다. (지금 세이브도 백업 목록에 남겨 둡니다)</p>`, '복원한다', '그만둔다');
+    if (!ok) return;
+    backupSave(JSON.stringify(save), GAME_VERSION);
+    try { localStorage.setItem(SAVE_KEY, b.data); } catch (e) { UI.alert('복원 실패', '<p>브라우저에 저장할 수 없습니다.</p>'); return; }
+    location.reload();
+  }
+
+  // ── 새 버전 알림: 사이트에 새 버전이 올라오면 마을에서 새로고침을 안내한다 (던전 중에는 방해하지 않음) ──
+  let updateVer = null;
+  async function checkUpdate() {
+    if (!/^https?:/.test(location.protocol)) return;
+    try {
+      const t = await (await fetch('js/defs.js?check=' + Date.now(), { cache: 'no-store' })).text();
+      const v = (t.match(/GAME_VERSION = '([^']+)'/) || [])[1];
+      if (v && cmpVer(v, GAME_VERSION) > 0 && v !== updateVer) { updateVer = v; if (!Dungeon.floor && save) { renderTown(); UI.toast(`새 버전 v${v}이 나왔어요. 마을 위쪽의 알림을 눌러 새로고침하세요.`); } }
+    } catch (e) { /* 오프라인 등 */ }
+  }
+  // 캐시를 피해서 새로 불러온다 (진행 상황은 이미 저장되어 있다)
+  const reloadFresh = () => { location.href = location.pathname + '?r=' + Date.now(); };
+  async function askUpdate() {
+    if (!updateVer) return;
+    if (Dungeon.floor) { UI.toast('던전에서 나온 뒤에 새로고침하세요.'); return; }
+    const ok = await UI.confirm('새 버전', `<p>새 버전 <b>v${esc(updateVer)}</b>이 나왔어요. (지금 v${GAME_VERSION})</p><p>새로고침하면 적용됩니다. 진행 상황은 저장되어 있고, 업데이트 전 세이브는 자동으로 백업돼요.</p>`, '새로고침', '나중에');
+    if (ok) { persist(); reloadFresh(); }
+  }
 
   function show(id) {
     document.querySelectorAll('.screen').forEach(s => s.classList.toggle('active', s.id === id));
@@ -36,8 +105,15 @@ const Game = (() => {
     Dungeon.init();
     if (Tiles.CUSTOM) Tiles.probe();
     save = load();
-    if (save) { save.bagMax = save.bagMax || Math.max(BAG_BASE, save.bag.length); save.storageMax = save.storageMax || Math.max(STORAGE_BASE, storageUsedOf(save.storage)); }
+    if (save && !newerSave) persist();
+    setTimeout(checkUpdate, 3000); setInterval(checkUpdate, 10 * 60 * 1000);
     document.getElementById('btn-start').onclick = () => {
+      if (newerSave) {
+        UI.open({ title: '새 버전이 필요해요', cancel: false,
+          html: `<p>이 세이브는 <b>v${esc(newerSave)}</b>에서 저장됐는데, 지금 열린 게임은 옛 버전 <b>v${GAME_VERSION}</b>이에요.</p><p>세이브가 망가지지 않도록 새로고침해서 최신 버전으로 열어 주세요.</p>`,
+          choices: [{ label: '새로고침', fn: reloadFresh }] });
+        return;
+      }
       if (save) enterTown();
       else Starter.begin(sp => { UI.closeAll(); save = newSave(sp); refreshDay(); persist(); enterTown(); UI.alert('환영합니다!', `<p>${esc(jo(spName(sp), '으로'))} 모험을 시작합니다.</p><p>마을에서 임무를 받고, 상점에서 준비한 뒤 던전으로 떠나 보세요.<br>던전 안에서 <b>O</b> 키로 자동 탐색, <b>Tab</b> 키로 자동 전투를 할 수 있습니다.<br>던전에서 쓰러뜨린 적이 가끔 동료가 되고 싶어 해요. 영입하면 캐릭터를 바꿀 수 있어요.</p>`); },
         (cb, back) => chooseCharacter(cb, true, starterIds(), back));
@@ -56,6 +132,7 @@ const Game = (() => {
   // ───────────────────────── 마을 ─────────────────────────
   function enterTown() {
     show('town-screen');
+    checkUpdate();
     Sound.town();
     if (Progress.check().length) persist();
     if (!save.shop.length || !save.missions.board.length) refreshDay();
@@ -125,6 +202,8 @@ const Game = (() => {
     const need = expFor(ch.lv + 1) - expFor(ch.lv), have = ch.exp - expFor(ch.lv);
     document.getElementById('town-money').textContent = `₽ ${save.money}`;
     document.getElementById('town-day').textContent = `${save.day}일째`;
+    const un = document.getElementById('update-note');
+    un.hidden = !updateVer; un.textContent = updateVer ? `🔔 새 버전 v${updateVer} — 눌러서 새로고침` : '';
     document.getElementById('char-card').innerHTML = `
       <div class="cc-top">${portraitImg(sp, 'portrait big', 'Normal', ch.shiny)}
         <div><div class="cc-name">${esc(d.n)}</div><div class="dim">No.${pad4(sp)} ${esc(d.e)}</div><div>${typeBadges(d.t)}</div>
@@ -469,7 +548,7 @@ const Game = (() => {
     const cr = DATA.species[save.current].cr || ['?', '?'];
     const s = save.settings;
     return `<h3>버전</h3>
-      <div class="row"><span class="grow">불가사의 던전 웹 <b>v${GAME_VERSION}</b> <span class="dim">(${GAME_DATE})</span>
+      <div class="row"><span class="grow">불가사의 던전 웹 <b>v${GAME_VERSION}</b> <span class="dim">(${GAME_DATE})</span>${ENV === 'dev' ? ' <span class="tag">개발 환경</span>' : ''}${updateVer ? ` <a href="#" data-act="update">🔔 새 버전 v${esc(updateVer)}</a>` : ''}
         <div class="dim">친구와 구조 코드나 오늘의 도전 기록을 주고받을 때는 서로 같은 버전인지 확인하세요.</div></span>
         <button class="btn sm ghost" data-act="version-notes">변경 내역</button></div>
       <h3>📖 게임 가이드</h3><div class="btns">${Guide.buttons()}</div>
@@ -487,6 +566,8 @@ const Game = (() => {
       <p class="dim">세이브는 이 브라우저에만 저장됩니다. 브라우저 데이터를 지우거나 다른 컴퓨터로 옮기기 전에 파일로 내보내 두세요.</p>
       <div class="btns"><button class="btn" data-act="save-export">💾 세이브 내보내기</button> <button class="btn ghost" data-act="save-import">📂 세이브 불러오기</button>
         <input type="file" id="save-file" accept=".json,application/json" hidden></div>
+      ${backups().length ? `<p class="dim">업데이트할 때 자동으로 만든 백업 (최근 3개)</p>${backups().map((b, i) => `<div class="row"><span class="grow">v${esc(b.ver)} 세이브 <span class="dim">${esc(new Date(b.at).toLocaleString())}</span></span>
+        <button class="btn sm ghost" data-act="restore-backup" data-arg="${i}">이 백업으로 복원</button></div>`).join('')}` : ''}
       ${Tiles.CUSTOM ? tilesetSection(s) : ''}
       ${musicSection()}
       <h3>크레딧</h3>
@@ -567,6 +648,8 @@ const Game = (() => {
       case 'switch': if (save.roster[+arg]) switchChar(+arg); break;
       case 'set-moves': return setMoves();
       case 'code-enter': return enterCode();
+      case 'update': return askUpdate();
+      case 'restore-backup': return restoreBackup(+arg);
       case 'dgtab': dgTab = arg; break;
       case 'dg-info': return showDungeonInfo(arg);
       case 'version-notes': UI.alert('변경 내역', VERSION_NOTES.map(([v, list]) => `<h3>v${v}${v === GAME_VERSION ? ' <span class="tag">지금 버전</span>' : ''}</h3><ul>${list.map(x => `<li>${esc(x)}</li>`).join('')}</ul>`).join('')); return;
@@ -674,6 +757,7 @@ const Game = (() => {
     try { obj = JSON.parse(await file.text()); } catch (e) { obj = null; }
     const s = obj && obj.game === 'pmd-web' ? obj.save : obj;
     if (!s || typeof s !== 'object' || !s.roster || !s.current || !s.roster[s.current]) { UI.alert('불러오기 실패', '<p>이 게임의 세이브 파일이 아닙니다.</p>'); return; }
+    if (s.gameVersion && cmpVer(s.gameVersion, GAME_VERSION) > 0) { UI.alert('불러오기 실패', `<p>이 세이브는 더 새 버전(v${esc(s.gameVersion)})에서 저장됐어요. 새로고침해서 최신 버전으로 불러와 주세요.</p>`); return; }
     const ch = s.roster[s.current];
     const ok = await UI.confirm('세이브 불러오기', `<div class="center">${portraitImg(s.current, 'portrait big', 'Normal', ch.shiny)}</div>
       <p class="center"><b>${esc(spName(s.current))}</b> Lv${ch.lv} · ${s.day || 1}일째 · ₽${s.money || 0}${obj.exported ? `<br><span class="dim">내보낸 시각 ${esc(new Date(obj.exported).toLocaleString())}${obj.version ? ` · 버전 v${esc(obj.version)}` : ''}</span>` : ''}</p>
@@ -1195,7 +1279,7 @@ const Game = (() => {
 
   function setSetting(k, v) { save.settings[k] = v; persist(); Sound.refresh(); }
 
-  return { recruit, unlockShiny, showMissions, importSave, noteShiny, boot, endRun, saveRunSnapshot, dungeonMenu, setSetting, renderTown, get save() { return save; }, setTab(t) { tab = t; renderTown(); } };
+  return { askUpdate, recruit, unlockShiny, showMissions, importSave, noteShiny, boot, endRun, saveRunSnapshot, dungeonMenu, setSetting, renderTown, get save() { return save; }, setTab(t) { tab = t; renderTown(); } };
 })();
 
 window.addEventListener('DOMContentLoaded', () => {
@@ -1210,6 +1294,7 @@ window.addEventListener('DOMContentLoaded', () => {
     e.preventDefault(); e.stopPropagation();
     showMoveInfo(+b.dataset.move, b.dataset.pp != null ? +b.dataset.pp : undefined, b.dataset.max != null ? +b.dataset.max : undefined);
   }, true);
+  document.getElementById('update-note').onclick = () => Game.askUpdate();
   document.getElementById('town-tabs').onclick = e => { const b = e.target.closest('button'); if (b) Game.setTab(b.dataset.tab); };
   document.getElementById('town-screen').addEventListener('change', async e => {
     if (e.target.dataset.set) Game.setSetting(e.target.dataset.set, e.target.checked);

@@ -352,3 +352,7 @@ i.clear { font-style: normal; font-size: 11px; background: #3a9d4d; padding: 1px
 
 .loop-form { display: flex; gap: 16px; flex-wrap: wrap; margin: 8px 0; }
 .loop-form input { width: 110px; margin: 0 4px; }
+
+/* 새 버전 알림 */
+.update-note { font: inherit; font-size: 13px; color: #0b1633; background: #ffd966; border: 0; border-radius: 12px; padding: 3px 12px; cursor: pointer; margin-left: auto; }
+.update-note:hover { background: #ffe699; }
