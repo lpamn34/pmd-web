@@ -43,12 +43,26 @@ const Online = (() => {
   }
   const onChange = f => listeners.push(f);
 
-  async function loadProfile() {
+  let profileAt = 0;
+  // 이 브라우저에서 이미 차지를 확인한 닉네임 (로그인할 때마다 다시 확인하지 않게)
+  const NAME_OK_KEY = 'pmdweb_nameok';
+  const nameOkHere = n => { try { return localStorage.getItem(NAME_OK_KEY) === user.uid + '|' + n; } catch (e) { return false; } };
+  const setNameOk = n => { try { localStorage.setItem(NAME_OK_KEY, user.uid + '|' + n); } catch (e) { /* 무시 */ } };
+  // 동시에 여러 곳에서 불러도 한 번만 읽는다 (로그인 직후 onAuthStateChanged와 signIn이 겹침)
+  let profileP = null;
+  function loadProfile() {
+    if (!profileP) profileP = readProfile().finally(() => { profileP = null; });
+    return profileP;
+  }
+  const freshProfile = () => profile && Date.now() - profileAt < 15000;
+  async function readProfile() {
     const d = await db.collection('users').doc(user.uid).get();
     profile = d.exists ? d.data() : {};
+    profileAt = Date.now();
     // 닉네임을 겹치지 않게 하기 전에 만든 계정: 로그인할 때 차지해 둔다 (이미 다른 사람이 쓰면 바꾸라고 안내)
-    if (profile.name) {
-      try { await claimName(profile.name); profile.nameOk = true; }
+    if (profile.name && nameOkHere(profile.name)) profile.nameOk = true;
+    else if (profile.name) {
+      try { await claimName(profile.name); profile.nameOk = true; setNameOk(profile.name); }
       catch (e) { if (e.taken) profile.nameTaken = true; }
     }
   }
@@ -111,7 +125,7 @@ const Online = (() => {
       await db.collection('users').doc(user.uid).set({ id, created: Date.now() }, { merge: true }).catch(() => {});
       throw { msg: e.taken ? '가입은 됐지만 그 닉네임을 방금 다른 사람이 가져갔어요. 계정 → 닉네임 바꾸기에서 정해 주세요.' : why(e), joined: true };
     }
-    profile = { name: nick, id, nameOk: true };
+    profile = { name: nick, id, nameOk: true }; profileAt = Date.now(); setNameOk(nick);
     try { await db.collection('users').doc(user.uid).set({ name: nick, id, created: Date.now() }, { merge: true }); }
     catch (e) { throw { msg: why(e), joined: true }; }
   }
@@ -119,7 +133,7 @@ const Online = (() => {
     id = String(id || '').trim().toLowerCase();
     if (!id || !pw) throw { msg: '아이디와 비밀번호를 입력해 주세요.' };
     await init();
-    try { const cred = await auth.signInWithEmailAndPassword(id + MAIL, pw); user = cred.user; await loadProfile(); }
+    try { const cred = await auth.signInWithEmailAndPassword(id + MAIL, pw); user = cred.user; if (!freshProfile()) await loadProfile(); }
     catch (e) { throw { msg: why(e) }; }
   }
   async function signOut() { if (auth) await auth.signOut(); user = null; profile = null; }
@@ -129,24 +143,25 @@ const Online = (() => {
     try {
       await claimName(nick, profile && profile.nameOk ? profile.name : null);
       await db.collection('users').doc(user.uid).set({ name: nick }, { merge: true });
-      profile = { ...profile, name: nick, nameOk: true, nameTaken: false };
+      profile = { ...profile, name: nick, nameOk: true, nameTaken: false }; setNameOk(nick);
     } catch (e) { throw { msg: e.taken ? TAKEN : why(e) }; }
   }
 
   // ── 클라우드 세이브: users/{uid}.save (JSON 문자열), savedAt (저장한 시각) ──
   async function fetchCloud() {
     if (!user) return null;
-    await loadProfile();
+    if (!freshProfile()) await loadProfile();   // 로그인하며 방금 읽었으면 다시 읽지 않는다
     return profile.save ? { raw: profile.save, savedAt: profile.savedAt || 0, ver: profile.ver || '0' } : null;
   }
+  // upAt: 서버 시각. 보안 규칙(firestore.rules)이 이걸로 너무 잦은 저장을 막는다 (20초에 한 번까지)
   async function pushCloud(raw, savedAt) {
     if (!user) return;
-    await db.collection('users').doc(user.uid).set({ save: raw, savedAt, ver: GAME_VERSION }, { merge: true });
+    await db.collection('users').doc(user.uid).set({ save: raw, savedAt, ver: GAME_VERSION, upAt: firebase.firestore.FieldValue.serverTimestamp() }, { merge: true });
     profile = { ...profile, save: raw, savedAt, ver: GAME_VERSION };
   }
   async function clearCloud() {
     const del = firebase.firestore.FieldValue.delete();
-    await db.collection('users').doc(user.uid).update({ save: del, savedAt: del, ver: del });
+    await db.collection('users').doc(user.uid).update({ save: del, savedAt: del, ver: del, upAt: firebase.firestore.FieldValue.serverTimestamp() });
     profile = { name: profile && profile.name, id: profile && profile.id };
   }
 
@@ -158,6 +173,7 @@ const Online = (() => {
   const stamp = t => String(t).padStart(14, '0');
   const idOf = docId => +String(docId).split('_').pop();   // 문서 이름 → 요청 번호 (SOS 코드의 번호)
   async function postSOS(s) {
+    dropListCache();
     const created = Date.now(), docId = `${stamp(created)}_${s.id}`;
     await db.collection('sos').doc(docId).set({
       owner: user.uid, name: name(), dungeon: s.dungeon, floor: s.floor, sp: s.sp, lv: s.lv, shiny: !!s.shiny,
@@ -167,15 +183,23 @@ const Online = (() => {
   }
   const heldByOther = s => s.takenBy && s.takenBy !== user.uid && s.takenAt && s.takenAt.toMillis() > Date.now() - HOLD_MS;
   // 같은 버전의 열린 요청 중 가장 오래 기다린 것부터 (최근 7일, 내 것과 다른 사람이 구조하러 간 것 제외)
+  // 게시판을 다시 열어도 2분 안이면 방금 읽은 목록을 보여준다 (읽기 절약). 내가 요청을 맡거나 올리면 새로 읽는다
+  const LIST_CACHE_MS = 2 * 60 * 1000;
+  let listCache = null;
+  const dropListCache = () => { listCache = null; };
   async function listSOS() {
+    if (listCache && listCache.uid === user.uid && Date.now() - listCache.at < LIST_CACHE_MS) return listCache.list;
     const since = stamp(Date.now() - SOS_DAYS * 864e5);
     const q = await db.collection('sos').where('key', '==', openKey())
       .orderBy(firebase.firestore.FieldPath.documentId()).startAt(since).limit(30).get();
-    return q.docs.map(d => ({ id: d.id, sid: idOf(d.id), ...d.data() }))
+    const list = q.docs.map(d => ({ id: d.id, sid: idOf(d.id), ...d.data() }))
       .filter(s => s.owner !== user.uid && !heldByOther(s)).slice(0, BOARD_SIZE);
+    listCache = { uid: user.uid, at: Date.now(), list };
+    return list;
   }
   // 구조하러 간다: 이 요청을 2시간 동안 맡는다. 이미 다른 사람이 맡았거나 끝났으면 false
   async function takeSOS(docId) {
+    dropListCache();
     const ref = db.collection('sos').doc(String(docId));
     return db.runTransaction(async t => {
       const d = await t.get(ref);
@@ -186,6 +210,7 @@ const Online = (() => {
   }
   // 구조 임무를 취소: 다른 사람이 받을 수 있게 풀어 준다
   async function releaseSOS(docId) {
+    dropListCache();
     const ref = db.collection('sos').doc(String(docId));
     const d = await ref.get();
     if (d.exists && d.data().status === 'open' && d.data().takenBy === user.uid) await ref.update({ takenBy: null, takenAt: null });
@@ -207,7 +232,29 @@ const Online = (() => {
   const thankSOS = (id, item) => db.collection('sos').doc(String(id)).update({ status: 'thanked', thx: item || null });
   const deleteSOS = id => db.collection('sos').doc(String(id)).delete();
 
+  // ── 접속자 수: 로그인한 사람만 presence/{uid}에 "지금 있음" 시각을 남긴다 ──
+  // 무료 한도를 아끼려고 PRESENCE_MIN분마다 한 번씩만 남기고, 최근 ONLINE_WINDOW분 안에 남긴 사람을 센다 (문서를 읽지 않는 count 집계)
+  const PRESENCE_MIN = 10, ONLINE_WINDOW = 21;
+  async function touchPresence() {
+    if (!user) return;
+    await db.collection('presence').doc(user.uid).set({ at: firebase.firestore.FieldValue.serverTimestamp() });
+  }
+  // compat SDK에는 count가 없어서 REST 집계 요청을 쓴다 (문서 1000개까지 읽기 1번으로 계산됨)
+  async function onlineCount() {
+    if (!user) return null;
+    const since = new Date(Date.now() - ONLINE_WINDOW * 60 * 1000).toISOString();
+    const url = `https://firestore.googleapis.com/v1/projects/${ONLINE_CONFIG.projectId}/databases/(default)/documents:runAggregationQuery`;
+    const body = { structuredAggregationQuery: {
+      structuredQuery: { from: [{ collectionId: 'presence' }], where: { fieldFilter: { field: { fieldPath: 'at' }, op: 'GREATER_THAN', value: { timestampValue: since } } } },
+      aggregations: [{ alias: 'n', count: {} }] } };
+    const r = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + await user.getIdToken() }, body: JSON.stringify(body) });
+    if (!r.ok) throw new Error('count ' + r.status);
+    const j = await r.json();
+    return +((j[0] && j[0].result && j[0].result.aggregateFields.n.integerValue) || 0);
+  }
+
   return {
+    touchPresence, onlineCount, PRESENCE_MIN, ONLINE_WINDOW,
     enabled, init, onChange, loggedIn, name, userId, why, nameTaken: () => !!(profile && profile.nameTaken),
     signUp, signIn, signOut, setName, uid: () => user && user.uid,
     fetchCloud, pushCloud, clearCloud,

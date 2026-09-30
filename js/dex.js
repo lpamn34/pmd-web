@@ -60,7 +60,7 @@ const Dex = (() => {
       <select class="dex-c"><option value="">전체</option><option value="1">도구</option><option value="2">지닌 물건</option><option value="3">기술머신</option></select><span class="dim dex-count"></span></div>
       ${ids.map(id => { const it = ITEMS[id]; return `<div class="row dex-item clickable" data-dexitem="${id}" data-s="${esc(it.n.toLowerCase())}" data-c="${it.tm ? 3 : it.held ? 2 : 1}">
         <span class="ico big">${it.icon}</span><div class="grow"><b>${esc(it.n)}</b><div class="dim">${esc(it.d)}</div></div>
-        <div class="dex-tags">${it.held ? '<span class="tag">지닌 물건</span>' : ''}${shopSet.has(id) ? `<span class="tag">상점 ₽${it.price}</span>` : ''}${dropSet.has(id) ? '<span class="tag">던전</span>' : ''}</div></div>`; }).join('')}`;
+        <div class="dex-tags">${it.held ? '<span class="tag">지닌 물건</span>' : ''}${shopSet.has(id) ? `<span class="tag">상점 ₽${it.price}</span>` : ''}${dropSet.has(id) ? '<span class="tag">던전</span>' : ''}${it.sig ? '<span class="tag">전용</span>' : ''}</div></div>`; }).join('')}`;
   }
 
   // 검색/필터 연결 (DOM만 숨겨서 입력 포커스 유지)
@@ -149,9 +149,11 @@ const Dex = (() => {
 
   function showItem(id) {
     const it = ITEMS[id];
-    const where = [shopSet.has(id) ? `상점에서 ₽${it.price}에 구매` : '', dropSet.has(id) ? '던전 바닥에서 발견' : ''].filter(Boolean);
+    const sig = it.sig ? it.hold.only.filter(sp => DATA.species[sp]).map(spName).join('·') : '';
+    const where = sig ? [`마을 상점에 가끔 진열 (₽${it.price})`, `${sig}이(가) 나오는 던전에서 드물게 발견`]
+      : [shopSet.has(id) ? `상점에서 ₽${it.price}에 구매` : '', dropSet.has(id) ? `던전 바닥에서 발견 (${TIER_NAMES[itemTier(id)]}${itemTier(id) > 1 ? ` · 적 Lv${TIER_LV[itemTier(id)]} 이상 층` : ''})` : ''].filter(Boolean);
     const how = it.vit ? '마을의 캐릭터 탭에서 먹인다. 효과는 그 포켓몬에게 영구히 남는다.' : it.tm ? `마을의 캐릭터 탭이나 던전 가방에서 사용한다. 배울 수 있는 포켓몬 ${Object.keys(DATA.species).filter(s => canLearnTM(+s, it.mv)).length}종.` : it.held ? '마을의 캐릭터 탭이나 던전 가방에서 지니게 하면 효과를 발휘한다. (한 번에 하나)' : it.use && it.use !== 'none' ? '던전에서 사용하거나 던질 수 있다.' : it.throw ? '던전에서 적에게 던져서 사용한다.' : id === 'stone' || id === 'link' ? '마을의 캐릭터 탭에서 진화할 때 소모된다.' : id === 'reviver' ? '가방에 있으면 쓰러질 때 자동으로 사용된다.' : '';
-    const sell = Math.floor(it.sell || it.price / 2);
+    const sell = Math.floor(sellOf(id));
     UI.open({
       title: '아이템 도감',
       html: `<div class="dex-itemd"><div class="md-head"><span class="ico big">${it.icon}</span> <b>${esc(it.n)}</b></div>

@@ -62,6 +62,7 @@ kbd { font-family: inherit; font-size: 10px; background: #0006; border: 1px soli
 /* 마을 */
 #town-screen { flex-direction: column; padding: 10px; gap: 10px; }
 .town-head { display: flex; gap: 20px; align-items: center; padding: 8px 16px; }
+.town-online { font-size: 12px; color: #9fe3a8; cursor: help; }
 .town-name { font-size: 18px; color: var(--accent); }
 .money { margin-left: auto; font-size: 16px; color: var(--accent); }
 .town-main { flex: 1; display: flex; gap: 10px; min-height: 0; }
@@ -166,7 +167,7 @@ i.clear { font-style: normal; font-size: 11px; background: #3a9d4d; padding: 1px
 .mv .n { flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .mv .p { color: var(--dim); }
 .mv.empty { opacity: .5; }
-#actions { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; }
+#actions { display: grid; grid-template-columns: repeat(6, 1fr); gap: 4px; }
 #actions button { font: inherit; font-size: 11px; color: #fff; background: #ffffff14; border: 1px solid #fff4; border-radius: 6px; padding: 5px 1px; cursor: pointer; white-space: nowrap; overflow: hidden; }
 #actions button:hover { background: #ffffff26; }
 

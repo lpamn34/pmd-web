@@ -3,7 +3,7 @@
 
 // 게임 버전: 업데이트할 때 올리고, index.html의 ?v= 숫자도 같이 올린다
 // (친구와 구조 코드·오늘의 도전을 주고받으려면 버전이 같아야 한다)
-const GAME_VERSION = '0.28';
+const GAME_VERSION = '0.29';
 // 버전 비교: '0.25' > '0.9' 처럼 숫자로 비교한다
 function cmpVer(a, b) {
   const x = String(a).split('.').map(Number), y = String(b).split('.').map(Number);
@@ -12,6 +12,9 @@ function cmpVer(a, b) {
 }
 const GAME_DATE = '2026-09-30';
 const VERSION_NOTES = [
+  ['0.29', ['경험치 너프: 적에게서 얻는 경험치 절반, 보스·현상수배범 보너스 3배 → 2배', '아이템 등급: 초반 던전에는 흔한 아이템만, 지닌 물건·기술머신 등은 적 Lv20 이상 층부터 (던전 정보·도감에서 확인)', '바닥 아이템 3~6개 → 2~4개, 적이 떨어뜨리는 확률 10% → 5%', '전용 도구(금강옥 등)는 주인 포켓몬이 나오는 던전에서만 드물게, 마을 상점에 가끔 진열', '창고 정렬 (종류·이름·개수·넣은 순), 마을에서도 가방 정리', '혼자 탐험 보정(받는 데미지 0.85배) 삭제', '진화해도 클리어 기록·메달이 이어짐', '배경음이 두 개 겹쳐 들리던 문제 수정',
+    '대쉬 삭제, 방향만 바꾸기는 다시 Shift + 방향', '마을 위쪽에 접속 중인 탐험대 수 표시 (로그인한 사람 기준, 10분마다 갱신)', '클라우드 저장은 던전을 마칠 때 · 창을 닫거나 다른 탭으로 갈 때 · 마을에서 10분마다 (던전 진행은 브라우저에 층마다 저장)',
+    '지닌 물건 가격 2배, 상점 가격 인상 (₽3000 이하 2배, 그 위 1.5배), 아이템을 팔면 사는 값의 1/4', '임무 보상 돈 1.5배', '친구 구조 3번마다 영양제·구미·특성캡슐 선물 (10번째마다 특성패치·무지개구미)', '마을 상점 새로고침 (₽3000)']],
   ['0.28', ['전설·환상 포켓몬은 레벨업에 필요한 경험치 2배 (얻는 경험치 절반)', '구조 게시판: 가장 오래 기다린 요청 10개만, 누가 구조하러 가면 2시간 동안 다른 사람에게 안 보임, 게시판 구조는 한 번에 2개까지', '게시판 구조를 마치면 구조 보답(무작위 아이템 + 돈)을 바로 받음', '무한의 회랑 배경음: Temporal Spire']],
   ['0.27', ['100층 로그라이크 "무한의 회랑" 추가 (최종 보스: 무한다이노 무한다이맥스)', '로그라이크 던전에서는 동료 영입 없음', '빠른 사용: 가방의 아이템 하나를 등록해 T 키/버튼으로 바로 던지거나 사용', '접촉 표시가 빠져 있던 8·9세대 기술(찍찍베기, 제트펀치 등)이 바로 앞의 적을 제대로 공격', '촉촉보이스: 소리 기술이 물 타입이 되고 위력 1.2배 (원작처럼 타입 변경 추가)', '함정이 방 입구(복도에서 2칸 안)에 생기지 않음']],
   ['0.26', ['리전폼 56종 추가 (알로라·가라르·히스이·팔데아의 모습, 도감 번호 0026-1 식)', '포켓몬별 던전 클리어 기록과 메달 (일반·테마·로그라이크 정복, 완전 정복), 던전 카드에 클리어 표시', '흡수 기술 회복량: 준 피해의 30%', '던진 아이템이 아이템 있는 칸에 떨어지면 가까운 빈칸으로 튕겨 나감', '던전에서 메시지 기록(U)·내 상태(P) 보기, 조사(K / 우클릭)로 먼 칸 살펴보기', '가방 정리, 발밑 아이템 조사·줍기·교환·던지기', '열매를 먹으면 배가 5 참', '직선 기술·던지기가 벽 모서리를 지나감', '적도 아이템을 주워서 먹거나 던짐 (쓰러지면 떨어뜨림)', '함정: 모르는 함정 80%·발견한 함정 40% 확률로 작동, 복도 옆에는 생기지 않음, 능력 리셋 함정 추가', '흡수 기술 회복량을 실제로 깎은 HP 기준으로', '휴대폰: 던전 방향 버튼(누르고 있으면 계속 걷기, 방향만 바꾸기), 마을 화면 정리, 창마다 ✕ 닫기 버튼', '일반 던전에서 패러독스 포켓몬이 나오는 확률을 1/5로 줄임', '계정 (아이디/비밀번호, 로그인은 선택)', '클라우드 세이브: 다른 기기에서 이어하기', '구조 게시판: 다른 플레이어의 구조 요청을 골라서 구조, A-OK·감사 편지 자동 전달']],
@@ -217,7 +220,9 @@ Object.assign(HELD_ITEMS, {
   const who = only.filter(sp => DATA.species[sp]).map(sp => DATA.species[sp].n).join('·');
   HELD_ITEMS[id] = { n, icon, price: 2000, sig: true, d: `[전용] ${who}에게 지니게 하면 ${text}. 다른 포켓몬에게는 효과가 없다.`, hold: { only, ...eff } };
 });
-for (const [id, it] of Object.entries(HELD_ITEMS)) ITEMS[id] = { ...it, use: 'none', held: true };
+// 지닌 물건은 오래 쓰는 물건이라 비싸게 (위 가격의 HELD_PRICE_MUL배)
+const HELD_PRICE_MUL = 2;
+for (const [id, it] of Object.entries(HELD_ITEMS)) ITEMS[id] = { ...it, price: it.price * HELD_PRICE_MUL, use: 'none', held: true };
 // 지닌 물건 효과 (전용 도구는 정해진 포켓몬만)
 const heldOf = c => {
   const h = c && c.held && ITEMS[c.held] && ITEMS[c.held].hold;
@@ -228,8 +233,17 @@ const heldOf = c => {
 const SHOP_POOL = ['oran', 'oran', 'sitrus', 'apple', 'apple', 'bigapple', 'heal', 'elixir', 'reviver', 'blast', 'sleep', 'warp', 'stun', 'thorn', 'gravel', 'escape', 'lumi', 'foesleep', 'stone', 'link',
   'superpotion', 'fullrestore', 'xattack', 'xdefense', 'xspatk', 'xspeed', 'xaccuracy', 'poisonseed', 'confuseseed', 'goldthorn', 'radar', 'trapbust', 'paraorb', 'sloworb',
   'cheri', 'chesto', 'pecha', 'rawst', 'persim', 'lum', 'leppa'];
-// 마을 상점은 매일 지닌 물건 몇 개도 진열한다
-const HELD_SHOP_POOL = Object.keys(HELD_ITEMS);
+// 마을 상점은 매일 지닌 물건 몇 개도 진열한다 (전용 도구는 따로 가끔)
+const HELD_SHOP_POOL = Object.keys(HELD_ITEMS).filter(id => !HELD_ITEMS[id].sig);
+const SIG_ITEMS = Object.keys(HELD_ITEMS).filter(id => HELD_ITEMS[id].sig);
+const SIG_SHOP_CHANCE = 0.08;   // 마을 상점에 전용 도구가 하나 진열될 확률 (하루)
+// 전용 도구는 그 포켓몬이 나오는 던전에서만 드물게 떨어진다
+const SIG_DROP = { floor: 0.03, defeat: 0.03, boss: 0.25 };
+// 이 포켓몬들 중 누군가가 주인인 전용 도구
+const sigItemsFor = sps => SIG_ITEMS.filter(id => HELD_ITEMS[id].hold.only.some(sp => sps.includes(sp)));
+// 한 층에 떨어져 있는 아이템 수, 쓰러뜨린 적이 아이템을 떨어뜨릴 확률
+const ITEMS_PER_FLOOR = [2, 4];
+const ENEMY_DROP_CHANCE = 0.05;
 
 // 바닥 드롭 테이블 (가중치)
 const DROP_TABLE = [['oran', 18], ['sitrus', 4], ['apple', 12], ['bigapple', 3], ['heal', 6], ['elixir', 3], ['reviver', 1.2], ['blast', 6],
@@ -237,7 +251,7 @@ const DROP_TABLE = [['oran', 18], ['sitrus', 4], ['apple', 12], ['bigapple', 3],
   ['superpotion', 3], ['fullrestore', 0.6], ['xattack', 1.5], ['xdefense', 1.5], ['xspatk', 1.5], ['xspeed', 1.5], ['xaccuracy', 1], ['poisonseed', 3], ['confuseseed', 3],
   ['goldthorn', 2], ['radar', 1.2], ['trapbust', 1], ['paraorb', 0.8], ['sloworb', 0.8]];
 // 지닌 물건은 가끔 바닥에서 발견된다 (종류마다 드물게)
-for (const id of Object.keys(HELD_ITEMS)) DROP_TABLE.push([id, 0.12]);
+for (const id of HELD_SHOP_POOL) DROP_TABLE.push([id, 0.12]);
 for (const id of Object.keys(VITAMINS)) DROP_TABLE.push([id, 0.15]);
 DROP_TABLE.push(['abcapsule', 0.1], ['abpatch', 0.04]);
 // 열매: 상태이상 열매는 흔하게, 능력 열매는 가끔
@@ -367,6 +381,17 @@ const isBossFloor = (dg, f) => f === dg.floors || (dg.mode === 'rogue' && f % 10
 const EMOTIONS = { Normal: 'N', Happy: 'H', Pain: 'P', Determined: 'D', Joyous: 'J', Sad: 'S', Angry: 'A', Dizzy: 'Z', Surprised: 'U', Crying: 'C', Worried: 'W' };
 
 const shopPrice = id => ITEMS[id].price || (ITEMS[id].sell || 100) * 3;
+// 임무 보상 돈 배율 (v0.29에서 1 → 1.5)
+const MISSION_MONEY_MUL = 1.5;
+// 친구 구조 선물: 구조를 GIFT_EVERY번 할 때마다 좋은 아이템 하나 (BIG_EVERY번째마다는 더 귀한 것)
+const RESCUE_GIFT = { every: 3, bigEvery: 10, big: ['abpatch', 'rainbowgummy'] };
+const rescueGiftPool = () => [...Object.keys(VITAMINS), ...Object.keys(GUMMIES).filter(id => id !== 'rainbowgummy'), 'abcapsule'];
+// 마을 상점 새로고침 (그날 진열을 다시 뽑는다)
+const SHOP_REROLL_COST = 3000;
+// 파는 값: 사는 값의 1/4 (상점에 없는 물건은 정해진 값). 겹치는 물건은 5개 기준 값
+const SELL_RATE = 0.25;
+const sellOf = id => { const it = ITEMS[id]; return it.price ? it.price * SELL_RATE : (it.sell || 0); };
+const sellValue = b => Math.floor(sellOf(b.id) * (ITEMS[b.id].stack ? b.n / 5 : 1)) || 1;
 
 const STAT_NAMES = { 2: '공격', 3: '방어', 4: '특수공격', 5: '특수방어', 6: '스피드', 7: '명중률', 8: '회피율' };
 const STATUS_NAMES = { psn: '독', brn: '화상', par: '마비', slp: '잠듦', frz: '얼음', cnf: '혼란' };
@@ -426,6 +451,33 @@ DATA.tms.forEach((mid, i) => {
   TM_IDS.push(id);
   DROP_TABLE.push([id, 0.015]);
 });
+
+// 가격 올리기: 값이 CHEAP_LIMIT 이하인 물건은 CHEAP_MUL배, 그보다 비싼 물건은 PRICEY_MUL배
+// (지닌 물건 배율을 곱한 뒤 기준, 파는 값도 따라 오른다)
+const CHEAP_LIMIT = 3000, CHEAP_MUL = 2, PRICEY_MUL = 1.5;
+for (const it of Object.values(ITEMS)) if (it.price > 0) it.price = Math.round(it.price * (it.price <= CHEAP_LIMIT ? CHEAP_MUL : PRICEY_MUL) / 10) * 10;
+
+// ── 아이템 등급: 층의 적 레벨이 낮으면 좋은 아이템은 떨어지지 않는다 ──
+// 1 흔함 (처음부터) · 2 조금 드묾 · 3 드묾 · 4 아주 드묾
+const TIER_LV = { 1: 0, 2: 10, 3: 20, 4: 35 };
+const TIER_NAMES = { 1: '흔함', 2: '조금 드묾', 3: '드묾', 4: '아주 드묾' };
+const TIER4 = ['lifeorb', 'luckyegg', 'amuletcoin', 'goldribbon', 'focussash', 'choicescarf', 'assaultvest', 'leftovers', 'expertbelt', 'friendbow', 'abpatch', 'rainbowgummy', 'starf', 'lansat'];
+const TIER2 = ['reviver', 'escape', 'foesleep', 'superpotion', 'xattack', 'xdefense', 'xspatk', 'xspeed', 'xaccuracy', 'goldthorn', 'radar', 'trapbust', 'paraorb', 'sloworb',
+  'lumi', 'lum', 'leppa', 'liechi', 'ganlon', 'petaya', 'apicot', 'salac'];
+function itemTier(id) {
+  const it = ITEMS[id];
+  if (!it) return 1;
+  if (TIER4.includes(id)) return 4;
+  if (it.held || it.tm || VITAMINS[id] || GUMMIES[id] || ['candy', 'fullrestore', 'abcapsule'].includes(id)) return 3;
+  if (TIER2.includes(id)) return 2;
+  return 1;
+}
+// 그 레벨의 층에서 쓰는 드롭 테이블
+const dropCache = {};
+function dropTable(lvl) {
+  const key = Object.values(TIER_LV).filter(v => lvl >= v).length;
+  return dropCache[key] || (dropCache[key] = DROP_TABLE.filter(([id]) => lvl >= TIER_LV[itemTier(id)]));
+}
 const tmBits = {};
 function canLearnTM(sp, mid) {
   const i = DATA.tms.indexOf(mid);

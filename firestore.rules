@@ -18,16 +18,31 @@ service cloud.firestore {
     }
 
     // 계정별 정보와 클라우드 세이브: 본인만 읽고 쓴다
+    // 세이브는 upAt(서버 시각)을 함께 써야 하고, 20초에 한 번까지만 바꿀 수 있다 (도배 방지)
+    function saveThrottled() {
+      return !request.resource.data.diff(resource.data).affectedKeys().hasAny(['save'])
+        || (request.resource.data.upAt == request.time
+            && (resource.data.get('upAt', null) == null || resource.data.upAt < request.time - duration.value(20, 's')));
+    }
     match /users/{uid} {
       allow read, delete: if signedIn() && request.auth.uid == uid;
       allow create: if signedIn() && request.auth.uid == uid
-        && request.resource.data.keys().hasOnly(['name', 'id', 'created', 'save', 'savedAt', 'ver'])
+        && request.resource.data.keys().hasOnly(['name', 'id', 'created', 'save', 'savedAt', 'ver', 'upAt'])
         && (!('name' in request.resource.data) || ownsName(request.resource.data.name))
         && (!('save' in request.resource.data) || (request.resource.data.save is string && request.resource.data.save.size() < 400000));
       allow update: if signedIn() && request.auth.uid == uid
-        && request.resource.data.keys().hasOnly(['name', 'id', 'created', 'save', 'savedAt', 'ver'])
+        && request.resource.data.keys().hasOnly(['name', 'id', 'created', 'save', 'savedAt', 'ver', 'upAt'])
         && (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['name']) || ownsName(request.resource.data.name))
-        && (!('save' in request.resource.data) || (request.resource.data.save is string && request.resource.data.save.size() < 400000));
+        && (!('save' in request.resource.data) || (request.resource.data.save is string && request.resource.data.save.size() < 400000))
+        && saveThrottled();
+    }
+
+    // 접속자 수: 로그인한 사람이 자기 문서에 서버 시각만 남긴다 (1분에 한 번까지). 수는 로그인한 사람이 센다
+    match /presence/{uid} {
+      allow read: if signedIn();
+      allow create, update: if signedIn() && request.auth.uid == uid
+        && request.resource.data.keys().hasOnly(['at']) && request.resource.data.at == request.time
+        && (resource == null || resource.data.at < request.time - duration.value(60, 's'));
     }
 
     // 구조 게시판

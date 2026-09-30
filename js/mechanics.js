@@ -9,6 +9,8 @@ const expFor = lv => lv >= MAX_LEVEL ? Infinity : Math.pow(lv, 3);
 //  전설·준전설·환상 2배, 울트라비스트·패러독스 1.6배 (종족값이 높아 레벨이 빨리 오르는 것 보정)
 //  그 밖에는 원작의 성장 그룹을 절반쯤만 반영: 느림 1.15 · 보통-느림 1.05 · 보통 1 · 빠름 0.9 · 불규칙 0.85 · 변동 1.2
 const LEGEND_EXP_DIV = 2, STRONG_EXP_DIV = 1.6;
+// 모든 포켓몬 공통: 적을 쓰러뜨려 얻는 경험치 배율, 보스·현상수배범 배율 (v0.29에서 1 → 0.5, 3 → 2)
+const EXP_RATE = 0.5, BOSS_EXP_MUL = 2;
 const GROWTH_EXP_DIV = { 1: 1.15, 2: 1, 3: 0.9, 4: 1.05, 5: 0.85, 6: 1.2 };
 function expDiv(sp) {
   const d = DATA.species[sp]; if (!d) return 1;
@@ -209,7 +211,6 @@ function calcHit(att, def, move) {
   if (A.tinted && eff < 1) dmg *= 2;
   dmg *= (crit ? (A.sniper ? 2.25 : 1.5) : 1) * (0.85 + Math.random() * 0.15);
   dmg *= guardMul(def, Dd, move, mt, eff);
-  if (!att.player && def.player) dmg *= 0.85; // 혼자 탐험하므로 조금 완화
   return { hit: true, dmg: Math.max(1, Math.floor(dmg)), eff, crit };
 }
 
@@ -236,5 +237,5 @@ function effText(eff) {
 // 5세대식: 상대보다 레벨이 높을수록 경험치 감소
 function expGain(enemy, plv) {
   const e = enemy.lv, scale = Math.pow((2 * e + 10) / (e + plv + 10), 2.5);
-  return Math.max(1, Math.floor(DATA.species[enemy.sp].x * e / 7 * scale));
+  return Math.max(1, Math.floor(DATA.species[enemy.sp].x * e / 7 * scale * EXP_RATE));
 }

@@ -159,7 +159,8 @@ const Sound = (() => {
     }
   }
   function startLoop() {
-    if (!want || !ctx() || set().bgm === false) return;
+    // 음악 파일을 틀고 있거나 불러오는 중이면 합성 배경음은 켜지 않는다 (둘이 겹쳐 들리지 않게)
+    if (!want || fileUrl || !ctx() || set().bgm === false) return;
     if (!theme || theme.key !== want.key) { theme = makeTheme(want.key, want.o); step = 0; }
     nextT = ac.currentTime + 0.1;
     clearInterval(timer); timer = setInterval(tick, 40);

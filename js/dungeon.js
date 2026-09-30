@@ -209,10 +209,16 @@ const Dungeon = (() => {
     Game.save.money += bonus; run.money += bonus;
     log(`보스 보상으로 ${bonus} 포켓을 받았다.`, at + 300);
     // 좋은 아이템 하나 (이상한사탕, 지닌 물건, 기술머신 중)
-    const pool = DROP_TABLE.filter(d => ITEMS[d[0]].held || ITEMS[d[0]].tm || d[0] === 'candy' || d[0] === 'reviver');
+    // 전용 도구의 주인이 보스면 가끔 그 도구를 떨어뜨린다
+    const sig = sigItemsFor([b.sp]);
+    // 초반 보스는 조금 드문 아이템, 그 뒤로는 지닌 물건·기술머신·사탕 (층 레벨보다 한 등급 위까지)
+    const table = dropTable(D.lvl + 10);
+    let pool = table.filter(d => ITEMS[d[0]].held || ITEMS[d[0]].tm || d[0] === 'candy' || d[0] === 'reviver');
+    if (pool.length < 5) pool = table.filter(d => itemTier(d[0]) >= 2);
+    const id = sig.length && Math.random() < SIG_DROP.boss ? pick(sig) : weighted(pool);
     for (const [dx, dy] of [[0, 0], ...DIRS]) {
       const x = b.x + dx, y = b.y + dy;
-      if (floorAt(x, y) && !itemAt(x, y) && !(x === D.stairs.x && y === D.stairs.y)) { D.items.push({ x, y, id: weighted(pool), n: 1 }); break; }
+      if (floorAt(x, y) && !itemAt(x, y) && !(x === D.stairs.x && y === D.stairs.y)) { D.items.push({ x, y, id, n: 1 }); break; }
     }
   }
 
@@ -271,7 +277,7 @@ const Dungeon = (() => {
     if (lvl >= FEATURE_LV.house && Math.random() < HOUSE_CHANCE && freeRooms.length) {
       const room = freeRooms.splice(rand(freeRooms.length), 1)[0];
       D.house = { room, triggered: false };
-      for (let i = rint(3, 6); i > 0; i--) { const t = randomRoomTile({ room, noItem: true }); if (t) D.items.push({ ...t, id: weighted(DROP_TABLE), n: 1 }); }
+      for (let i = rint(3, 6); i > 0; i--) { const t = randomRoomTile({ room, noItem: true }); if (t) D.items.push({ ...t, id: weighted(dropTable(lvl)), n: 1 }); }
     }
     if (lvl >= FEATURE_LV.trap) {
       const kinds = Object.keys(TRAPS);
@@ -282,8 +288,11 @@ const Dungeon = (() => {
       }
     }
     // 아이템 / 돈
-    const nItems = rint(3, 6);
-    for (let i = 0; i < nItems; i++) { const t = randomRoomTile({ noItem: true }); if (t) D.items.push({ ...t, id: weighted(DROP_TABLE), n: 1 }); }
+    const nItems = rint(ITEMS_PER_FLOOR[0], ITEMS_PER_FLOOR[1]);
+    for (let i = 0; i < nItems; i++) { const t = randomRoomTile({ noItem: true }); if (t) D.items.push({ ...t, id: weighted(dropTable(lvl)), n: 1 }); }
+    // 전용 도구: 그 주인이 이 층에 나오면 드물게 바닥에 하나
+    const sig = sigItemsFor(pool);
+    if (sig.length && Math.random() < SIG_DROP.floor) { const t = randomRoomTile({ noItem: true }); if (t) D.items.push({ ...t, id: pick(sig), n: 1 }); }
     D.items.forEach(it => { if (ITEMS[it.id].stack) it.n = rint(3, 9); });
     const nMoney = rint(2, 4);
     for (let i = 0; i < nMoney; i++) { const t = randomRoomTile({ noItem: true }); if (t) D.items.push({ ...t, money: Math.round(rint(4, 12) * (1 + lvl / 6)) }); }
@@ -393,7 +402,7 @@ const Dungeon = (() => {
     if (A.download) statChange(p, p.atk >= p.spa ? 2 : 4, 1, at, p);
     if (A.floorStart) statChange(p, A.floorStart[0], A.floorStart[1], at, p);
     if (A.floorRandom) statChange(p, pick([2, 3, 4, 5, 7, 8]), 1, at, p);
-    if (A.pickup && Math.random() < A.pickup) { const id = weighted(DROP_TABLE); if (addToBag(id)) abLog(p, `${jo(ITEMS[id].n, '을')} 주워 왔다!`, at); }
+    if (A.pickup && Math.random() < A.pickup) { const id = weighted(dropTable(D.lvl)); if (addToBag(id)) abLog(p, `${jo(ITEMS[id].n, '을')} 주워 왔다!`, at); }
     if (A.honey && Math.random() < 0.2 && addToBag('apple')) abLog(p, '사과를 발견했다!', at);
   }
   // 위협: 처음 마주쳤을 때
@@ -465,7 +474,7 @@ const Dungeon = (() => {
   }
   function endTurnTiming() { T.busyUntil = Math.max(T.cursor, T.moveEnd); }
   function schedMove(c, fx, fy) {
-    const dur = (D.auto ? (D.auto.kind === 'dash' ? 55 : 70) : 125) * spd();
+    const dur = (D.auto ? 70 : 125) * spd();
     c.tween = { fx, fy, start: T.base, dur };
     if (seen(c) || c.player) T.moveEnd = Math.max(T.moveEnd, T.base + dur);
   }
@@ -699,9 +708,9 @@ const Dungeon = (() => {
       if (c.dmg) { const amt = Math.max(1, Math.floor(user.maxhp / c.dmg)); abLog(tgt, `${jo(nm(user), '은')} 상처를 입었다!`, at); damage(user, amt, tgt, at); }
       if (c.st) statChange(user, c.st, c.ch, at, tgt);
       if (c.flinch && Math.random() * 100 < c.flinch) setFlinch(user, at);
-      if (c.item && tgt.player && Math.random() * 100 < c.item) { const id = weighted(DROP_TABLE); if (addToBag(id)) abLog(tgt, `${jo(ITEMS[id].n, '을')} 빼앗았다!`, at); }
+      if (c.item && tgt.player && Math.random() * 100 < c.item) { const id = weighted(dropTable(D.lvl)); if (addToBag(id)) abLog(tgt, `${jo(ITEMS[id].n, '을')} 빼앗았다!`, at); }
     }
-    if (A.magician && user.player && Math.random() < 0.1) { const id = weighted(DROP_TABLE); if (addToBag(id)) abLog(user, `${jo(ITEMS[id].n, '을')} 손에 넣었다!`, at); }
+    if (A.magician && user.player && Math.random() < 0.1) { const id = weighted(dropTable(D.lvl)); if (addToBag(id)) abLog(user, `${jo(ITEMS[id].n, '을')} 손에 넣었다!`, at); }
   }
   function applySelf(user, move, at) {
     if (move.h > 0) heal(user, Math.floor(user.maxhp * move.h / 100), at);
@@ -802,9 +811,12 @@ const Dungeon = (() => {
     }
     if (src && abilityOf(c).aftermath && src.hp > 0) { abLog(c, `${jo(nm(src), '은')} 폭발에 휘말렸다!`, at); damage(src, Math.max(1, Math.floor(src.maxhp / 4)), c, at); }
     if (src && src.player) {
-      gainExp(Math.floor(expGain(c, P().lv) * (c.outlaw || c.boss ? 3 : 1) * (c.shiny ? 2 : 1) * (heldOf(P()).expMul || 1)), at);
-      if (c.shiny && !itemAt(c.x, c.y)) D.items.push({ x: c.x, y: c.y, id: weighted(DROP_TABLE.filter(d => ITEMS[d[0]].held || ITEMS[d[0]].tm || d[0] === 'candy')), n: 1 });
-      if (Math.random() < 0.1 && !itemAt(c.x, c.y) && !(D.stairs.x === c.x && D.stairs.y === c.y)) D.items.push({ x: c.x, y: c.y, id: weighted(DROP_TABLE), n: 1 });
+      gainExp(Math.floor(expGain(c, P().lv) * (c.outlaw || c.boss ? BOSS_EXP_MUL : 1) * (c.shiny ? 2 : 1) * (heldOf(P()).expMul || 1)), at);
+      const free = !itemAt(c.x, c.y) && !(D.stairs.x === c.x && D.stairs.y === c.y);
+      const sig = sigItemsFor([c.sp]);
+      if (c.shiny && free) D.items.push({ x: c.x, y: c.y, id: weighted(DROP_TABLE.filter(d => ITEMS[d[0]].held || ITEMS[d[0]].tm || d[0] === 'candy')), n: 1 });
+      else if (sig.length && !c.boss && free && Math.random() < SIG_DROP.defeat) D.items.push({ x: c.x, y: c.y, id: pick(sig), n: 1 });
+      else if (Math.random() < ENEMY_DROP_CHANCE && free) D.items.push({ x: c.x, y: c.y, id: weighted(dropTable(D.lvl)), n: 1 });
       if (c.shiny && Game.unlockShiny(c.sp)) log(`✨ 이제 캐릭터 탭에서 ${spName(c.sp)}의 이로치 모습을 고를 수 있다!`, at + 300);
       if (run.mode === 'normal' && !c.outlaw && !NO_RECRUIT.includes(c.sp) && !Game.save.roster[c.sp]) {
         const rate = recruitRate(P().lv) * (DATA.species[c.sp].lg ? 0.5 : 1) * (c.boss ? 0.5 : 1) * (heldOf(P()).recruitMul || 1);
@@ -1176,7 +1188,6 @@ const Dungeon = (() => {
       choices: [{ label: '물건을 판다', fn: sellMenu }, { label: '그만둔다', fn: () => {} }],
     });
   }
-  const sellValue = b => Math.floor((ITEMS[b.id].sell || ITEMS[b.id].price / 2) * (ITEMS[b.id].stack ? b.n / 5 : 1)) || 1;
   function sellMenu() {
     if (!run.bag.length) { UI.alert('켈리몬 상점', '<p>팔 물건이 없다.</p>'); return; }
     UI.open({
@@ -1627,8 +1638,6 @@ const Dungeon = (() => {
   // ───────────────────────── 자동 행동 (돌죽 스타일) ─────────────────────────
   function startAuto(kind, extra = {}) {
     if (!D || D.dead) return;
-    // 대쉬: 적이 보이면 한 칸만 움직인다
-    if (kind === 'dash' && hostilesVisible().length) { act({ t: 'move', dir: extra.dir }); return; }
     if (kind !== 'fight' && hostilesVisible().length) { log('근처에 적이 있어서 할 수 없다!', now()); return; }
     if (kind === 'rest' && P().hp >= P().maxhp && !P().status) { log('휴식할 필요가 없다.', now()); return; }
     D.auto = { kind, hp: P().hp, n: 0, ...extra };
@@ -1651,7 +1660,6 @@ const Dungeon = (() => {
     if (++a.n > 800) { stopAuto(); return; }
     if (a.kind === 'fight') { autoFight(); D.auto = null; return; }
     if (hostilesVisible().length) { stopAuto('적이 나타났다!'); return; }
-    if (a.kind === 'dash') { dashStep(a); return; }
     if (a.kind === 'rest') {
       if (p.hp >= p.maxhp && !p.status) { stopAuto('HP가 가득 찼다.'); return; }
       if (p.belly <= 0) { stopAuto(); return; }
@@ -1681,41 +1689,6 @@ const Dungeon = (() => {
     const r = act({ t: 'move', dir: dirIndex(step.fx - p.x, step.fy - p.y) });
     if (!r) stopAuto();
   }
-  // 대쉬: 누른 방향으로 쭉 간다. 방에서는 곧게, 통로에서는 굽은 길을 따라가고, 갈림길·방 입구·아이템·계단에서 멈춘다
-  function dashStep(a) {
-    const p = P(), here = idx(p.x, p.y);
-    const inRoom = D.room[here] >= 0;
-    if (a.n > 1) {
-      if (a.room < 0 && inRoom) { stopAuto(); return; }            // 통로 → 방: 입구에서 멈춤
-      if (!D.stairsHidden && D.stairs.x === p.x && D.stairs.y === p.y) { stopAuto(); return; }
-    }
-    a.room = D.room[here];
-    const free = d => { const [dx, dy] = DIRS[d]; const x = p.x + dx, y = p.y + dy; return canStep(p, dx, dy) && !(trapAt(x, y) && trapAt(x, y).seen); };
-    let dir = a.dir;
-    if (!inRoom && a.px != null) {
-      // 통로: 왔던 칸을 뺀 갈 수 있는 방향 (대각선보다 상하좌우 우선)
-      const cand = [0, 2, 4, 6, 1, 3, 5, 7].filter(d => {
-        const [dx, dy] = DIRS[d];
-        return free(d) && !(p.x + dx === a.px && p.y + dy === a.py);
-      });
-      // 통로 칸을 먼저 따라가고 (방 벽에 붙은 통로도), 통로가 끝나면 방으로 들어간다. 길이 둘 이상이면 갈림길이라 멈춘다
-      const corr = d => { const [dx, dy] = DIRS[d]; return D.room[idx(p.x + dx, p.y + dy)] < 0; };
-      const card = cand.filter(d => d % 2 === 0), diag = cand.filter(d => d % 2 === 1);
-      let choice;
-      for (const list of [card.filter(corr), diag.filter(corr), card, diag]) {
-        if (list.length === 1) { choice = list[0]; break; }
-        if (list.length > 1) { choice = null; break; }
-      }
-      if (choice == null) { stopAuto(); return; }
-      dir = choice;
-    } else if (!free(dir)) { stopAuto(); return; }
-    const [dx, dy] = DIRS[dir];
-    const hasItem = itemAt(p.x + dx, p.y + dy);
-    a.px = p.x; a.py = p.y; a.dir = dir;
-    const r = act({ t: 'move', dir });
-    if (!r || hasItem) stopAuto();
-  }
-
   function autoFight() {
     const p = P();
     const foes = hostilesVisible();
@@ -2033,13 +2006,12 @@ const Dungeon = (() => {
   function onKeyDown(e) {
     if (!D) return;
     if (UI.key(e)) return;
-    // Ctrl은 방향키·숫자패드와 함께일 때만 (방향 바꾸기). Ctrl+W 같은 브라우저 단축키는 건드리지 않는다
-    const ctrlDir = e.ctrlKey && (e.code.startsWith('Arrow') || e.code.startsWith('Numpad'));
-    if ((e.ctrlKey && !ctrlDir) || e.metaKey || e.altKey) return;
+    // Ctrl·Alt 조합은 브라우저 단축키로 둔다 (Ctrl+W 등)
+    if (e.ctrlKey || e.metaKey || e.altKey) return;
     if (bigMap) { toggleMap(false); e.preventDefault(); return; }
     if (D.auto) { stopAuto(); e.preventDefault(); return; }
     if (e.code.startsWith('Arrow')) heldArrows.add(e.code);
-    const k = { code: e.code, shift: e.shiftKey, ctrl: ctrlDir, key: e.key };
+    const k = { code: e.code, shift: e.shiftKey, key: e.key };
     if (busy()) { pendingKey = k; e.preventDefault(); return; }
     if (handleKey(k)) e.preventDefault();
   }
@@ -2054,8 +2026,8 @@ const Dungeon = (() => {
       if (dx && dy) dir = dirIndex(dx, dy);
     }
     if (dir != null) {
-      if (k.ctrl) act({ t: 'face', dir });
-      else if (k.shift || D.dashNext) { D.dashNext = false; updateDashBtn(); startAuto('dash', { dir }); }
+      // Shift+방향: 제자리에서 방향만 바꾼다
+      if (k.shift) act({ t: 'face', dir });
       else act({ t: 'move', dir });
       return true;
     }
@@ -2083,11 +2055,9 @@ const Dungeon = (() => {
       case 'KeyT': quickUse(); return true;
       case 'KeyP': showStatus(); return true;
       case 'Semicolon': case 'KeyU': showLog(); return true;
-      case 'KeyV': D.dashNext = !D.dashNext; updateDashBtn(); log(D.dashNext ? '대쉬 준비! 방향을 누르면 쭉 달린다.' : '대쉬를 취소했다.', now()); return true;
     }
     return false;
   }
-  function updateDashBtn() { document.querySelector('#actions [data-k=dash]')?.classList.toggle('on', !!(D && D.dashNext)); }
   function tryStairs() {
     const p = P();
     if (D.stairsHidden) log('보스를 쓰러뜨려야 계단이 나타난다!', now());
@@ -2179,9 +2149,8 @@ const Dungeon = (() => {
     UI.alert('조작법', `<table class="help">
       <tr><td>이동</td><td>방향키(두 개 동시에 누르면 대각선) / 숫자패드 / WASD + QEZC / 마우스 클릭</td></tr>
       <tr><td>휴대폰</td><td>오른쪽 아래 방향 버튼: 누르고 있으면 계속 걷는다 (누른 채 옆 버튼으로 밀면 방향 전환). 가운데 ↻를 누른 뒤 방향을 누르면 제자리에서 방향만 바꾼다.
-        화면의 가 본 곳을 누르면 그곳까지 이동. 대쉬 버튼 → 방향 버튼으로 대쉬. 창은 ✕나 바깥을 눌러 닫는다.</td></tr>
-      <tr><td>대쉬</td><td>Shift + 방향: 그 방향으로 쭉 달린다 (통로는 굽은 길도 따라감). 적이 보이거나, 갈림길·방 입구·아이템·계단에 닿으면 멈춘다.<br>V 또는 대쉬 버튼을 누른 뒤 방향을 눌러도 된다. 아무 키나 누르면 멈춘다.</td></tr>
-      <tr><td>방향만 바꾸기</td><td>Ctrl + 방향키 / 숫자패드</td></tr>
+        화면의 가 본 곳을 누르면 그곳까지 이동. 창은 ✕나 바깥을 눌러 닫는다.</td></tr>
+      <tr><td>방향만 바꾸기</td><td>Shift + 방향 (방향키 / 숫자패드 / WASD)</td></tr>
       <tr><td>임무 확인</td><td>J: 받은 임무와 이 층의 임무 대상</td></tr>
       <tr><td>조사</td><td>K 또는 조사 버튼 → 살펴볼 칸을 누른다 (컴퓨터는 칸을 우클릭). 적의 HP·상태·가진 아이템, 떨어진 아이템, 발견한 함정을 볼 수 있다.</td></tr>
       <tr><td>메시지 기록 / 내 상태</td><td>U 또는 메시지 창을 누르면 지난 메시지, P 또는 위쪽 상태 표시줄을 누르면 내 능력치·능력 변화·기술.</td></tr>
@@ -2232,7 +2201,6 @@ const Dungeon = (() => {
       if (busy() && k !== 'menu') return;
       ({ attack: () => act({ t: 'attack' }), explore: () => startAuto('explore'), fight: () => startAuto('fight'), rest: () => startAuto('rest'),
         wait: () => act({ t: 'wait' }), stairs: tryStairs, bag: openBag, menu: () => Game.dungeonMenu(), help: showHelp,
-        dash: () => { D.dashNext = !D.dashNext; updateDashBtn(); log(D.dashNext ? '대쉬 준비! 방향을 누르면 쭉 달린다.' : '대쉬를 취소했다.', now()); },
         mission: () => Game.showMissions(), map: () => toggleMap(), look: toggleLook, quick: quickUse })[k]?.();
     });
   }
@@ -2246,7 +2214,6 @@ const Dungeon = (() => {
     const fire = () => {
       if (!D || D.dead || UI.isOpen() || bigMap || dir == null || busy()) return;
       if (face) { setFace(false); act({ t: 'face', dir }); stop(); return; }
-      if (D.dashNext) { D.dashNext = false; updateDashBtn(); startAuto('dash', { dir }); stop(); return; }
       act({ t: 'move', dir });
     };
     const stop = () => { clearInterval(timer); timer = null; dir = null; pad.querySelectorAll('.held').forEach(b => b.classList.remove('held')); };
