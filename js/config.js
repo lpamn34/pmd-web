@@ -27,3 +27,7 @@ const FIREBASE_CONFIG = {
   },
 };
 const ONLINE_CONFIG = FIREBASE_CONFIG[ENV];
+
+// 원작 배경음악: 코드와 다른 저장소(pmd-fan-web/assets)에 따로 둔다.
+// 권리자 요청으로 음악을 내려도 게임은 합성 배경음으로 계속 돌아간다. 내 컴퓨터에서는 게임 폴더의 music/을 쓴다.
+const MUSIC_BASE = ENV === 'prod' ? '/assets/music/' : 'music/';

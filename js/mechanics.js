@@ -5,9 +5,18 @@ const NORMAL_ATTACK = { n: '공격', t: 0, p: 40, a: 100, pp: 0, c: 2, r: 'f', f
 const MAX_LEVEL = 100;
 
 const expFor = lv => lv >= MAX_LEVEL ? Infinity : Math.pow(lv, 3);
-// 전설·환상 포켓몬은 레벨업이 느리다 (원작의 느린 성장 그룹): 얻는 경험치를 이 수로 나눈다 = 필요 경험치 2배
-const LEGEND_EXP_DIV = 2;
-const expDiv = sp => (DATA.species[sp] && DATA.species[sp].lg ? LEGEND_EXP_DIV : 1);
+// 레벨업 속도: 얻는 경험치를 이 수로 나눈다 (= 필요 경험치 배수). 경험치 표 자체는 모두 같아서 기존 세이브가 흐트러지지 않는다
+//  전설·준전설·환상 2배, 울트라비스트·패러독스 1.6배 (종족값이 높아 레벨이 빨리 오르는 것 보정)
+//  그 밖에는 원작의 성장 그룹을 절반쯤만 반영: 느림 1.15 · 보통-느림 1.05 · 보통 1 · 빠름 0.9 · 불규칙 0.85 · 변동 1.2
+const LEGEND_EXP_DIV = 2, STRONG_EXP_DIV = 1.6;
+const GROWTH_EXP_DIV = { 1: 1.15, 2: 1, 3: 0.9, 4: 1.05, 5: 0.85, 6: 1.2 };
+function expDiv(sp) {
+  const d = DATA.species[sp]; if (!d) return 1;
+  if (d.lg) return LEGEND_EXP_DIV;
+  const base = d.f ? d.f[0] : +sp;
+  if ((typeof PARADOX !== 'undefined' && PARADOX.includes(base)) || (typeof ULTRA_BEASTS !== 'undefined' && ULTRA_BEASTS.includes(base))) return STRONG_EXP_DIV;
+  return GROWTH_EXP_DIV[d.gr || 2] || 1;
+}
 
 function calcStats(sp, lv, iv) {
   const b = DATA.species[sp].b;

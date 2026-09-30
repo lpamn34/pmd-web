@@ -168,7 +168,7 @@ const Sound = (() => {
 
   // ── 음악 파일: music/ 폴더의 파일이나 정보 탭에서 불러온 파일이 있으면 합성 배경음 대신 그 파일을 반복 재생 ──
   // 파일 이름: town, boss, dungeon(던전 공통), 던전 ID (예: music/forest.ogg). 확장자 ogg / mp3 / m4a / wav
-  const EXTS = ['ogg', 'mp3', 'm4a', 'wav'];
+  const EXTS = ['mp3', 'ogg', 'm4a', 'wav'];
   const found = {};          // 파일 키 → URL 또는 null (한 번 찾으면 기억)
   let uploadedKeys = new Set();
   let fileUrl = null, fileKey = null, player = null, seq = 0, previewing = false;
@@ -267,7 +267,7 @@ const Sound = (() => {
     if (key in found) return found[key];
     let url = null;
     if (uploadedKeys.has(key)) { const blob = await IDB.get(key); if (blob) url = URL.createObjectURL(blob); }
-    for (const ext of EXTS) { if (url) break; if (await tryAudio(`music/${key}.${ext}`)) url = `music/${key}.${ext}`; }
+    for (const ext of EXTS) { if (url) break; if (await tryAudio(`${MUSIC_BASE}${key}.${ext}`)) url = `${MUSIC_BASE}${key}.${ext}`; }
     found[key] = url;
     if (url) urlKey[url] = key;
     return url;

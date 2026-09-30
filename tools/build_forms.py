@@ -210,6 +210,13 @@ for base, fk, fv, reg, ident, pid in sorted(targets):
         'tm': tm_bits(pid), 'f': [base, fk],
     }
     added += 1
+# 성장 그룹(원작의 경험치 곡선): 1 느림, 2 보통, 3 빠름, 4 보통-느림, 5 불규칙, 6 변동. 리전폼은 원래 포켓몬을 따른다
+for k, v in species.items():
+    base = v['f'][0] if v.get('f') else int(k)
+    gr = I(sp_rows.get(base, {}).get('growth_rate_id'), 2)
+    if gr != 2: v['gr'] = gr
+    else: v.pop('gr', None)
+
 json.dump(FORM_IDS, open(ids_path, 'w', encoding='utf8'), ensure_ascii=False, indent=1)
 open(os.path.join(ROOT, 'js', 'data.js'), 'w', encoding='utf8').write('window.DATA=' + json.dumps(DATA, ensure_ascii=False, separators=(',', ':')) + ';')
 print(f'리전폼 {added}종 추가, 기술 {len(moves_out)}개, 원래 모습에서 뺀 전용 진화 {len(excl)}개')

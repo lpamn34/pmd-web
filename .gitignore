@@ -4,3 +4,8 @@ pmd/
 .claude/
 __pycache__/
 assets_in/
+# 원작 음악은 별도 저장소(pmd-fan-web/assets)에 둔다
+music/*.mp3
+music/*.ogg
+music/*.m4a
+music/*.wav
