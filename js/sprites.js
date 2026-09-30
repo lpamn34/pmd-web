@@ -10,7 +10,7 @@ const Sprites = (() => {
     const key = shiny ? id + 's' : id;
     if (cache[key]) return cache[key];
     const s = cache[key] = { ready: false, failed: false, anims: {}, shadow: 1 };
-    const base = `${SPRITE_BASE}/sprite/${pad4(id)}/${shiny ? '0000/0001/' : ''}`;
+    const base = `${SPRITE_BASE}/sprite/${spritePath(id, shiny)}`;
     fetch(base + 'AnimData.xml').then(r => {
       if (!r.ok) throw new Error(r.status);
       return r.text();
@@ -94,7 +94,7 @@ const Sprites = (() => {
     const useShiny = shiny && d.sem;
     const have = (useShiny ? d.sem : d.em) || 'N';
     const e = have.includes(EMOTIONS[emotion]) ? emotion : 'Normal';
-    return `${SPRITE_BASE}/portrait/${pad4(id)}/${useShiny ? '0000/0001/' : ''}${e}.png`;
+    return `${SPRITE_BASE}/portrait/${spritePath(id, useShiny)}${e}.png`;
   }
   return { load, draw, animLength, portrait };
 })();

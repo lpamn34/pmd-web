@@ -11,7 +11,7 @@ function starterIds() {
   if (_starterIds) return _starterIds;
   const evolved = new Set(Object.values(DATA.species).flatMap(s => s.v.map(v => v[0])));
   const ban = new Set([...PARADOX, ...ULTRA_BEASTS]);
-  _starterIds = Object.keys(DATA.species).map(Number).filter(id => (!evolved.has(id) || STARTER_EXTRA.includes(id)) && !DATA.species[id].lg && !ban.has(id));
+  _starterIds = Object.keys(DATA.species).map(Number).filter(id => (!evolved.has(id) && !(formOf(id) && evolved.has(formOf(id)[0])) || STARTER_EXTRA.includes(id)) && !DATA.species[id].lg && !ban.has(id));
   return _starterIds;
 }
 

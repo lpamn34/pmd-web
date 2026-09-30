@@ -641,7 +641,7 @@ const Dungeon = (() => {
       if (total > 0) damage(tgt, total, user, at, r.eff, r.crit);
       const dealt = Math.max(0, hpBefore - Math.max(0, tgt.hp));   // 실제로 깎인 HP
       if (move.dr && dealt > 0) {
-        const amt = Math.max(1, Math.floor(dealt * Math.abs(move.dr) / 100 * (move.dr < 0 ? RECOIL_MUL : 1)));
+        const amt = Math.max(1, Math.floor(dealt * (move.dr > 0 ? DRAIN_PCT : -move.dr * RECOIL_MUL) / 100));
         if (move.dr > 0) {
           if (abilityOf(tgt).liquidOoze) { abLog(tgt, `${jo(nm(user), '은')} 해감액을 흡수했다!`, at); damage(user, amt, tgt, at); }
           else heal(user, amt, at);

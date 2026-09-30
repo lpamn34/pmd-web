@@ -404,3 +404,18 @@ button, #view, #minimap { touch-action: manipulation; }
 .log-history div.st-psn { color: #c77dff; } .log-history div.st-brn { color: #ff7a3c; } .log-history div.st-par { color: #ffd84a; }
 .log-history div.st-slp { color: #9fb4ff; } .log-history div.st-frz { color: #7fe3ff; } .log-history div.st-cnf { color: #8ff0b0; }
 #log, #hud { cursor: pointer; }
+
+/* 메달 · 포켓몬별 클리어 */
+.medal { font-size: 14px; margin-left: 1px; cursor: help; }
+.cc-name .medal { font-size: 15px; }
+.pk i .medal { font-size: 11px; }
+i.clear.me { background: #2b6cb0; margin-left: 4px; }
+.dg-head i + i { margin-left: 4px; }
+.dg-progress { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin: 4px 0 8px; font-size: 13px; }
+.portrait.xs { width: 24px; height: 24px; }
+.medal-got { color: var(--accent); font-weight: bold; }
+.medal-list { display: grid; gap: 4px; margin-bottom: 8px; }
+.medal-row { display: flex; align-items: center; gap: 6px; padding: 4px 8px; border-radius: 6px; background: #ffffff0d; opacity: .6; }
+.medal-row.got { opacity: 1; background: #ffd96622; }
+.medal-row .medal { font-size: 18px; filter: grayscale(1); }
+.medal-row.got .medal { filter: none; }

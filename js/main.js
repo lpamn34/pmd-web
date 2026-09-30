@@ -57,7 +57,7 @@ const Game = (() => {
     s.settings = { fast: false, autoDescend: false, ...(s.settings || {}) };
     s.bag = s.bag || []; s.storage = s.storage || {}; s.cleared = s.cleared || {}; s.best = s.best || {};
     s.missions = s.missions || { board: [], accepted: [] }; s.missions.board = s.missions.board || []; s.missions.accepted = s.missions.accepted || [];
-    s.shop = s.shop || []; s.money = s.money || 0; s.day = s.day || 1;
+    s.shop = s.shop || []; s.money = s.money || 0; s.day = s.day || 1; s.clears = s.clears || {};
     s.bagMax = s.bagMax || Math.max(BAG_BASE, s.bag.length); s.storageMax = s.storageMax || Math.max(STORAGE_BASE, storageUsedOf(s.storage));
     for (const [sp, ch] of Object.entries(s.roster || {})) {
       if (!DATA.species[sp]) { delete s.roster[sp]; continue; }
@@ -486,7 +486,7 @@ const Game = (() => {
     un.hidden = !updateVer; un.textContent = updateVer ? `🔔 새 버전 v${updateVer} — 눌러서 새로고침` : '';
     document.getElementById('char-card').innerHTML = `
       <div class="cc-top">${portraitImg(sp, 'portrait big', 'Normal', ch.shiny)}
-        <div><div class="cc-name">${esc(d.n)}</div><div class="dim">No.${pad4(sp)} ${esc(d.e)}</div><div>${typeBadges(d.t)}</div>
+        <div><div class="cc-name">${esc(d.n)} ${medalIcons(sp)}</div><div class="dim">No.${dexNo(sp)} ${esc(d.e)}</div><div>${typeBadges(d.t)}</div>
         <div class="cc-lv">Lv <b>${ch.lv}</b></div></div></div>
       <details class="cc-more"${(ccOpen ?? !matchMedia('(max-width: 800px)').matches) ? ' open' : ''}><summary>능력치 · 특성 · 기술 보기</summary>
       <div class="bar-l">EXP <span class="bar"><i style="width:${ch.lv >= MAX_LEVEL ? 100 : clamp(have / need * 100, 0, 100)}%;background:#6cf"></i></span></div>
@@ -519,19 +519,56 @@ const Game = (() => {
 
   const DG_TABS = [['normal', '🗺 일반 던전', d => d.mode === 'normal' && !d.theme], ['theme', '👑 테마 던전', d => !!d.theme],
     ['rogue', '🌀 로그라이크', d => d.mode === 'rogue' && !d.daily], ['daily', '🗓 오늘의 도전', d => false]];
+  // ── 포켓몬별 클리어 기록과 메달 (오늘의 도전 제외) ──
+  const MEDALS = [
+    { k: 'normal', icon: '🎖', n: '일반 던전 정복', d: '일반 던전을 모두 클리어' },
+    { k: 'theme', icon: '👑', n: '테마 던전 정복', d: '테마 던전을 모두 클리어' },
+    { k: 'rogue', icon: '🌀', n: '로그라이크 정복', d: '로그라이크 던전을 모두 클리어' },
+    { k: 'all', icon: '🏆', n: '완전 정복', d: '일반·테마·로그라이크 던전을 모두 클리어' },
+  ];
+  const medalDungeons = k => DUNGEONS.filter(DG_TABS.find(t => t[0] === k)[2]);
+  const clearsOf = sp => (save.clears || {})[sp] || {};
+  function medalsOf(sp) {
+    const c = clearsOf(sp), got = {};
+    for (const k of ['normal', 'theme', 'rogue']) { const list = medalDungeons(k); got[k] = list.length > 0 && list.every(d => c[d.id]); }
+    got.all = got.normal && got.theme && got.rogue;
+    return MEDALS.filter(m => got[m.k]);
+  }
+  const medalIcons = sp => medalsOf(sp).map(m => `<span class="medal" title="${esc(m.n)}: ${esc(m.d)}">${m.icon}</span>`).join('');
+  // 던전 클리어를 기록하고, 새로 받은 메달을 돌려준다
+  function recordClear(sp, dg) {
+    if (dg.daily || !DG_TABS.some(t => t[0] !== 'daily' && t[2](dg))) return [];
+    const before = medalsOf(sp).map(m => m.k);
+    save.clears = save.clears || {};
+    save.clears[sp] = { ...(save.clears[sp] || {}), [dg.id]: 1 };
+    return medalsOf(sp).filter(m => !before.includes(m.k));
+  }
+  function medalSection(sp) {
+    const c = clearsOf(sp), got = medalsOf(sp).map(m => m.k);
+    return `<div class="medal-list">${MEDALS.map(m => {
+      const list = m.k === 'all' ? DUNGEONS.filter(d => ['normal', 'theme', 'rogue'].some(k => DG_TABS.find(t => t[0] === k)[2](d))) : medalDungeons(m.k);
+      const n = list.filter(d => c[d.id]).length;
+      return `<div class="medal-row${got.includes(m.k) ? ' got' : ''}"><span class="medal">${m.icon}</span><b>${esc(m.n)}</b> <span class="dim">${esc(m.d)} · ${n}/${list.length}</span></div>`;
+    }).join('')}</div>`;
+  }
+
   function tabDungeon() {
     const cur = DG_TABS.find(t => t[0] === dgTab) || DG_TABS[0];
     const nav = `<div class="dex-tabs dg-tabs">${DG_TABS.map(([k, n, f]) => {
       const list = DUNGEONS.filter(f), open = list.filter(unlocked).length;
       return `<button class="${k === dgTab ? 'on' : ''}" data-act="dgtab" data-arg="${k}">${n}${list.length ? ` <span class="dim">${open}/${list.length}</span>` : ''}</button>`;
     }).join('')}</div>`;
+    const mine = clearsOf(save.current), curList = DUNGEONS.filter(cur[2]);
+    const medal = MEDALS.find(m => m.k === dgTab);
+    const progress = dgTab === 'daily' ? '' : `<div class="dg-progress">${portraitImg(save.current, 'portrait xs', 'Normal', save.roster[save.current]?.shiny)} <span><b>${esc(spName(save.current))}</b>${jo(spName(save.current), '으로').slice(spName(save.current).length)} 클리어 <b>${curList.filter(d => mine[d.id]).length}</b>/${curList.length}</span>
+      ${medal ? (medalsOf(save.current).some(m => m.k === medal.k) ? `<span class="medal-got">${medal.icon} ${esc(medal.n)}!</span>` : `<span class="dim">· 모두 클리어하면 ${medal.icon} ${esc(medal.n)} 메달</span>`) : ''}</div>`;
     if (dgTab === 'daily') return nav + `<div class="cards">${Progress.dailyCard()}</div>`;
-    return nav + `<div class="cards">${DUNGEONS.filter(cur[2]).map(dg => {
+    return nav + progress + `<div class="cards">${DUNGEONS.filter(cur[2]).map(dg => {
       const ok = unlocked(dg);
       const ms = save.missions.accepted.filter(m => m.dungeon === dg.id).length;
       const types = dg.types ? typeBadges(dg.types) : '<span class="type" style="background:#777">모든 타입</span>';
       return `<div class="card dg ${dg.mode} ${ok ? '' : 'locked'}" style="--c1:${dg.pal[1]};--c2:${dg.pal[2]}">
-        <div class="dg-head"><b>${esc(dg.n)}</b> ${dg.mode === 'rogue' ? '<i class="rogue">로그라이크</i>' : save.cleared[dg.id] ? '<i class="clear">클리어</i>' : ''}</div>
+        <div class="dg-head"><b>${esc(dg.n)}</b> ${dg.mode === 'rogue' ? '<i class="rogue">로그라이크</i>' : ''}${save.cleared[dg.id] ? '<i class="clear">클리어</i>' : ''}${mine[dg.id] ? `<i class="clear me" title="${esc(jo(spName(save.current), '으로'))} 클리어했다">✔ ${esc(spName(save.current))}</i>` : ''}</div>
         <div class="dim">${dg.floors}층 · 적 Lv ${dg.lv[0]}~${dg.lv[1]}${save.best[dg.id] ? ` · 최고 ${save.best[dg.id]}F` : ''}</div>
         <div>${types}</div>
         ${dg.wx && dg.wx.length ? `<div class="note">날씨: ${dg.wx.map(([w, p]) => `${WEATHERS[w].icon}${WEATHERS[w].n} ${Math.round(p * 100)}%`).join(' · ')}</div>` : ''}
@@ -686,6 +723,7 @@ const Game = (() => {
     const evos = evoOptions(sp);
     const roster = Object.keys(save.roster).map(Number);
     return `<h3>캐릭터 관리</h3>
+      <h3>🏅 ${esc(spName(sp))}의 메달</h3>${medalSection(sp)}
       <div class="btns"><button class="btn" data-act="change-char">🔄 캐릭터 변경</button> <button class="btn" data-act="set-moves">📘 기술 설정</button></div>
       ${DATA.species[sp].sh ? `<h3>모습</h3><div class="row">${portraitImg(sp, 'portrait sm', 'Normal', false)} ${portraitImg(sp, 'portrait sm', 'Normal', true)}
         <span class="grow">${ch.shiny ? '✨ 이로치(색이 다른 모습)로 탐험합니다.' : '보통 모습으로 탐험합니다.'} <span class="dim">(겉모습만 바뀝니다)</span></span>
@@ -1130,7 +1168,7 @@ const Game = (() => {
   // ───────────────────────── 캐릭터 선택 ─────────────────────────
   // only: 고를 수 있는 포켓몬 (캐릭터 변경은 영입한 포켓몬만)
   function chooseCharacter(cb, first, only, back) {
-    const ids = only || Object.keys(DATA.species).map(Number);
+    const ids = (only || Object.keys(DATA.species).map(Number)).slice().sort(byDex);
     const gens = [...new Set(ids.map(id => DATA.species[id].g))].sort((a, b) => a - b);
     UI.open({
       title: first ? '함께 모험할 포켓몬을 고르세요' : '캐릭터 변경', wide: true, cancel: first ? false : undefined,
@@ -1138,8 +1176,8 @@ const Game = (() => {
         <select id="pk-g"><option value="">전체 세대</option>${gens.map(g => `<option value="${g}">${g}세대</option>`).join('')}</select>
         <select id="pk-t"><option value="">전체 타입</option>${DATA.types.map((t, i) => `<option value="${i + 1}">${t}</option>`).join('')}</select>
         <button class="btn sm ghost" id="pk-r">무작위</button>${back ? ' <button class="btn sm ghost" id="pk-back">← 방법 다시 고르기</button>' : ''}</div>
-        <div class="picker" id="pk-grid">${ids.map(id => `<button class="pk" data-id="${id}" data-s="${(DATA.species[id].n + ' ' + DATA.species[id].e + ' ' + id).toLowerCase()}" data-g="${DATA.species[id].g}" data-t="${DATA.species[id].t.join(',')}">
-          ${portraitImg(id, 'portrait sm', 'Normal', !!(only && !first && save && save.roster[id]?.shiny))}<span>${esc(DATA.species[id].n)}</span>${save && save.roster && save.roster[id] ? `<i>Lv${save.roster[id].lv}</i>` : ''}</button>`).join('')}</div>`,
+        <div class="picker" id="pk-grid">${ids.map(id => `<button class="pk" data-id="${id}" data-s="${(DATA.species[id].n + ' ' + DATA.species[id].e + ' ' + dexNo(id) + ' ' + id).toLowerCase()}" data-g="${DATA.species[id].g}" data-t="${DATA.species[id].t.join(',')}">
+          ${portraitImg(id, 'portrait sm', 'Normal', !!(only && !first && save && save.roster[id]?.shiny))}<span>${esc(DATA.species[id].n)}</span>${save && save.roster && save.roster[id] ? `<i>Lv${save.roster[id].lv} ${medalIcons(id)}</i>` : ''}</button>`).join('')}</div>`,
       onOpen: (box, m) => {
         const q = box.querySelector('#pk-q'), g = box.querySelector('#pk-g'), t = box.querySelector('#pk-t');
         const filter = () => {
@@ -1469,6 +1507,13 @@ const Game = (() => {
     const reached = outcome === 'clear' ? dg.floors : r.floor;
     if (!success) Progress.add('faints');
     if (!dg.daily) save.best[dg.id] = Math.max(save.best[dg.id] || 0, reached);
+    if (outcome === 'clear' && !dg.daily) {
+      const was = clearsOf(p.sp)[dg.id];
+      const got = recordClear(p.sp, dg);
+      if (dg.mode === 'rogue') save.cleared[dg.id] = true;
+      if (!was) lines.push(`✔ ${esc(jo(spName(p.sp), '으로'))} ${esc(jo(dg.n, '을'))} 처음 클리어했다!`);
+      for (const m of got) lines.push(`${m.icon} <b>메달 획득: ${esc(m.n)}</b> — ${esc(jo(spName(p.sp), '으로'))} ${esc(m.d.replace('모두 클리어', '모두 클리어했다!'))}`);
+    }
     if (dg.mode === 'normal') {
       if (save.roster[p.sp] || p.sp === save.current) save.roster[p.sp] = { ...save.roster[p.sp], lv: p.lv, exp: p.exp, moves: p.moves.map(m => m.id), held: p.held || null, ...(p.tms ? { tms: p.tms } : {}), ...(p.boost ? { boost: p.boost } : {}) };
       if (success) {

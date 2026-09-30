@@ -129,7 +129,7 @@ function moveEffects(mid) {
     out.push(`${m.scc < 100 ? m.scc + '% 확률로 ' : ''}${who}의 ${jo(STAT_NAMES[st], '을')} ${Math.abs(ch)}단계 ${ch > 0 ? '올린다' : '내린다'}.`);
   }
   if (m.h > 0) out.push(`최대 HP의 ${m.h}%를 회복한다.`);
-  if (m.dr > 0) out.push(`준 데미지의 ${m.dr}%만큼 HP를 회복한다.`);
+  if (m.dr > 0) out.push(`준 데미지의 ${DRAIN_PCT}%만큼 HP를 회복한다. (원작 ${m.dr}%에서 완화)`);
   if (m.dr < 0) out.push(`준 데미지의 ${Math.round(-m.dr * RECOIL_MUL)}%만큼 반동 데미지를 받는다. (원작 ${-m.dr}%에서 완화)`);
   if (m.fl) out.push(`${m.fl}% 확률로 상대를 풀죽게 한다 (1턴 행동 불가).`);
   if (m.cr) out.push('급소에 맞기 쉽다.');

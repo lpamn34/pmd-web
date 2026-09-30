@@ -15,7 +15,7 @@ const Dex = (() => {
   }
 
   function renderPokemon() {
-    const ids = Object.keys(DATA.species).map(Number);
+    const ids = Object.keys(DATA.species).map(Number).sort(byDex);
     const gens = [...new Set(ids.map(id => DATA.species[id].g))].sort((a, b) => a - b);
     const cnt = Progress.dexCounts(), pct = n => (n / cnt.total * 100).toFixed(1);
     const state = id => (Progress.beatCount(id) ? 2 : Progress.isSeen(id) ? 1 : 0);
@@ -28,8 +28,8 @@ const Dex = (() => {
       <select class="dex-c"><option value="">전체</option><option value="1,2">만난 포켓몬</option><option value="2">쓰러뜨린 포켓몬</option><option value="0">아직 못 만난 포켓몬</option></select>
       <span class="dim dex-count"></span></div>
       <div class="picker dex-grid">${ids.map(id => { const d = DATA.species[id], st = state(id); return `<button class="pk dex-item${st ? '' : ' unseen'}" data-dexpoke="${id}"
-        data-s="${esc((d.n + ' ' + d.e + ' ' + id).toLowerCase())}" data-g="${d.g}" data-t="${d.t.join(',')}" data-c="${st}">
-        ${portraitImg(id, 'portrait sm')}<span>${esc(d.n)}</span><i class="dim">${pad4(id)}${st === 2 ? ' ⚔' : st === 1 ? ' 👁' : ''}</i></button>`; }).join('')}</div>`;
+        data-s="${esc((d.n + ' ' + d.e + ' ' + dexNo(id) + ' ' + id).toLowerCase())}" data-g="${d.g}" data-t="${d.t.join(',')}" data-c="${st}">
+        ${portraitImg(id, 'portrait sm')}<span>${esc(d.n)}</span><i class="dim">${dexNo(id)}${st === 2 ? ' ⚔' : st === 1 ? ' 👁' : ''}</i></button>`; }).join('')}</div>`;
   }
 
   function renderMoves() {
@@ -101,7 +101,7 @@ const Dex = (() => {
     const played = Game.save?.roster?.[id];
     const rec = Progress.beatCount(id) ? `쓰러뜨림 ${Progress.beatCount(id)}회` : Progress.isSeen(id) ? '만난 적 있음' : '아직 만나지 못함';
     UI.open({
-      title: `No.${pad4(id)} ${esc(d.n)}`, wide: true,
+      title: `No.${dexNo(id)} ${esc(d.n)}`, wide: true,
       html: `<div class="dex-poke">
         <div class="cc-top">${portraitImg(id, 'portrait big')}<div><div class="cc-name">${esc(d.n)}</div><div class="dim">${esc(d.e)} · ${d.g}세대${d.lg ? ' · 전설/환상' : ''}</div>
           <div>${typeBadges(d.t)}</div><div class="dim">📖 ${rec}</div>${played ? `<div class="note ms">플레이 기록 Lv${played.lv}</div>` : ''}</div></div>
