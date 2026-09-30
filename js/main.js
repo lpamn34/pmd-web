@@ -25,8 +25,19 @@ const Game = (() => {
   // 저장된 특성이 그 포켓몬의 것이 아니면 기본 특성으로
   const entryAbility = (sp, ch) => (ch && DATA.species[sp].ab.some(a => a[0] === ch.ability) ? ch.ability : defaultAbility(sp));
   let newerSave = null;   // 세이브가 이 화면보다 새 버전에서 저장됐으면 그 버전 (덮어쓰지 않는다)
-  function persist() { if (newerSave) return; try { localStorage.setItem(SAVE_KEY, JSON.stringify(save)); } catch (e) { /* 저장 불가 환경 */ } }
-  function load() { try { const s = localStorage.getItem(SAVE_KEY); return s ? migrateSave(JSON.parse(s), s) : null; } catch (e) { return null; } }
+  let lastBody = null;   // 저장 시각을 뺀 세이브 내용 (내용이 바뀌었을 때만 저장 시각을 갱신한다)
+  const bodyOf = s => JSON.stringify({ ...s, savedAt: 0 });
+  function persist() {
+    if (newerSave || !save) return;
+    const body = bodyOf(save);
+    if (body !== lastBody) { save.savedAt = Date.now(); lastBody = body; }
+    try { localStorage.setItem(SAVE_KEY, JSON.stringify(save)); } catch (e) { /* 저장 불가 환경 */ }
+    scheduleUpload();
+  }
+  function load() {
+    try { const s = localStorage.getItem(SAVE_KEY); const v = s ? migrateSave(JSON.parse(s), s) : null; if (v) lastBody = bodyOf(v); return v; }
+    catch (e) { return null; }
+  }
 
   // ── 세이브 변환: 버전이 바뀌면 먼저 백업하고, 새 버전에 맞게 고친다 ──
   const BACKUP_KEY = 'pmdweb_save_backups';
@@ -96,6 +107,253 @@ const Game = (() => {
     if (ok) { persist(); reloadFresh(); }
   }
 
+  // ── 클라우드 세이브: 로그인하면 세이브를 서버에도 올려서 다른 기기에서 이어한다 ──
+  // 서버가 막혀도 이 브라우저의 세이브로 계속 플레이할 수 있다. 덮어쓰기 전에는 항상 백업을 남긴다.
+  const SYNC_KEY = 'pmdweb_sync';   // 마지막으로 맞춘 클라우드 세이브 { uid, at }
+  const syncMeta = () => { try { return JSON.parse(localStorage.getItem(SYNC_KEY) || 'null'); } catch (e) { return null; } };
+  const setSyncMeta = m => { try { if (m) localStorage.setItem(SYNC_KEY, JSON.stringify(m)); else localStorage.removeItem(SYNC_KEY); } catch (e) { /* 무시 */ } };
+  const UPLOAD_GAP = 60 * 1000;   // 업로드는 1분에 한 번까지 (무료 한도 절약)
+  let bound = false, upTimer = null, lastUp = 0, syncing = null, cloudErr = null, onlineBoot = null;
+  function scheduleUpload() {
+    if (!bound || !Online.loggedIn() || upTimer) return;
+    upTimer = setTimeout(() => { upTimer = null; uploadNow(); }, Math.max(0, lastUp + UPLOAD_GAP - Date.now()));
+  }
+  async function uploadNow() {
+    if (!bound || !Online.loggedIn() || !save || newerSave) return false;
+    const m = syncMeta();
+    if (m && m.uid === Online.uid() && m.at === save.savedAt) return true;   // 바뀐 것 없음
+    lastUp = Date.now();
+    try { await Online.pushCloud(JSON.stringify(save), save.savedAt || 0); setSyncMeta({ uid: Online.uid(), at: save.savedAt || 0 }); cloudErr = null; return true; }
+    catch (e) { cloudErr = Online.why(e); console.warn(e); return false; }
+  }
+  document.addEventListener('visibilitychange', () => { if (document.hidden && upTimer) { clearTimeout(upTimer); upTimer = null; uploadNow(); } });
+
+  function saveSummary(raw, at) {
+    let s; try { s = typeof raw === 'string' ? JSON.parse(raw) : raw; } catch (e) { return '<p class="warn">읽을 수 없는 세이브</p>'; }
+    const ch = s.roster && s.roster[s.current], ok = DATA.species[s.current];
+    return `<div class="row">${ok ? portraitImg(s.current, 'portrait sm', 'Normal', ch && ch.shiny) : ''}<div class="grow">
+      <b>${ok ? esc(spName(s.current)) : '?'}</b> Lv${ch ? ch.lv : '?'} · ${s.day || 1}일째 · ₽${s.money || 0} · 동료 ${Object.keys(s.roster || {}).length}마리 · 도감 ${Object.keys((s.dex || {}).seen || {}).length}종
+      <div class="dim">마지막 저장 ${at ? esc(new Date(at).toLocaleString()) : '알 수 없음'}${s.gameVersion ? ` · v${esc(s.gameVersion)}` : ''}</div></div></div>`;
+  }
+  function chooseSave(c) {
+    return new Promise(res => UI.open({
+      title: '☁ 어느 세이브로 할까요?', wide: true, cancel: false,
+      html: `<p>이 브라우저의 세이브와 계정의 클라우드 세이브가 다릅니다.</p>
+        <h3>☁ 클라우드 세이브</h3>${saveSummary(c.raw, c.savedAt)}
+        <h3>💻 이 브라우저의 세이브</h3>${saveSummary(save, save.savedAt)}
+        <p class="dim">고르지 않은 쪽은 정보 탭의 백업 목록에 남겨 둡니다.</p>`,
+      choices: [{ label: '☁ 클라우드 세이브로 이어한다', fn: () => res('cloud') }, { label: '💻 이 브라우저의 세이브를 클라우드에 올린다', fn: () => res('local') }],
+    }));
+  }
+  function useCloud(c) {
+    let s; try { s = JSON.parse(c.raw); } catch (e) { UI.alert('클라우드 세이브', '<p>클라우드 세이브를 읽을 수 없어서 이 브라우저의 세이브를 씁니다.</p>'); return false; }
+    if (save) backupSave(JSON.stringify(save), (save.gameVersion || GAME_VERSION) + ' 이 브라우저');
+    newerSave = null;
+    save = migrateSave(s, c.raw);
+    if (newerSave) return false;
+    lastBody = bodyOf(save);
+    try { localStorage.setItem(SAVE_KEY, JSON.stringify(save)); } catch (e) { /* 무시 */ }
+    setSyncMeta({ uid: Online.uid(), at: c.savedAt });
+    return true;
+  }
+  // 로그인 직후 / 게임을 열 때: 클라우드와 이 브라우저의 세이브를 맞춘다
+  function syncSave() {
+    if (syncing) return syncing;
+    syncing = (async () => {
+      bound = false;
+      if (!Online.loggedIn() || newerSave) return;   // 옛 화면에서는 세이브를 건드리지 않는다
+      let c;
+      try { c = await Online.fetchCloud(); } catch (e) { cloudErr = Online.why(e); UI.toast('클라우드 세이브를 확인하지 못했어요. 이 브라우저의 세이브로 계속합니다.'); return; }
+      const uid = Online.uid(), m = syncMeta();
+      if (c && cmpVer(c.ver, GAME_VERSION) > 0) {
+        await new Promise(res => UI.open({ title: '새 버전이 필요해요', cancel: false,
+          html: `<p>클라우드 세이브는 <b>v${esc(c.ver)}</b>에서 저장됐는데, 지금 열린 게임은 옛 버전 <b>v${GAME_VERSION}</b>이에요. 새로고침해서 최신 버전으로 열어 주세요.</p>`,
+          choices: [{ label: '새로고침', fn: reloadFresh }, { label: '이번에는 클라우드 없이 한다', fn: res }] }));
+        return;
+      }
+      let changed = false;
+      if (!c) { bound = true; if (save && !newerSave) await uploadNow(); return; }
+      if (!save) changed = useCloud(c);
+      else if ((save.savedAt || 0) === c.savedAt) setSyncMeta({ uid, at: c.savedAt });
+      else if (m && m.uid === uid && m.at === c.savedAt) { bound = true; await uploadNow(); }   // 클라우드는 그대로이고 여기서만 진행
+      else if (m && m.uid === uid && m.at === save.savedAt) { changed = useCloud(c); if (changed) UI.toast('다른 기기에서 진행한 세이브를 불러왔어요.'); }
+      else if ((await chooseSave(c)) === 'cloud') changed = useCloud(c);
+      else { backupSave(c.raw, c.ver + ' 클라우드'); bound = true; setSyncMeta(null); await uploadNow(); }
+      bound = true;
+      if (changed) afterSaveReplaced();
+    })().finally(() => { syncing = null; });
+    return syncing;
+  }
+  function afterSaveReplaced() {
+    refreshTitle();
+    if (document.getElementById('town-screen').classList.contains('active')) { UI.closeAll(); enterTown(); }
+  }
+  function refreshTitle() {
+    document.getElementById('btn-start').textContent = save ? '이어하기' : '새로 시작';
+    renderAcct();
+  }
+  // 타이틀 화면의 계정 표시
+  function renderAcct() {
+    const el = document.getElementById('title-acct'); if (!el) return;
+    if (!Online.enabled()) { el.innerHTML = ''; return; }
+    el.innerHTML = Online.loggedIn()
+      ? `<span>☁ <b>${esc(Online.name())}</b> 님 · 클라우드 세이브 사용 중</span> <button class="btn sm ghost" data-acct>계정</button>`
+      : `<button class="btn sm" data-acct>☁ 로그인 / 계정 만들기</button><div class="dim tiny">로그인 없이도 플레이할 수 있어요. 로그인하면 다른 기기에서 이어하고 구조 게시판을 쓸 수 있어요.</div>`;
+    el.querySelector('[data-acct]').onclick = () => accountDialog();
+  }
+  async function afterLogin() {
+    renderAcct();
+    await syncSave();
+    renderAcct();
+    if (save && document.getElementById('town-screen').classList.contains('active')) { renderTown(); checkOnline(true); }
+  }
+  function accountDialog(mode = 'login') {
+    if (!Online.enabled()) return;
+    if (Online.loggedIn()) return accountInfo();
+    const su = mode === 'signup';
+    let busy = false;
+    const m = UI.open({
+      title: su ? '☁ 계정 만들기' : '☁ 로그인',
+      html: `<div class="acct-form">
+        <label>아이디 <input id="ac-id" autocomplete="username" maxlength="16" placeholder="영어 소문자·숫자·_ 3~16자" autocapitalize="off" spellcheck="false"></label>
+        <label>비밀번호 <input id="ac-pw" type="password" autocomplete="${su ? 'new-password' : 'current-password'}" placeholder="6자 이상"></label>
+        ${su ? `<label>비밀번호 확인 <input id="ac-pw2" type="password" autocomplete="new-password"></label>
+        <label>닉네임 <input id="ac-nick" maxlength="10" placeholder="구조 게시판에 보이는 이름 (한글 가능, 비우면 아이디)"></label>` : ''}
+        <p id="ac-msg" class="warn"></p></div>
+        ${su ? '<p class="dim tiny">아이디와 비밀번호만으로 가입해요. 이메일 같은 개인정보는 받지 않아요.<br>※ 그래서 <b>비밀번호 찾기가 없어요.</b> 잊으면 계정을 되찾을 수 없으니 잘 적어 두세요. 다른 사이트에서 쓰는 비밀번호는 쓰지 마세요.</p>'
+          : '<p class="dim tiny">로그인하면 세이브가 클라우드에도 저장되어 다른 기기에서 이어할 수 있고, 구조 게시판을 쓸 수 있어요.</p>'}`,
+      choices: [
+        { label: su ? '가입하기' : '로그인', keep: true, fn: () => submit() },
+        { label: su ? '이미 계정이 있어요 (로그인)' : '계정 만들기', fn: () => accountDialog(su ? 'login' : 'signup') },
+        { label: '닫기', fn: () => {} },
+      ],
+      onOpen: box => {
+        box.addEventListener('keydown', e => { if (e.key === 'Enter' && e.target.tagName === 'INPUT') { e.preventDefault(); submit(); } });
+        setTimeout(() => box.querySelector('#ac-id').focus(), 0);
+      },
+    });
+    async function submit() {
+      if (busy) return;
+      const v = id => (m.box.querySelector('#' + id) || {}).value || '';
+      const msg = m.box.querySelector('#ac-msg');
+      if (su && v('ac-pw') !== v('ac-pw2')) { msg.textContent = '비밀번호 확인이 다릅니다.'; return; }
+      busy = true; msg.textContent = '처리 중…';
+      try {
+        if (su) await Online.signUp(v('ac-id'), v('ac-pw'), v('ac-nick'));
+        else await Online.signIn(v('ac-id'), v('ac-pw'));
+      } catch (e) { msg.textContent = e.msg || Online.why(e); busy = false; return; }
+      UI.close(m);
+      UI.toast(su ? `가입했어요. ${Online.name()} 님, 환영합니다!` : `${Online.name()} 님, 어서 오세요!`);
+      afterLogin();
+    }
+  }
+  function accountInfo() {
+    const m = syncMeta();
+    UI.open({
+      title: '☁ 계정', wide: true,
+      html: `<p>아이디 <b>${esc(Online.userId())}</b> · 닉네임 <b>${esc(Online.name())}</b></p>
+        <p>클라우드 세이브: ${m && m.uid === Online.uid() ? `${esc(new Date(m.at).toLocaleString())}에 저장한 세이브와 맞춰져 있어요.` : '아직 올리지 않았어요.'}</p>
+        ${cloudErr ? `<p class="warn">마지막 오류: ${esc(cloudErr)}</p>` : ''}
+        <p class="dim">진행 상황은 1분에 한 번씩, 그리고 창을 닫거나 다른 탭으로 갈 때 자동으로 올라갑니다.</p>`,
+      choices: [
+        { label: '☁ 지금 클라우드에 저장', fn: async () => { persist(); lastUp = 0; const ok = await uploadNow(); UI.toast(ok ? '클라우드에 저장했어요.' : `저장하지 못했어요. ${cloudErr || ''}`); } },
+        { label: '✏ 닉네임 바꾸기', fn: renameDialog },
+        { label: '로그아웃', fn: logoutDialog },
+        { label: '닫기', fn: () => {} },
+      ],
+    });
+  }
+  function renameDialog() {
+    const m = UI.open({
+      title: '✏ 닉네임 바꾸기', html: `<div class="acct-form"><label>새 닉네임 <input id="ac-nick" maxlength="10" value="${esc(Online.name())}"></label><p id="ac-msg" class="warn"></p></div>`,
+      choices: [{ label: '바꾸기', keep: true, fn: async () => {
+        try { await Online.setName(m.box.querySelector('#ac-nick').value); } catch (e) { m.box.querySelector('#ac-msg').textContent = e.msg || Online.why(e); return; }
+        UI.close(m); UI.toast('닉네임을 바꿨어요.'); renderAcct(); if (save && tab === 'info') renderTown();
+      } }, { label: '그만둔다', fn: () => {} }],
+    });
+  }
+  async function logoutDialog() {
+    if (upTimer) { clearTimeout(upTimer); upTimer = null; }
+    await uploadNow();
+    UI.open({
+      title: '로그아웃', html: '<p>로그아웃해도 이 브라우저의 세이브는 남아서 로그인 없이 계속할 수 있어요.</p><p class="dim">여럿이 쓰는 컴퓨터라면 이 브라우저의 세이브를 지워 두세요. 클라우드 세이브는 남아 있어서 다시 로그인하면 이어할 수 있어요.</p>',
+      choices: [
+        { label: '로그아웃', fn: async () => { await Online.signOut(); bound = false; setSyncMeta(null); UI.toast('로그아웃했어요.'); renderAcct(); if (save && document.getElementById('town-screen').classList.contains('active')) renderTown(); } },
+        { label: '로그아웃하고 이 브라우저의 세이브도 지운다', fn: async () => {
+          await Online.signOut(); bound = false; setSyncMeta(null);
+          try { localStorage.removeItem(SAVE_KEY); localStorage.removeItem('pmdweb_save_backups'); } catch (e) { /* 무시 */ }
+          location.href = location.pathname;
+        } },
+        { label: '그만둔다', fn: () => {} },
+      ],
+    });
+  }
+
+  // 구조 게시판 확인: 내 요청이 구조됐는지, 내가 구조한 친구가 감사 편지를 보냈는지 (자주 읽지 않게 1분 30초 간격)
+  let lastCheck = 0, checking = false;
+  async function checkOnline(force) {
+    if (!save || !bound || !Online.loggedIn() || checking || (!force && Date.now() - lastCheck < 90 * 1000)) return;
+    checking = true; lastCheck = Date.now();
+    try {
+      await flushThanks();
+      const s = save.sos;
+      if (s && s.online && !s.revived) {
+        const d = await Online.getSOS(s.id);
+        if (d && d.status === 'rescued' && d.rescuer && DATA.species[d.rescuer.sp]) await receiveAOK({ id: s.id, sp: d.rescuer.sp, lv: d.rescuer.lv, sh: d.rescuer.shiny ? 1 : 0 }, d.rescuer.name);
+      }
+      for (const [id, r] of Object.entries(save.rescued || {})) {
+        if (!r.online || r.thanked) continue;
+        if (!r.claimed) {
+          const ok = await Online.claimRescue(id, r.me);
+          if (ok) { r.claimed = true; UI.toast(`${spName(r.sp)} 구조 완료를 요청자에게 전했어요!`); }
+          else { r.thanked = true; r.lost = true; UI.toast(`${spName(r.sp)}: 다른 탐험대가 먼저 구조했거나 요청이 취소됐어요.`); }
+          persist(); continue;
+        }
+        const d = await Online.getSOS(id);
+        if (!d) { r.thanked = true; persist(); continue; }
+        if (d.status === 'thanked') {
+          await gotThanks(r, d.thx && ITEMS[d.thx] && d.thx !== 'quest' ? d.thx : null, d.name);
+          Online.deleteSOS(id).catch(() => {});   // 다 쓴 요청은 지운다
+        }
+      }
+    } catch (e) { console.warn('구조 게시판 확인 실패', e); }
+    finally { checking = false; }
+    if (tab === 'mission' && document.getElementById('town-screen').classList.contains('active') && !UI.isOpen()) renderTown();
+  }
+  // 감사 편지는 보낼 때 실패해도 다음에 다시 보낸다
+  async function flushThanks() {
+    const q = save.thxQueue || [];
+    while (q.length) {
+      try { await Online.thankSOS(q[0].id, q[0].item); } catch (e) { if (!/not-found|permission/.test(e.code || '')) throw e; }
+      q.shift(); persist();
+    }
+  }
+
+  async function sosBoard() {
+    if (!Online.loggedIn()) return accountDialog();
+    let list;
+    try { list = await Online.listSOS(); } catch (e) { UI.alert('📋 구조 게시판', `<p>${esc(Online.why(e))}</p>`); return; }
+    list = list.filter(s => dungeonById(s.dungeon) && DATA.species[s.sp]);
+    const taken = id => !!((save.rescued || {})[id] || save.missions.accepted.some(m => m.sosId === +id));
+    const ago = t => { const mnt = Math.max(1, Math.round((Date.now() - t) / 60000)); return mnt < 60 ? `${mnt}분 전` : mnt < 1440 ? `${Math.round(mnt / 60)}시간 전` : `${Math.round(mnt / 1440)}일 전`; };
+    const rows = list.map(s => {
+      const dg = dungeonById(s.dungeon), ok = unlocked(dg), got = taken(s.id);
+      return `<div class="row">${portraitImg(s.sp, 'portrait sm', 'Pain', s.shiny)}<div class="grow"><b>${esc(dg.n)} ${s.floor}F</b> · ${esc(s.name)} 님의 ${esc(spName(s.sp))} Lv${s.lv}
+        <div class="dim">${ago(s.created)}${ok ? '' : ` · 🔒 ${esc(dungeonById(dg.req).n)} 클리어 필요`}</div></div>
+        <button class="btn sm" data-sos="${esc(s.id)}" ${!ok || got ? 'disabled' : ''}>${got ? '받음' : '구조하러 간다'}</button></div>`;
+    });
+    UI.open({
+      title: '📋 구조 게시판', wide: true,
+      html: `<p class="dim">v${GAME_VERSION} 플레이어의 구조 요청 (최근 7일, 최대 40개). 가장 먼저 구조한 한 명이 요청자를 되살릴 수 있어요.</p>${rows.join('') || '<p>지금은 구조를 기다리는 탐험대가 없어요.</p>'}`,
+      choices: [{ label: '🔄 새로고침', fn: sosBoard }, { label: '닫기', fn: () => {} }],
+      onOpen: (box, m) => box.querySelectorAll('[data-sos]').forEach(b => { b.onclick = () => {
+        const s = list.find(x => x.id === b.dataset.sos); if (!s) return;
+        UI.close(m);
+        acceptSOS({ id: +s.id, dg: DUNGEONS.findIndex(d => d.id === s.dungeon), fl: s.floor, sp: s.sp, lv: s.lv, sh: s.shiny ? 1 : 0 }, s.name);
+      }; }),
+    });
+  }
+
   function show(id) {
     document.querySelectorAll('.screen').forEach(s => s.classList.toggle('active', s.id === id));
   }
@@ -107,7 +365,22 @@ const Game = (() => {
     save = load();
     if (save && !newerSave) persist();
     setTimeout(checkUpdate, 3000); setInterval(checkUpdate, 10 * 60 * 1000);
-    document.getElementById('btn-start').onclick = () => {
+    if (Online.enabled()) {
+      document.getElementById('title-acct').innerHTML = '<span class="dim tiny">☁ 온라인 연결 중…</span>';
+      onlineBoot = Online.init().then(async ok => {
+        if (!ok) { document.getElementById('title-acct').innerHTML = '<span class="dim tiny">☁ 서버에 연결하지 못했어요. 로그인 없이 플레이할 수 있어요.</span>'; return; }
+        renderAcct();
+        if (Online.loggedIn()) { await syncSave(); refreshTitle(); }
+      });
+      Online.onChange(() => renderAcct());
+    }
+    let starting = false;
+    document.getElementById('btn-start').onclick = async () => {
+      if (starting) return;
+      starting = true;
+      if (onlineBoot) await Promise.race([onlineBoot, new Promise(r => setTimeout(r, 5000))]);
+      if (syncing) await syncing;
+      starting = false;
       if (newerSave) {
         UI.open({ title: '새 버전이 필요해요', cancel: false,
           html: `<p>이 세이브는 <b>v${esc(newerSave)}</b>에서 저장됐는데, 지금 열린 게임은 옛 버전 <b>v${GAME_VERSION}</b>이에요.</p><p>세이브가 망가지지 않도록 새로고침해서 최신 버전으로 열어 주세요.</p>`,
@@ -118,7 +391,7 @@ const Game = (() => {
       else Starter.begin(sp => { UI.closeAll(); save = newSave(sp); refreshDay(); persist(); enterTown(); UI.alert('환영합니다!', `<p>${esc(jo(spName(sp), '으로'))} 모험을 시작합니다.</p><p>마을에서 임무를 받고, 상점에서 준비한 뒤 던전으로 떠나 보세요.<br>던전 안에서 <b>O</b> 키로 자동 탐색, <b>Tab</b> 키로 자동 전투를 할 수 있습니다.<br>던전에서 쓰러뜨린 적이 가끔 동료가 되고 싶어 해요. 영입하면 캐릭터를 바꿀 수 있어요.</p>`); },
         (cb, back) => chooseCharacter(cb, true, starterIds(), back));
     };
-    document.getElementById('btn-start').textContent = save ? '이어하기' : '새로 시작';
+    refreshTitle();
     const n = Object.keys(DATA.species).length;
     document.getElementById('title-sub').textContent = `v${GAME_VERSION} · 등장 포켓몬 ${n}종 · 스프라이트 PMD SpriteCollab`;
     // 타이틀 장식
@@ -137,6 +410,7 @@ const Game = (() => {
     if (Progress.check().length) persist();
     if (!save.shop.length || !save.missions.board.length) refreshDay();
     renderTown();
+    checkOnline();
     if (save.run) {
       const r = save.run;
       UI.open({
@@ -189,12 +463,12 @@ const Game = (() => {
   }
   function missionText(m) {
     const dg = dungeonById(m.dungeon);
-    if (m.kind === 'sos') return `<b>🆘 친구 구조</b> ${esc(dg.n)} ${m.floor}F에서 쓰러진 친구의 Lv${m.lv} ${esc(jo(spName(m.client), '을'))} 구해 주세요.`;
+    if (m.kind === 'sos') return `<b>🆘 ${m.online ? '탐험대 구조' : '친구 구조'}</b> ${esc(dg.n)} ${m.floor}F에서 쓰러진 ${m.from ? esc(m.from) + ' 님' : '친구'}의 Lv${m.lv} ${esc(jo(spName(m.client), '을'))} 구해 주세요.`;
     if (m.kind === 'rescue') return `<b>구조</b> ${esc(dg.n)} ${m.floor}F에서 길을 잃은 ${esc(jo(spName(m.client), '을'))} 구해 주세요.`;
     if (m.kind === 'outlaw') return `<b>현상수배</b> ${esc(dg.n)} ${m.floor}F에 숨은 Lv${m.lv} ${esc(jo(spName(m.target), '을'))} 쓰러뜨려 주세요.`;
     return `<b>탐색</b> ${esc(jo(spName(m.client), '이'))} ${esc(dg.n)} ${m.floor}F에 떨어뜨린 물건을 찾아 주세요.`;
   }
-  const rewardText = m => m.kind === 'sos' ? `₽${m.reward} + A-OK 코드` : `₽${m.reward}${m.item ? ` + ${ITEMS[m.item].icon}${ITEMS[m.item].n}` : ''}`;
+  const rewardText = m => m.kind === 'sos' ? `₽${m.reward} + ${m.online ? '구조 완료 전달' : 'A-OK 코드'}` : `₽${m.reward}${m.item ? ` + ${ITEMS[m.item].icon}${ITEMS[m.item].n}` : ''}`;
 
   function renderTown() {
     const sp = save.current, ch = save.roster[sp], d = DATA.species[sp];
@@ -220,6 +494,7 @@ const Game = (() => {
     const el = document.getElementById('tab-content');
     el.innerHTML = ({ dungeon: tabDungeon, mission: tabMission, shop: tabShop, storage: tabStorage, bag: tabBag, char: tabChar, dex: Dex.render, ach: Progress.renderAch, info: tabInfo })[tab]();
     if (tab === 'dex') Dex.wire(el);
+    if (tab === 'mission') checkOnline();
     el.onclick = e => { const b = e.target.closest('[data-act]'); if (b && !b.disabled) onAction(b.dataset.act, b.dataset.arg); };
   }
 
@@ -551,6 +826,8 @@ const Game = (() => {
       <div class="row"><span class="grow">불가사의 던전 웹 <b>v${GAME_VERSION}</b> <span class="dim">(${GAME_DATE})</span>${ENV === 'dev' ? ' <span class="tag">개발 환경</span>' : ''}${updateVer ? ` <a href="#" data-act="update">🔔 새 버전 v${esc(updateVer)}</a>` : ''}
         <div class="dim">친구와 구조 코드나 오늘의 도전 기록을 주고받을 때는 서로 같은 버전인지 확인하세요.</div></span>
         <button class="btn sm ghost" data-act="version-notes">변경 내역</button></div>
+      ${Online.enabled() ? `<h3>☁ 계정</h3><div class="row"><span class="grow">${Online.loggedIn() ? `<b>${esc(Online.name())}</b> 님으로 로그인 · 세이브가 클라우드에도 저장됩니다${cloudErr ? ` <span class="warn">(${esc(cloudErr)})</span>` : ''}` : '로그인하지 않았어요. 로그인하면 다른 기기에서 이어하고 구조 게시판을 쓸 수 있어요.'}</span>
+        <button class="btn sm${Online.loggedIn() ? ' ghost' : ''}" data-act="account">${Online.loggedIn() ? '계정' : '로그인 / 가입'}</button></div>` : ''}
       <h3>📖 게임 가이드</h3><div class="btns">${Guide.buttons()}</div>
       <h3>설정</h3>
       <label class="chk"><input type="checkbox" data-set="fast" ${s.fast ? 'checked' : ''}> 빠른 연출</label>
@@ -563,7 +840,7 @@ const Game = (() => {
       <p class="dim tiny">소리는 게임이 직접 합성합니다 (음원 파일 없음). 브라우저 정책상 화면을 한 번 눌러야 소리가 나기 시작합니다.</p>
       <div class="btns"><button class="btn ghost" data-act="help">⌨ 조작법</button> <button class="btn ghost danger" data-act="reset">저장 데이터 초기화</button></div>
       <h3>세이브 관리</h3>
-      <p class="dim">세이브는 이 브라우저에만 저장됩니다. 브라우저 데이터를 지우거나 다른 컴퓨터로 옮기기 전에 파일로 내보내 두세요.</p>
+      <p class="dim">${Online.loggedIn() ? '세이브는 이 브라우저와 클라우드에 저장됩니다. 만일을 위해 가끔 파일로도 내보내 두세요.' : '세이브는 이 브라우저에만 저장됩니다. 브라우저 데이터를 지우거나 다른 컴퓨터로 옮기기 전에 파일로 내보내 두세요.'}</p>
       <div class="btns"><button class="btn" data-act="save-export">💾 세이브 내보내기</button> <button class="btn ghost" data-act="save-import">📂 세이브 불러오기</button>
         <input type="file" id="save-file" accept=".json,application/json" hidden></div>
       ${backups().length ? `<p class="dim">업데이트할 때 자동으로 만든 백업 (최근 3개)</p>${backups().map((b, i) => `<div class="row"><span class="grow">v${esc(b.ver)} 세이브 <span class="dim">${esc(new Date(b.at).toLocaleString())}</span></span>
@@ -648,6 +925,8 @@ const Game = (() => {
       case 'switch': if (save.roster[+arg]) switchChar(+arg); break;
       case 'set-moves': return setMoves();
       case 'code-enter': return enterCode();
+      case 'account': return accountDialog();
+      case 'sos-board': return sosBoard();
       case 'update': return askUpdate();
       case 'restore-backup': return restoreBackup(+arg);
       case 'dgtab': dgTab = arg; break;
@@ -675,7 +954,11 @@ const Game = (() => {
       case 'music-del': await Sound.removeMusic(arg); UI.toast('음악 파일을 삭제했습니다.'); break;
       case 'tileset-del': Tiles.setUploaded(arg, null); UI.toast('타일셋을 삭제했습니다.'); break;
       case 'reset': {
-        if (!(await UI.confirm('초기화', '<p>모든 진행 상황을 지우고 처음부터 시작합니다. 계속하시겠습니까?</p>'))) return;
+        if (!(await UI.confirm('초기화', `<p>모든 진행 상황을 지우고 처음부터 시작합니다. 계속하시겠습니까?</p>${Online.loggedIn() ? '<p class="warn">로그인 중이라 클라우드 세이브도 함께 지웁니다.</p>' : ''}`))) return;
+        if (Online.loggedIn()) {
+          try { bound = false; clearTimeout(upTimer); await Online.clearCloud(); setSyncMeta(null); }
+          catch (e) { UI.alert('초기화 실패', `<p>클라우드 세이브를 지우지 못했어요. ${esc(Online.why(e))}</p>`); return; }
+        }
         try { localStorage.removeItem(SAVE_KEY); } catch (e) { /* 무시 */ }
         location.reload(); return;
       }
@@ -978,7 +1261,7 @@ const Game = (() => {
         html: `<div class="center">${portraitImg(r.p.sp, 'portrait big', 'Pain', r.p.shiny)}</div>
           <p>친구에게 <b>구조를 요청</b>할 수 있습니다. 요청하면 SOS 코드가 나오고, 구조될 때까지 아이템과 돈을 잃지 않고 기다립니다.
           기다리는 동안에도 다른 던전은 탐험할 수 있어요.</p>`,
-        choices: [{ label: '🆘 구조를 요청한다 (SOS 코드 만들기)', fn: () => createSOS(r) }, { label: '포기하고 돌아간다', fn: () => finishRun(r, 'faint') }],
+        choices: [{ label: Online.loggedIn() ? '🆘 구조를 요청한다 (구조 게시판에 올리기)' : '🆘 구조를 요청한다 (SOS 코드 만들기)', fn: () => createSOS(r) }, { label: '포기하고 돌아간다', fn: () => finishRun(r, 'faint') }],
         cancel: false,
       });
       return;
@@ -1005,7 +1288,7 @@ const Game = (() => {
   }
   function sosCode(s) { return Codes.encode('sos', { id: s.id, dg: DUNGEONS.findIndex(d => d.id === s.dungeon), fl: s.floor, sp: s.sp, lv: s.lv, sh: s.shiny ? 1 : 0 }); }
 
-  function createSOS(r) {
+  async function createSOS(r) {
     const p = r.p;
     const s = {
       id: Codes.newId(), dungeon: r.dungeon, floor: r.floor, sp: p.sp, lv: p.lv, shiny: !!p.shiny, day: save.day,
@@ -1018,8 +1301,14 @@ const Game = (() => {
     save.best[r.dungeon] = Math.max(save.best[r.dungeon] || 0, r.floor);
     save.run = null; save.day++; refreshDay(); persist();
     tab = 'mission'; renderTown();
+    let posted = false;
+    if (Online.loggedIn()) {
+      try { await Online.postSOS(s); s.online = true; posted = true; persist(); renderTown(); }
+      catch (e) { console.warn(e); UI.toast('구조 게시판에 올리지 못했어요. 코드로 친구에게 부탁해 주세요.'); }
+    }
     codeBox('🆘 SOS 코드', `<p>${esc(dungeonById(s.dungeon).n)} ${s.floor}F에서 쓰러진 <b>${esc(spName(s.sp))}</b> Lv${s.lv}의 구조 요청입니다.</p>
-      <p>친구가 이 코드로 구조해 주면 <b>A-OK 코드</b>를 받게 됩니다. 그 코드를 임무 탭에 입력하면 쓰러진 층부터 이어서 탐험할 수 있어요.</p>`, sosCode(s));
+      ${posted ? '<p>📋 <b>구조 게시판에 올렸어요.</b> 다른 플레이어가 구조하면 임무 탭에서 자동으로 알려 드려요.</p><p class="dim">친구에게 직접 부탁하려면 아래 코드를 보내도 됩니다.</p>'
+        : '<p>친구가 이 코드로 구조해 주면 <b>A-OK 코드</b>를 받게 됩니다. 그 코드를 임무 탭에 입력하면 쓰러진 층부터 이어서 탐험할 수 있어요.</p>'}`, sosCode(s));
   }
 
   function sosSection() {
@@ -1029,9 +1318,13 @@ const Game = (() => {
       const dg = dungeonById(s.dungeon);
       h += `<div class="row sos-row">${portraitImg(s.sp, 'portrait sm', s.revived ? 'Happy' : 'Pain', s.shiny)}<div class="grow">
         ${s.revived ? `<b>구조되었습니다!</b> ${esc(dg.n)} ${s.floor}F에서 이어서 탐험할 수 있어요.` : `<b>구조를 기다리는 중</b> — ${esc(dg.n)} ${s.floor}F에서 쓰러진 ${esc(spName(s.sp))} Lv${s.lv}`}
-        <div class="dim">가방 ${s.snap.bag.length}칸${s.snap.held ? ` · 지닌 물건 ${esc(ITEMS[s.snap.held].n)}` : ''}이 함께 기다리고 있습니다.</div></div>
+        <div class="dim">가방 ${s.snap.bag.length}칸${s.snap.held ? ` · 지닌 물건 ${esc(ITEMS[s.snap.held].n)}` : ''}이 함께 기다리고 있습니다.</div>
+        ${s.online && !s.revived ? '<div class="dim">📋 구조 게시판에 올라가 있어요. 누군가 구조하면 자동으로 알려 드려요.</div>' : ''}</div>
         ${s.revived ? '<button class="btn sm" data-act="sos-resume">이어서 탐험</button>' : '<button class="btn sm ghost" data-act="sos-show">SOS 코드</button> <button class="btn sm ghost danger" data-act="sos-giveup">포기</button>'}</div>`;
     }
+    if (Online.enabled()) h += Online.loggedIn()
+      ? '<div class="row"><span class="grow">📋 <b>구조 게시판</b> <span class="dim">다른 플레이어의 구조 요청을 골라서 구하러 갈 수 있어요.</span></span><button class="btn sm" data-act="sos-board">게시판 보기</button></div>'
+      : '<div class="row"><span class="grow dim">📋 로그인하면 구조 게시판에서 다른 플레이어를 구조하거나 구조 요청을 올릴 수 있어요.</span><button class="btn sm ghost" data-act="account">로그인</button></div>';
     h += `<div class="code-box"><input id="code-input" placeholder="친구에게 받은 코드 입력 (SOS / A-OK / 감사 코드)" autocomplete="off"><button class="btn sm" data-act="code-enter">입력</button></div>`;
     const sent = (save.aokSent || []).slice(-3);
     if (sent.length) h += `<div class="dim">보낸 A-OK 코드: ${sent.map(a => `<a href="#" data-act="aok-show" data-arg="${a.id}">${esc(spName(a.sp))} (${a.code.slice(0, 9)}…)</a>`).join(', ')}</div>`;
@@ -1048,7 +1341,7 @@ const Game = (() => {
   }
 
   // 친구의 SOS → 구조 임무
-  async function acceptSOS(d) {
+  async function acceptSOS(d, from) {
     const dg = DUNGEONS[d.dg];
     if (!dg || dg.mode !== 'normal' || d.fl < 1 || d.fl > dg.floors || !DATA.species[d.sp]) { UI.alert('코드 오류', '<p>이 게임에서 쓸 수 없는 SOS 코드입니다.</p>'); return; }
     if (save.sos && save.sos.id === d.id) { UI.alert('구조 불가', '<p>자기 자신의 구조 요청은 받을 수 없어요. 친구에게 보내 주세요.</p>'); return; }
@@ -1057,31 +1350,34 @@ const Game = (() => {
     if (save.missions.accepted.length >= 4) { UI.alert('구조 불가', '<p>진행 중인 임무가 4개입니다. 하나를 끝내거나 취소한 뒤 받아 주세요.</p>'); return; }
     const reward = Math.round((150 + d.fl * 40) * (1 + DUNGEONS.filter(x => x.mode === 'normal').indexOf(dg) * 0.5) / 10) * 10;
     const ok = await UI.confirm('🆘 구조 요청', `<div class="center">${portraitImg(d.sp, 'portrait big', 'Pain', !!d.sh)}</div>
-      <p class="center"><b>${esc(dg.n)} ${d.fl}F</b>에서 친구의 Lv${d.lv} <b>${esc(jo(spName(d.sp), '이'))}</b> 쓰러져 있습니다.</p>
-      <p class="center dim">그 층까지 내려가서 말을 걸면 구조 성공. 보상 ₽${reward} + A-OK 코드</p>`, '구조하러 간다', '그만둔다');
+      <p class="center"><b>${esc(dg.n)} ${d.fl}F</b>에서 ${from ? `<b>${esc(from)}</b> 님` : '친구'}의 Lv${d.lv} <b>${esc(jo(spName(d.sp), '이'))}</b> 쓰러져 있습니다.</p>
+      <p class="center dim">그 층까지 내려가서 말을 걸면 구조 성공. 보상 ₽${reward} + ${from ? '마을로 돌아오면 구조 완료가 자동으로 전해져요' : 'A-OK 코드'}</p>
+      ${from ? '<p class="center dim">다른 탐험대가 먼저 구조하면 보상 돈만 받습니다.</p>' : ''}`, '구조하러 간다', '그만둔다');
     if (!ok) return;
-    save.missions.accepted.push({ id: 'sos' + d.id, kind: 'sos', sosId: d.id, dungeon: dg.id, floor: d.fl, client: d.sp, lv: d.lv, shiny: !!d.sh, reward });
-    document.getElementById('code-input').value = '';
+    save.missions.accepted.push({ id: 'sos' + d.id, kind: 'sos', sosId: d.id, dungeon: dg.id, floor: d.fl, client: d.sp, lv: d.lv, shiny: !!d.sh, reward, ...(from ? { online: true, from } : {}) });
+    const ci = document.getElementById('code-input'); if (ci) ci.value = '';
     persist(); renderTown(); UI.toast('구조 임무를 받았습니다!');
   }
 
   // 내 SOS에 대한 A-OK → 부활
-  async function receiveAOK(d) {
+  async function receiveAOK(d, from) {
     const s = save.sos;
     if (!s || s.id !== d.id) { UI.alert('코드 오류', '<p>지금 기다리고 있는 구조 요청에 대한 A-OK 코드가 아닙니다.</p>'); return; }
     if (s.revived) { UI.alert('이미 구조됨', '<p>이미 구조되었어요. 임무 탭에서 이어서 탐험할 수 있습니다.</p>'); return; }
-    s.revived = { sp: d.sp, lv: d.lv, sh: !!d.sh };
-    document.getElementById('code-input').value = '';
+    s.revived = { sp: d.sp, lv: d.lv, sh: !!d.sh, ...(from ? { from } : {}) };
+    const ci = document.getElementById('code-input'); if (ci) ci.value = '';
+    if (s.online && !from) { s.online = false; Online.deleteSOS(s.id).catch(() => {}); }   // 코드로 구조됨: 게시판에서 내린다
     persist(); renderTown();
     await UI.alert('구조되었다!', `<div class="center">${portraitImg(d.sp, 'portrait big', 'Happy', !!d.sh)} ${portraitImg(s.sp, 'portrait big', 'Joyous', s.shiny)}</div>
-      <p class="center">친구의 <b>${esc(spName(d.sp))}</b> Lv${d.lv} 덕분에 ${esc(jo(spName(s.sp), '이'))} 되살아났다!</p>`);
+      <p class="center">${from ? `<b>${esc(from)}</b> 님` : '친구'}의 <b>${esc(spName(d.sp))}</b> Lv${d.lv} 덕분에 ${esc(jo(spName(s.sp), '이'))} 되살아났다!</p>`);
     // 감사 선물 (선택)
     const gifts = [...save.bag.map((b, i) => ({ id: b.id, from: 'bag', i })), ...Object.keys(save.storage).filter(id => save.storage[id] > 0).map(id => ({ id, from: 'storage' }))]
       .filter(g => ITEMS[g.id] && g.id !== 'quest');
     UI.open({
       title: '💌 감사 선물', wide: true,
-      html: '<p>구조해 준 친구에게 아이템 하나를 선물할 수 있어요. 감사 코드를 보내면 친구의 창고로 들어갑니다.</p>',
-      choices: [{ label: '선물 없이 감사 코드만 보낸다', fn: () => sendThanks(s, null) },
+      html: s.online ? '<p>구조해 준 탐험대에게 감사 편지와 함께 아이템 하나를 선물할 수 있어요. 상대의 창고로 들어갑니다.</p>'
+        : '<p>구조해 준 친구에게 아이템 하나를 선물할 수 있어요. 감사 코드를 보내면 친구의 창고로 들어갑니다.</p>',
+      choices: [{ label: s.online ? '선물 없이 감사 편지만 보낸다' : '선물 없이 감사 코드만 보낸다', fn: () => sendThanks(s, null) },
         ...gifts.slice(0, 40).map(g => ({ label: `${ITEMS[g.id].icon} ${esc(ITEMS[g.id].n)} <span class="dim">(${g.from === 'bag' ? '가방' : '창고'})</span>`, fn: () => {
           if (g.from === 'bag') save.bag.splice(g.i, 1); else { save.storage[g.id]--; if (save.storage[g.id] <= 0) delete save.storage[g.id]; }
           sendThanks(s, g.id);
@@ -1091,10 +1387,18 @@ const Game = (() => {
   }
   function receiveAOKAgain() {
     const s = save.sos; if (!s || !s.revived) return;
-    UI.confirm('이어서 탐험', '<p>구조해 준 친구에게 감사 코드를 보내지 않았어요. 선물 없이 감사 코드를 만들고 이어서 탐험할까요?</p>', '그렇게 한다', '그만둔다')
+    UI.confirm('이어서 탐험', `<p>구조해 준 ${s.online ? '탐험대에게 감사 편지를' : '친구에게 감사 코드를'} 보내지 않았어요. 선물 없이 감사 ${s.online ? '편지를 보내고' : '코드를 만들고'} 이어서 탐험할까요?</p>`, '그렇게 한다', '그만둔다')
       .then(ok => { if (ok) sendThanks(s, null); });
   }
   function sendThanks(s, itemId) {
+    if (s.online) {
+      save.thxQueue = [...(save.thxQueue || []), { id: s.id, item: itemId }];
+      s.thx = 'online'; persist(); renderTown();
+      flushThanks().catch(e => console.warn('감사 편지는 다음에 다시 보냅니다', e));
+      UI.open({ title: '💌 감사 편지', html: `<p>${s.revived && s.revived.from ? `<b>${esc(s.revived.from)}</b> 님에게` : '구조해 준 탐험대에게'} 감사 편지를 보냈어요.${itemId ? ` 선물: ${ITEMS[itemId].icon} ${esc(ITEMS[itemId].n)}` : ''}</p>`,
+        choices: [{ label: '쓰러진 층부터 이어서 탐험한다', fn: resumeSOS }], cancel: () => renderTown() });
+      return;
+    }
     const code = Codes.encode('thx', { id: s.id, item: Codes.itemToNum(itemId) });
     s.thx = code; persist(); renderTown();
     codeBox('💌 감사 코드', `<p>구조해 준 친구에게 보내 주세요.${itemId ? ` 선물: ${ITEMS[itemId].icon} ${esc(ITEMS[itemId].n)}` : ''}</p>`, code, '쓰러진 층부터 이어서 탐험한다', resumeSOS);
@@ -1126,6 +1430,7 @@ const Game = (() => {
     bag.forEach(b => storeAdd(b.id, b.n));
     if (s.snap.held) { if (Math.random() < 0.5) lost.push({ id: s.snap.held, n: 1 }); else storeAdd(s.snap.held); }
     save.money = Math.max(0, save.money - (s.snap.money || 0));
+    if (s.online) Online.deleteSOS(s.id).catch(() => {});
     save.sos = null; persist(); renderTown();
     UI.alert('구조를 포기했다', `<p>${lost.length ? `잃어버린 아이템: ${lost.map(b => ITEMS[b.id].icon + esc(ITEMS[b.id].n)).join(', ')}` : '잃어버린 아이템은 없다.'}</p>
       ${s.snap.money ? `<p>주웠던 돈 ₽${jo(s.snap.money, '을')} 잃었다.</p>` : ''}<p class="dim">남은 아이템은 창고로 옮겼습니다.</p>`);
@@ -1136,13 +1441,15 @@ const Game = (() => {
     const r = (save.rescued || {})[d.id];
     if (!r) { UI.alert('코드 오류', '<p>내가 구조한 친구에게서 온 감사 코드가 아닙니다.</p>'); return; }
     if (r.thanked) { UI.alert('이미 받음', '<p>이미 받은 감사 코드입니다.</p>'); return; }
+    const ci = document.getElementById('code-input'); if (ci) ci.value = '';
+    return gotThanks(r, Codes.numToItem(d.item));
+  }
+  function gotThanks(r, item, from) {
     r.thanked = true;
-    const item = Codes.numToItem(d.item);
     if (item) storeAdd(item);
-    document.getElementById('code-input').value = '';
     persist(); renderTown();
-    UI.alert('💌 감사 편지', `<div class="center">${portraitImg(r.sp, 'portrait big', 'Joyous', r.shiny)}</div>
-      <p class="center">구조해 준 ${esc(spName(r.sp))}의 친구에게서 감사 편지가 왔다!</p>
+    return UI.alert('💌 감사 편지', `<div class="center">${portraitImg(r.sp, 'portrait big', 'Joyous', r.shiny)}</div>
+      <p class="center">구조해 준 ${esc(spName(r.sp))}의 ${from ? `탐험대 <b>${esc(from)}</b> 님` : '친구'}에게서 감사 편지가 왔다!</p>
       ${item ? `<p class="center">선물로 ${ITEMS[item].icon} <b>${esc(jo(ITEMS[item].n, '을'))}</b> 받았다! (창고로)</p>` : ''}`);
   }
 
@@ -1168,7 +1475,11 @@ const Game = (() => {
           }
         }
         for (const m of save.missions.accepted.filter(m => r.done.includes(m.id))) {
-          if (m.kind === 'sos') {
+          if (m.kind === 'sos' && m.online) {
+            save.rescued = save.rescued || {};
+            save.rescued[m.sosId] = { sp: m.client, shiny: m.shiny, thanked: false, online: true, claimed: false, me: { sp: p.sp, lv: p.lv, shiny: !!p.shiny } };
+            Progress.add('rescues');
+          } else if (m.kind === 'sos') {
             const code = Codes.encode('aok', { id: m.sosId, sp: p.sp, lv: p.lv, sh: p.shiny ? 1 : 0 });
             save.rescued = save.rescued || {}; save.rescued[m.sosId] = { sp: m.client, shiny: m.shiny, thanked: false };
             save.aokSent = [...(save.aokSent || []), { id: m.sosId, sp: m.client, code }].slice(-10);
@@ -1227,6 +1538,7 @@ const Game = (() => {
     const title = { clear: '던전 클리어!', escape: '무사히 돌아왔다', faint: '눈앞이 캄캄해졌다...', wind: '바람에 날려 쫓겨났다...', quit: '탐험을 포기했다' }[outcome] || '귀환';
     const face = { clear: 'Joyous', escape: 'Happy', faint: 'Crying', wind: 'Sad' }[outcome] || 'Normal';
     const res = UI.alert(title, `<div class="center">${portraitImg(p.sp, 'portrait big', face, save.roster[p.sp]?.shiny)}</div><p>${esc(dg.n)} ${reached}F${outcome === 'clear' ? ' 완주' : ''}</p><ul>${lines.map(l => `<li>${l}</li>`).join('')}</ul>`);
+    if (Object.values(save.rescued || {}).some(x => x.online && !x.claimed && !x.thanked)) res.then(() => checkOnline(true));
     // 친구 구조 완료 → A-OK 코드 보여주기
     aoks.reduce((pr, a) => pr.then(() => new Promise(done => codeBox('✅ A-OK 코드', `<p>친구의 <b>${esc(jo(spName(a.m.client), '을'))}</b> 구조했다! 이 코드를 친구에게 보내면 친구가 되살아납니다.</p>`, a.code, '확인', done))), res);
   }

@@ -356,3 +356,11 @@ i.clear { font-style: normal; font-size: 11px; background: #3a9d4d; padding: 1px
 /* 새 버전 알림 */
 .update-note { font: inherit; font-size: 13px; color: #0b1633; background: #ffd966; border: 0; border-radius: 12px; padding: 3px 12px; cursor: pointer; margin-left: auto; }
 .update-note:hover { background: #ffe699; }
+
+/* 계정 */
+#title-acct { margin: 12px 0 4px; display: flex; flex-direction: column; align-items: center; gap: 4px; }
+#title-acct > span { font-size: 13px; }
+.acct-form label { display: block; margin: 6px 0; font-size: 13px; }
+.acct-form input { display: block; width: 100%; box-sizing: border-box; margin-top: 3px; font: inherit; font-size: 15px; background: #0b1633; color: var(--text); border: 1px solid #fff5; border-radius: 6px; padding: 7px 9px; }
+.acct-form input:focus { outline: none; border-color: var(--accent); }
+#ac-msg { min-height: 1.2em; margin: 6px 0 0; font-size: 13px; }

@@ -1,0 +1,50 @@
+rules_version = '2';
+// 불가사의 던전 웹: Firestore 보안 규칙
+// Firebase 콘솔 → Firestore Database → 규칙 탭에 붙여 넣고 "게시"한다 (개발용·서비스용 프로젝트 둘 다)
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() { return request.auth != null; }
+    function shortName(n) { return n is string && n.size() > 0 && n.size() <= 16; }
+
+    // 계정별 정보와 클라우드 세이브: 본인만 읽고 쓴다
+    match /users/{uid} {
+      allow read, delete: if signedIn() && request.auth.uid == uid;
+      allow create, update: if signedIn() && request.auth.uid == uid
+        && request.resource.data.keys().hasOnly(['name', 'id', 'created', 'save', 'savedAt', 'ver'])
+        && (!('name' in request.resource.data) || shortName(request.resource.data.name))
+        && (!('save' in request.resource.data) || (request.resource.data.save is string && request.resource.data.save.size() < 400000));
+    }
+
+    // 구조 게시판
+    match /sos/{id} {
+      allow read: if signedIn();
+      // 요청 올리기: 본인 이름으로, 열린 상태로만
+      allow create: if signedIn()
+        && request.resource.data.keys().hasOnly(['owner', 'name', 'dungeon', 'floor', 'sp', 'lv', 'shiny', 'ver', 'key', 'status', 'created'])
+        && request.resource.data.owner == request.auth.uid
+        && request.resource.data.status == 'open'
+        && shortName(request.resource.data.name)
+        && request.resource.data.floor is int && request.resource.data.sp is int && request.resource.data.lv is int;
+      allow update: if signedIn() && (
+        // 구조: 다른 사람이, 열린 요청을 구조됨으로 (한 번만)
+        (resource.data.status == 'open' && resource.data.owner != request.auth.uid
+          && request.resource.data.status == 'rescued'
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'key', 'rescuer'])
+          && request.resource.data.rescuer.keys().hasOnly(['uid', 'name', 'sp', 'lv', 'shiny'])
+          && request.resource.data.rescuer.uid == request.auth.uid
+          && shortName(request.resource.data.rescuer.name))
+        ||
+        // 감사 편지: 요청자가, 구조된 요청에 한 번만
+        (resource.data.status == 'rescued' && resource.data.owner == request.auth.uid
+          && request.resource.data.status == 'thanked'
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'thx'])
+          && (request.resource.data.thx == null || (request.resource.data.thx is string && request.resource.data.thx.size() <= 24)))
+      );
+      // 지우기: 요청자는 아직 아무도 구조하지 않았을 때 (포기), 구조한 사람은 감사 편지를 받은 뒤 (정리)
+      allow delete: if signedIn() && (
+        (resource.data.owner == request.auth.uid && resource.data.status == 'open')
+        || (resource.data.status == 'thanked' && resource.data.rescuer.uid == request.auth.uid)
+      );
+    }
+  }
+}

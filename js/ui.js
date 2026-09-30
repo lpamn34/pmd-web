@@ -12,7 +12,7 @@ const UI = (() => {
     const box = document.createElement('div');
     box.className = 'modal pmd-box' + (opts.wide ? ' wide' : '');
     box.innerHTML = (opts.title ? `<div class="modal-title">${opts.title}</div>` : '') + (opts.html ? `<div class="modal-body">${opts.html}</div>` : '');
-    const m = { el, box, opts, sel: 0, items: [] };
+    const m = { el, box, opts, sel: 0, items: [], t0: performance.now() };
     if (opts.choices && opts.choices.length) {
       const list = document.createElement('div');
       list.className = 'choice-list';
@@ -21,7 +21,7 @@ const UI = (() => {
         b.className = 'choice';
         b.disabled = !!c.disabled;
         b.innerHTML = `<span class="cursor">▶</span><span class="lbl">${c.label}</span>` + (c.sub ? `<span class="sub">${c.sub}</span>` : '');
-        b.onclick = () => choose(m, i);
+        b.onclick = () => { if (performance.now() - m.t0 > 300) choose(m, i); };   // 앞 창을 누른 클릭이 새 창까지 누르지 않게
         b.onmouseenter = () => setSel(m, i);
         list.appendChild(b);
         m.items.push(b);
