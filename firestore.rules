@@ -43,6 +43,7 @@ service cloud.firestore {
       allow create, update: if signedIn() && request.auth.uid == uid
         && request.resource.data.keys().hasOnly(['at']) && request.resource.data.at == request.time
         && (resource == null || resource.data.at < request.time - duration.value(60, 's'));
+      allow delete: if signedIn() && request.auth.uid == uid;   // 계정 삭제
     }
 
     // 구조 게시판

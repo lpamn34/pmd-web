@@ -1,0 +1,45 @@
+name: 🐞 버그 제보
+description: 게임이 이상하게 동작하거나 멈췄을 때
+labels: ["버그"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        제보 고마워요! 아래를 채워 주시면 빨리 고칠 수 있어요.
+        게임 버전은 **정보 탭** 맨 위에 있어요 (예: v0.31).
+  - type: input
+    id: version
+    attributes:
+      label: 게임 버전
+      placeholder: v0.31
+    validations:
+      required: true
+  - type: dropdown
+    id: device
+    attributes:
+      label: 기기
+      options:
+        - PC (크롬 / 엣지)
+        - PC (기타 브라우저)
+        - 휴대폰 (안드로이드)
+        - 휴대폰 (아이폰)
+        - 태블릿
+    validations:
+      required: true
+  - type: textarea
+    id: what
+    attributes:
+      label: 무슨 일이 있었나요?
+      description: 어디서(던전 이름·층, 마을 탭 등) 무엇을 했더니 어떻게 됐는지
+      placeholder: 번개 초원 5층에서 메가스톤을 지니게 했더니 화면이 멈췄어요.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: 원래 어떻게 되어야 할까요?
+  - type: textarea
+    id: shot
+    attributes:
+      label: 스크린샷
+      description: 있으면 여기에 끌어다 놓아 주세요. 던전 아래쪽 메시지 창이 보이면 더 좋아요.

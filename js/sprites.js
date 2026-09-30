@@ -10,11 +10,10 @@ const Sprites = (() => {
     const key = shiny ? id + 's' : id;
     if (cache[key]) return cache[key];
     const s = cache[key] = { ready: false, failed: false, anims: {}, shadow: 1 };
-    const base = `${SPRITE_BASE}/sprite/${spritePath(id, shiny)}`;
-    fetch(base + 'AnimData.xml').then(r => {
-      if (!r.ok) throw new Error(r.status);
-      return r.text();
-    }).then(txt => {
+    let base = `${SPRITE_BASE}/sprite/${spritePath(id, shiny)}`;
+    // CDN에서 못 받으면 GitHub 원래 주소로 한 번 더 (그 뒤 그림도 같은 곳에서)
+    const get = u => fetch(u).then(r => { if (!r.ok) throw new Error(r.status); return r.text(); });
+    get(base + 'AnimData.xml').catch(() => { base = spriteFallback(base); return get(base + 'AnimData.xml'); }).then(txt => {
       const xml = new DOMParser().parseFromString(txt, 'text/xml');
       s.shadow = +(xml.querySelector('ShadowSize')?.textContent || 1);
       const defs = {};

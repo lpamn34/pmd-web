@@ -364,6 +364,8 @@ i.clear { font-style: normal; font-size: 11px; background: #3a9d4d; padding: 1px
 .acct-form label { display: block; margin: 6px 0; font-size: 13px; }
 .acct-form input { display: block; width: 100%; box-sizing: border-box; margin-top: 3px; font: inherit; font-size: 15px; background: #0b1633; color: var(--text); border: 1px solid #fff5; border-radius: 6px; padding: 7px 9px; }
 .acct-form input:focus { outline: none; border-color: var(--accent); }
+.acct-form label.check { cursor: pointer; }
+.acct-form label.check input { display: inline-block; width: auto; margin: 0 4px 0 0; padding: 0; vertical-align: middle; }
 #ac-msg { min-height: 1.2em; margin: 6px 0 0; font-size: 13px; }
 
 /* 터치 화면: 방향 버튼, 큰 버튼, 단축키 표시 숨김 */

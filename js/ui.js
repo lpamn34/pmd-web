@@ -116,7 +116,8 @@ function typeBadges(types) {
   return types.map(t => `<span class="type" style="background:${TYPE_COLORS[t - 1]}">${typeName(t)}</span>`).join('');
 }
 function portraitImg(sp, cls = 'portrait', emotion = 'Normal', shiny = false) {
-  return `<img class="${cls}" loading="lazy" src="${Sprites.portrait(sp, emotion, shiny)}" alt="" onerror="this.style.visibility='hidden'">`;
+  // 못 불러오면 GitHub 원래 주소로 한 번 더, 그래도 안 되면 숨긴다
+  return `<img class="${cls}" loading="lazy" src="${Sprites.portrait(sp, emotion, shiny)}" alt="" onerror="if(!this.dataset.r){this.dataset.r=1;this.src=spriteFallback(this.src)}else this.style.visibility='hidden'">`;
 }
 // 기술 상세 설명 (게임 내 실제 효과 기준)
 const RANGE_DESC = { f: '바로 앞 1칸의 적', p: '바라보는 방향 직선 8칸 안의 첫 번째 적', r: '주변 3칸 안의 모든 적', s: '자기 자신' };

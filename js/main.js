@@ -264,8 +264,10 @@ const Game = (() => {
         <label>닉네임 <input id="ac-nick" maxlength="10" placeholder="구조 게시판에 보이는 이름 (한글 가능, 비우면 아이디)"></label>
         <p class="dim tiny">아이디와 닉네임은 다른 사람과 겹칠 수 없어요.</p>` : ''}
         <p id="ac-msg" class="warn"></p></div>
-        ${su ? '<p class="dim tiny">아이디와 비밀번호만으로 가입해요. 이메일 같은 개인정보는 받지 않아요.<br>※ 그래서 <b>비밀번호 찾기가 없어요.</b> 잊으면 계정을 되찾을 수 없으니 잘 적어 두세요. 다른 사이트에서 쓰는 비밀번호는 쓰지 마세요.</p>'
-          : '<p class="dim tiny">로그인하면 세이브가 클라우드에도 저장되어 다른 기기에서 이어할 수 있고, 구조 게시판을 쓸 수 있어요.</p>'}`,
+        ${su ? `<p class="warn">⚠ <b>비밀번호 찾기가 없어요.</b> 이메일을 받지 않아서, 비밀번호를 잊으면 계정을 되찾을 수 없어요. 꼭 적어 두세요.</p>
+          <p class="dim tiny">아이디와 비밀번호만으로 가입해요. 이메일 같은 개인정보는 받지 않아요. 다른 사이트에서 쓰는 비밀번호는 쓰지 마세요.<br>
+          욕설·비하·운영자 사칭 닉네임은 쓸 수 없고, 다른 사람에게 가려져 보여요.</p>`
+          : '<p class="dim tiny">로그인하면 세이브가 클라우드에도 저장되어 다른 기기에서 이어할 수 있고, 구조 게시판을 쓸 수 있어요.<br>비밀번호 찾기는 없어요 (이메일을 받지 않기 때문).</p>'}`,
       choices: [
         { label: su ? '가입하기' : '로그인', keep: true, fn: () => submit() },
         { label: su ? '이미 계정이 있어요 (로그인)' : '계정 만들기', fn: () => accountDialog(su ? 'login' : 'signup') },
@@ -310,8 +312,38 @@ const Game = (() => {
         } },
         { label: '✏ 닉네임 바꾸기', fn: renameDialog },
         { label: '로그아웃', fn: logoutDialog },
+        { label: '🗑 계정 삭제', fn: deleteAccountDialog },
         { label: '닫기', fn: () => {} },
       ],
+    });
+  }
+  // 계정 삭제: 서버에 남은 내 기록을 모두 지운다. 이 브라우저의 세이브는 남는다 (로그인 없이 계속 플레이)
+  function deleteAccountDialog() {
+    let busy = false;
+    const m = UI.open({
+      title: '🗑 계정 삭제',
+      html: `<p>계정 <b>${esc(Online.userId())}</b>와(과) 서버에 있는 기록을 모두 지웁니다.</p>
+        <ul><li>클라우드 세이브, 닉네임, 접속 기록</li><li>아직 아무도 구조하지 않은 내 구조 요청</li></ul>
+        <p class="warn">되돌릴 수 없어요.</p>
+        <div class="acct-form"><label>비밀번호 확인 <input id="del-pw" type="password" autocomplete="current-password"></label>
+        <label class="check"><input id="del-local" type="checkbox"> 이 브라우저의 세이브도 지우기 <span class="dim">(체크하지 않으면 로그인 없이 계속 플레이할 수 있어요)</span></label>
+        <p id="del-msg" class="warn"></p></div>`,
+      choices: [{ label: '계정을 삭제한다', keep: true, fn: async () => {
+        if (busy) return; busy = true;
+        const msg = m.box.querySelector('#del-msg'); msg.textContent = '지우는 중…';
+        if (upTimer) { clearTimeout(upTimer); upTimer = null; }
+        try { await Online.deleteAccount(m.box.querySelector('#del-pw').value); }
+        catch (e) { msg.textContent = e.msg || Online.why(e); busy = false; return; }
+        bound = false; setSyncMeta(null);
+        if (m.box.querySelector('#del-local').checked) {   // 브라우저의 세이브와 백업까지 지우고 처음 화면으로
+          try { localStorage.removeItem(SAVE_KEY); localStorage.removeItem('pmdweb_save_backups'); } catch (e) { /* 무시 */ }
+          save = null; location.href = location.pathname; return;
+        }
+        if (save) delete save.sos?.online;
+        UI.close(m); renderAcct(); refreshTitle();
+        if (save && document.getElementById('town-screen').classList.contains('active')) renderTown();
+        UI.alert('계정 삭제', '<p>계정과 서버의 기록을 지웠어요. 이 브라우저의 세이브로 계속 플레이할 수 있어요.</p>');
+      } }, { label: '그만둔다', fn: () => {} }],
     });
   }
   function renameDialog() {
@@ -352,7 +384,7 @@ const Game = (() => {
         const d = await Online.getSOS(s.docId || s.id);
         // 서버의 값은 다른 사람이 쓴 것이라 숫자·이름을 다시 확인한다 (조작된 값이 화면에 그대로 들어가지 않게)
         const rs = d && d.rescuer;
-        if (d && d.status === 'rescued' && rs && hasKey(DATA.species, rs.sp)) await receiveAOK({ id: s.id, sp: +rs.sp, lv: clamp(Math.floor(+rs.lv) || 1, 1, MAX_LEVEL), sh: rs.shiny ? 1 : 0 }, String(rs.name || '').slice(0, 16));
+        if (d && d.status === 'rescued' && rs && hasKey(DATA.species, rs.sp)) await receiveAOK({ id: s.id, sp: +rs.sp, lv: clamp(Math.floor(+rs.lv) || 1, 1, MAX_LEVEL), sh: rs.shiny ? 1 : 0 }, Online.cleanName(rs.name));
       }
       for (const [id, r] of Object.entries(save.rescued || {})) {
         if (!r.online || r.thanked) continue;
@@ -374,7 +406,7 @@ const Game = (() => {
         const d = await Online.getSOS(doc);
         if (!d) { r.thanked = true; persist(); continue; }
         if (d.status === 'thanked') {
-          await gotThanks(r, hasKey(ITEMS, d.thx) && d.thx !== 'quest' ? d.thx : null, String(d.name || '').slice(0, 16));
+          await gotThanks(r, hasKey(ITEMS, d.thx) && d.thx !== 'quest' ? d.thx : null, Online.cleanName(d.name));
           Online.deleteSOS(doc).catch(() => {});   // 다 쓴 요청은 지운다
         }
       }
@@ -397,7 +429,7 @@ const Game = (() => {
     let list;
     try { list = await Online.listSOS(); } catch (e) { UI.alert('📋 구조 게시판', `<p>${esc(Online.why(e))}</p>`); return; }
     list = list.filter(s => dungeonById(s.dungeon) && hasKey(DATA.species, s.sp) && Number.isInteger(s.floor) && Number.isInteger(s.lv) && s.lv >= 1 && s.lv <= MAX_LEVEL)
-      .map(s => ({ ...s, sp: +s.sp, name: String(s.name || '').slice(0, 16), created: +s.created || Date.now() }));
+      .map(s => ({ ...s, sp: +s.sp, name: Online.cleanName(s.name), created: +s.created || Date.now() }));
     const taken = sid => !!((save.rescued || {})[sid] || save.missions.accepted.some(m => m.sosId === sid));
     const ago = t => { const mnt = Math.max(1, Math.round((Date.now() - t) / 60000)); return mnt < 60 ? `${mnt}분 전` : mnt < 1440 ? `${Math.round(mnt / 60)}시간 전` : `${Math.round(mnt / 1440)}일 전`; };
     const rows = list.map(s => {
@@ -1010,6 +1042,10 @@ const Game = (() => {
       <p>원작 던전 타일셋·음악 (게임 폴더의 tiles/, music/에 들어 있는 경우): Pokémon Mystery Dungeon 시리즈 © Nintendo / Spike Chunsoft</p>
       <p>이 게임의 소스 코드: GNU AGPL-3.0 (게임 폴더의 LICENSE 파일)</p>
       <p>버그 제보 · 문의 · 삭제 요청: <a href="https://github.com/pmd-fan-web/pmd-fan-web.github.io/issues" target="_blank" rel="noopener">GitHub Issues</a></p>
+      <h3>개인정보</h3>
+      <p class="dim">로그인하지 않으면 모든 기록은 이 브라우저에만 저장되고, 서버로 보내지 않습니다.
+        로그인하면 <b>아이디, 닉네임, 세이브, 마지막 접속 시각</b>과 구조 게시판에 올린 요청만 서버(Google Firebase)에 저장합니다. 이메일·전화번호 같은 개인정보는 받지 않고, 광고나 방문 기록 분석도 하지 않습니다.
+        계정 창의 <b>계정 삭제</b>로 언제든 서버의 기록을 모두 지울 수 있습니다.</p>
       <p class="dim">비상업적 팬 게임입니다. Pokémon © Nintendo / Creatures Inc. / GAME FREAK inc. Pokémon Mystery Dungeon © Spike Chunsoft.</p>`;
   }
 

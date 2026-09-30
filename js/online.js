@@ -88,11 +88,25 @@ const Online = (() => {
   }
 
   const ID_RE = /^[a-z0-9_]{3,16}$/;
+  // 닉네임 금칙어: 닉네임은 구조 게시판에서 다른 사람에게 보인다. 욕설·비하·성적인 말과 운영자 사칭을 막는다
+  // 띄어쓰기·숫자·기호를 빼고 비교한다 (시 1 발, s.h.i.t 같은 우회)
+  const BAD_WORDS = ['시발', '씨발', '씨바', '시바', '씨빨', '시빨', '싸발', '쌰발', 'ㅅㅂ', 'ㅆㅂ', 'ㅅㅃ', '병신', '븅신', '빙신', 'ㅂㅅ', '좆', '좃', 'ㅈㄴ', '존나', '졸라', '지랄', 'ㅈㄹ',
+    '개새', '개색', '개세', '새끼', '색기', '섹스', '쎅스', '보지', '자지', '느금', '니미', '니애미', '애미', '애비', '에미', '엠창', '앰창', '창녀', '걸레', '썅', '쌍놈', '쌍년', '미친', '미췬', '닥쳐', '꺼져', '뒤져', '뒤질',
+    '한남', '김치녀', '메갈', '일베', '운지', '노무', '틀딱', '급식충', '장애새', '정신병자', '엿먹',
+    'fuck', 'fuk', 'shit', 'bitch', 'sex', 'porn', 'nigger', 'nigga', 'cunt', 'dick', 'pussy', 'asshole', 'penis', 'vagina',
+    '운영자', '관리자', '개발자', '공식', 'admin', 'official', 'moderator', 'nintendo', '닌텐도', 'gamefreak', '게임프리크', '포켓몬코리아'];
+  const squash = n => String(n || '').normalize('NFC').toLowerCase().replace(/[\s\p{N}_.\-]/gu, '');
+  // 금칙어가 들어 있지만 괜찮은 말 (먼저 지우고 검사)
+  const OK_WORDS = ['시바견', '시바이누', '보지마', '바보지', '자지러', '공식적'];
+  const badName = n => { let s = squash(n); for (const w of OK_WORDS) s = s.split(w).join(''); return BAD_WORDS.some(w => s.includes(w)); };
+  // 다른 사람의 닉네임을 보여줄 때 (예전에 만든 닉네임이나 조작된 값도 가린다)
+  const cleanName = n => { n = String(n || '').slice(0, 16); return !n || badName(n) ? '익명의 탐험대' : n; };
   function checkName(n, max = 10) {
     n = String(n || '').trim();
     if (!n) return '닉네임을 입력해 주세요.';
     if (n.length > max) return `닉네임은 ${max}자까지입니다.`;
     if (!/^[\p{L}\p{N} _.\-]+$/u.test(n) || /^\.+$/.test(n) || /^__.*__$/.test(n)) return '닉네임에는 글자, 숫자, 띄어쓰기, _ . - 만 쓸 수 있습니다.';
+    if (badName(n)) return '쓸 수 없는 말이 들어 있어요. 다른 닉네임을 골라 주세요.';
     return null;
   }
   // ── 닉네임은 겹치지 않게: names/{소문자 닉네임} = { uid } 로 먼저 차지한다 (아이디는 로그인 기능이 알아서 겹치지 않게 한다)
@@ -115,8 +129,8 @@ const Online = (() => {
     id = String(id || '').trim().toLowerCase(); nick = String(nick || '').trim();
     if (!ID_RE.test(id)) throw { msg: '아이디는 영어 소문자, 숫자, _ 로 3~16자입니다.' };
     if (String(pw).length < 6) throw { msg: '비밀번호는 6자 이상이어야 합니다.' };
-    const bad = nick ? checkName(nick) : null; if (bad) throw { msg: bad };
-    nick = nick || id;
+    nick = nick || id;   // 닉네임을 비우면 아이디를 닉네임으로 (그래서 아이디도 금칙어 검사)
+    const bad = checkName(nick, nick === id ? 16 : 10); if (bad) throw { msg: nick === id ? '아이디를 닉네임으로 쓸 수 없어요. ' + bad : bad };
     await init();
     let free;
     try { free = await nameFree(nick); } catch (e) { throw { msg: why(e) }; }
@@ -141,6 +155,26 @@ const Online = (() => {
     catch (e) { throw { msg: why(e) }; }
   }
   async function signOut() { if (auth) await auth.signOut(); user = null; profile = null; }
+  // 계정 삭제: 비밀번호를 한 번 더 확인하고, 서버에 남은 내 기록(세이브, 닉네임, 접속 표시, 아직 아무도 구조하지 않은 요청)을 지운 뒤 계정을 없앤다
+  async function deleteAccount(pw) {
+    if (!user) throw { msg: '로그인되어 있지 않아요.' };
+    try { await user.reauthenticateWithCredential(firebase.auth.EmailAuthProvider.credential(user.email, pw)); }
+    catch (e) { throw { msg: why(e) }; }
+    const uid = user.uid;
+    try {
+      const q = await db.collection('sos').where('owner', '==', uid).get();
+      for (const d of q.docs) if (d.data().status === 'open') await d.ref.delete().catch(() => {});
+      if (profile && profile.name) {
+        const ref = db.collection('names').doc(nameKey(profile.name)), n = await ref.get();
+        if (n.exists && n.data().uid === uid) await ref.delete();
+      }
+      await db.collection('presence').doc(uid).delete().catch(() => {});
+      await db.collection('users').doc(uid).delete();
+      await user.delete();
+    } catch (e) { throw { msg: why(e) }; }
+    try { localStorage.removeItem(NAME_OK_KEY); } catch (e) { /* 무시 */ }
+    user = null; profile = null;
+  }
   async function setName(nick) {
     nick = String(nick || '').trim();
     const bad = checkName(nick); if (bad) throw { msg: bad };
@@ -262,7 +296,7 @@ const Online = (() => {
   return {
     touchPresence, onlineCount, PRESENCE_MIN, ONLINE_WINDOW,
     enabled, init, onChange, loggedIn, name, userId, why, nameTaken: () => !!(profile && profile.nameTaken),
-    signUp, signIn, signOut, setName, uid: () => user && user.uid,
+    signUp, signIn, signOut, setName, deleteAccount, cleanName, uid: () => user && user.uid,
     fetchCloud, pushCloud, clearCloud,
     postSOS, listSOS, takeSOS, releaseSOS, getSOS, claimRescue, thankSOS, deleteSOS, idOf,
   };

@@ -3,7 +3,7 @@
 
 // 게임 버전: 업데이트할 때 올리고, index.html의 ?v= 숫자도 같이 올린다
 // (친구와 구조 코드·오늘의 도전을 주고받으려면 버전이 같아야 한다)
-const GAME_VERSION = '0.31';
+const GAME_VERSION = '0.32';
 // 버전 비교: '0.25' > '0.9' 처럼 숫자로 비교한다
 function cmpVer(a, b) {
   const x = String(a).split('.').map(Number), y = String(b).split('.').map(Number);
@@ -12,6 +12,8 @@ function cmpVer(a, b) {
 }
 const GAME_DATE = '2026-09-30';
 const VERSION_NOTES = [
+  ['0.32', ['닉네임 금칙어 (욕설·비하·운영자 사칭), 다른 사람 화면에서도 가려짐', '계정 삭제 (서버의 세이브·닉네임·구조 요청을 모두 지움, 원하면 이 브라우저의 세이브도)', '가입 화면에 비밀번호 찾기 불가 안내, 정보 탭에 개인정보 안내',
+    '포켓몬 그림을 jsDelivr(CDN)로 불러와 더 빠르고 안정적으로 (실패하면 원래 주소로)']],
   ['0.31', ['메가진화 40종: 메가스톤을 지니면 던전에서 메가진화 (메가스톤은 적 Lv35 이상 층에서 아주 드물게, 레쿠쟈는 화룡점정)',
     '모습 고르기: 로토무 5종·테오키스·쉐이미·큐레무·후파·루가루암·도롱마담·지가르데 10% (캐릭터 탭)',
     '도구로 바뀌는 모습: 기라티나·디아루가·펄기아 오리진폼, 자시안·자마젠타 왕의 모습(녹슨검·녹슨방패), 오거폰 가면 3종, 원시가이오가·원시그란돈(쪽빛구슬·주홍구슬)',
@@ -43,7 +45,10 @@ const VERSION_NOTES = [
   ['0.9', ['친구 구조 코드 (SOS / A-OK / 감사)']],
 ];
 
-const SPRITE_BASE = 'https://raw.githubusercontent.com/PMDCollab/SpriteCollab/master';
+// 스프라이트: jsDelivr(무료 CDN)로 불러오고, 실패하면 GitHub 원래 주소로 한 번 더 (사람이 몰리면 GitHub raw는 속도 제한이 있다)
+const SPRITE_RAW = 'https://raw.githubusercontent.com/PMDCollab/SpriteCollab/master';
+const SPRITE_BASE = 'https://cdn.jsdelivr.net/gh/PMDCollab/SpriteCollab@master';
+const spriteFallback = url => url.replace(SPRITE_BASE, SPRITE_RAW);
 const TILE = 24;
 const BAG_BASE = 16, BAG_STEP = 4, BAG_LIMIT = 48;
 const STORAGE_BASE = 40, STORAGE_STEP = 20, STORAGE_LIMIT = 400;

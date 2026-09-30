@@ -1,0 +1,28 @@
+name: 💡 건의 · 밸런스 의견
+description: 추가했으면 하는 기능, 너무 쉽거나 어려운 부분
+labels: ["건의"]
+body:
+  - type: dropdown
+    id: kind
+    attributes:
+      label: 종류
+      options:
+        - 새 기능
+        - 밸런스 (경험치·아이템·난이도 등)
+        - 편의 기능 (조작·화면)
+        - 포켓몬·기술·특성
+        - 기타
+    validations:
+      required: true
+  - type: textarea
+    id: idea
+    attributes:
+      label: 내용
+      description: 무엇을 어떻게 바꾸면 좋을지, 왜 그런지 적어 주세요.
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: 게임 버전 (선택)
+      placeholder: v0.31

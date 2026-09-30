@@ -1,0 +1,26 @@
+name: 📮 권리자 삭제 요청 (Takedown request)
+description: 저작권·상표권자의 삭제 요청 / For rights holders requesting removal of content
+labels: ["삭제 요청"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        이 게임은 비상업적 팬 게임이며, 권리자의 요청이 있으면 해당 콘텐츠를 신속히 내립니다.
+        This is a non-commercial fan game. Content will be removed promptly upon request from rights holders.
+  - type: input
+    id: who
+    attributes:
+      label: 권리자 / Rights holder
+    validations:
+      required: true
+  - type: textarea
+    id: what
+    attributes:
+      label: 삭제를 원하는 콘텐츠 / Content to remove
+      description: 파일·화면·저장소 등 / Files, screens, or repositories
+    validations:
+      required: true
+  - type: input
+    id: contact
+    attributes:
+      label: 회신 받을 연락처 (선택) / Contact (optional)

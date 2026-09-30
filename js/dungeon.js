@@ -241,7 +241,12 @@ const Dungeon = (() => {
     else if (p.status) e = 'Dizzy';
     else if (p.belly <= 10) e = 'Worried';
     const src = Sprites.portrait(looksOf(p), e, p.shiny);
-    if (src !== faceShown) { faceShown = src; document.getElementById('face').src = src; }
+    if (src !== faceShown) {
+      faceShown = src;
+      const f = document.getElementById('face');
+      f.onerror = () => { if (f.src.startsWith(SPRITE_BASE)) f.src = spriteFallback(f.src); };   // CDN이 안 되면 원래 주소
+      f.src = src;
+    }
   }
 
   function newFloor() {
