@@ -151,7 +151,7 @@ const Dungeon = (() => {
     }
     // 테마 던전: 시리즈 포켓몬을 일반 적으로 섞는다 (강함이 비슷한 쪽 우선)
     if (dg.extra) {
-      const ex = dg.extra.filter(id => hasSprite(id) && !pool.includes(id)).sort((a, b) => Math.abs(DATA.species[a].b.reduce((s, v) => s + v, 0) - target) - Math.abs(DATA.species[b].b.reduce((s, v) => s + v, 0) - target));
+      const ex = extraPool(dg).filter(id => !pool.includes(id)).sort((a, b) => Math.abs(DATA.species[a].b.reduce((s, v) => s + v, 0) - target) - Math.abs(DATA.species[b].b.reduce((s, v) => s + v, 0) - target));
       for (const id of ex.slice(0, 6).sort(() => Math.random() - 0.5).slice(0, 3)) pool.push(id);
     }
     return { pool, lvl };
@@ -1127,7 +1127,44 @@ const Dungeon = (() => {
       choices: [...Object.entries(TACTIC_NAMES).map(([k, n]) => ({ label: `${k === tactic() ? '✔ ' : ''}작전: ${n}`, sub: TACTIC_DESC[k], fn: () => { run.tactic = k; log(`🤝 작전: ${n}`, now()); partyMenu(); } })),
         ...(liveAllies().length && run.bag.some(b => ALLY_USES.includes(ITEMS[b.id].use)) ? [{ label: '🎒 동료에게 아이템 쓰기', fn: allyBag }] : []),
         ...(downAllies().length && run.bag.some(b => b.id === 'reviver') ? [{ label: `🌰 쓰러진 동료 되살리기 (부활씨 ${run.bag.filter(b => b.id === 'reviver').length}개)`, fn: () => pickReviveFor(run.bag.findIndex(b => b.id === 'reviver'), partyMenu) }] : []),
+        ...(liveAllies().length ? [{ label: '🎁 동료 지닌 물건 바꾸기', fn: () => pickAlly('누구의 지닌 물건을 바꿀까?', allyHeld) },
+          { label: '📘 동료 기술 바꾸기', fn: () => pickAlly('누구의 기술을 바꿀까?', allyMoves) }] : []),
         { label: '닫기', fn: () => {} }] });
+  }
+  function pickAlly(title, then) {
+    const list = liveAllies();
+    if (list.length === 1) return then(list[0]);
+    UI.open({ title, choices: [...list.map(a => ({ label: `${esc(nm(a))} Lv${a.lv}`, fn: () => then(a) })), { label: '돌아간다', fn: partyMenu }] });
+  }
+  // 동료 지닌 물건: 가방의 지닌 물건과 바꾸거나 빼서 가방에 넣는다 (행동을 쓰지 않는다)
+  function allyHeld(a) {
+    const ab = a.baseAbility ?? a.ability;
+    const list = run.bag.map((b, i) => ({ b, i })).filter(({ b }) => ITEMS[b.id].held);
+    const swap = i => {
+      const id = run.bag[i].id, old = a.held;
+      takeFromBag(i); if (old) run.bag.push({ id: old, n: 1 });
+      a.held = id; log(`${jo(nm(a), '은')} ${jo(ITEMS[id].n, '을')} 지녔다.`, now()); formCheck(a); allyHeld(a);
+    };
+    UI.open({ title: `🎁 ${esc(nm(a))}의 지닌 물건: ${a.held ? ITEMS[a.held].icon + ' ' + esc(ITEMS[a.held].n) : '없음'}`, wide: true,
+      choices: [...list.map(({ b, i }) => ({ label: `${ITEMS[b.id].icon} ${esc(ITEMS[b.id].n)}`, sub: esc(heldBlockReason(ab, b.id) || ITEMS[b.id].d), disabled: !!heldBlockReason(ab, b.id), fn: () => swap(i) })),
+        ...(a.held ? [{ label: '지닌 물건을 빼서 가방에 넣는다', disabled: run.bag.length >= bagMax(), sub: run.bag.length >= bagMax() ? '가방이 가득 찼다' : '', fn: () => { run.bag.push({ id: a.held, n: 1 }); log(`${nm(a)}의 ${jo(ITEMS[a.held].n, '을')} 가방에 넣었다.`, now()); a.held = null; formCheck(a); allyHeld(a); } }] : []),
+        { label: '돌아간다', fn: partyMenu }] });
+  }
+  // 동료 기술: 지금 레벨까지 배우는 기술(진화 전 포함)·기술머신으로 배운 기술 중에서 한 칸씩 바꾼다
+  // 뺐던 기술을 다시 넣으면 남아 있던 PP 그대로 (기술을 바꿔 PP를 채울 수 없게)
+  function allyMoves(a) {
+    const tms = (Game.save.roster[a.sp] || {}).tms || [];
+    const pool = [...new Set([...learnableUpTo(a.sp, a.lv), ...preEvos(a.sp).flatMap(x => learnableUpTo(x, a.lv)), ...tms])].filter(m => DATA.moves[m] && !a.moves.some(x => x.id === m));
+    const slotRow = (m, k) => ({ label: m ? `${k + 1}. ${esc(DATA.moves[m.id].n)} <span class="dim">PP ${m.pp}/${m.max}</span>` : `${k + 1}. (빈 칸)`, fn: () => pickNew(k) });
+    const pickNew = k => UI.open({ title: `${esc(nm(a))} — ${k + 1}번째 칸에 넣을 기술`, wide: true,
+      choices: [...pool.map(mid => ({ label: moveLine(mid), fn: () => {
+        a.ppKept = a.ppKept || {};
+        const old = a.moves[k]; if (old) a.ppKept[old.id] = old.pp;
+        const nm2 = newMove(a, mid); if (a.ppKept[mid] != null) nm2.pp = Math.min(a.ppKept[mid], nm2.max);
+        a.moves[k] = nm2; log(`${jo(nm(a), '은')} ${jo(DATA.moves[mid].n, '을')} 쓰도록 했다.`, now()); allyMoves(a);
+      } })), { label: '돌아간다', fn: () => allyMoves(a) }] });
+    UI.open({ title: `📘 ${esc(nm(a))} 기술 바꾸기`, html: '<p class="dim">바꿀 칸을 고르세요. 뺐다가 다시 넣은 기술은 남아 있던 PP 그대로예요.</p>',
+      choices: [...[0, 1, 2, 3].filter(k => k < Math.max(a.moves.length + 1, 1) && k < 4).map(k => slotRow(a.moves[k], k)), { label: '돌아간다', fn: partyMenu }] });
   }
   // 동료 창에서: 동료에게 쓸 수 있는 가방 아이템 고르기
   function allyBag() {
@@ -1916,7 +1953,7 @@ const Dungeon = (() => {
     UI.open({
       title: `가방 (${bag.length}/${bagMax()})`, wide: true, html: heldHtml,
       choices: [
-        ...(foot ? [{ label: `👣 발밑: ${ITEMS[foot.id].icon} ${esc(ITEMS[foot.id].n)}${foot.n > 1 ? ' ×' + foot.n : ''}`, sub: '조사 · 줍기 · 교환 · 던지기', fn: footMenu }] : []),
+        ...(foot ? [{ label: `👣 발밑: ${ITEMS[foot.id].icon} ${esc(ITEMS[foot.id].n)}${foot.n > 1 ? ' ×' + foot.n : ''}`, sub: '사용 · 줍기 · 교환 · 던지기', fn: footMenu }] : []),
         ...(bag.length > 1 ? [{ label: '↕ 가방 정리 (종류별로 정렬)', fn: () => { sortBag(); openBag(); } }] : []),
         ...(p.held ? [{ label: `지닌 물건을 가방에 넣는다 (${esc(ITEMS[p.held].n)})`, disabled: bag.length >= bagMax(), fn: () => {
         run.bag.push({ id: p.held, n: 1 }); log(`${jo(ITEMS[p.held].n, '을')} 가방에 넣었다.`, now()); p.held = null; formCheck(p); openBag();
@@ -1942,6 +1979,9 @@ const Dungeon = (() => {
     UI.open({
       title: `👣 발밑: ${I.icon} ${esc(I.n)}${it.n > 1 ? ' ×' + it.n : ''}`, html: `<p>${esc(I.d)}</p>`,
       choices: [
+        ...(I.use && I.use !== 'none' ? [{ label: '사용한다', fn: () => I.use !== 'ppOne' ? act({ t: 'foot', mode: 'use' }) : UI.open({
+          title: `${I.icon} ${esc(I.n)} — PP를 회복할 기술`,
+          choices: [...P().moves.map((m, k) => ({ label: `${esc(DATA.moves[m.id].n)} <span class="dim">PP ${m.pp}/${m.max}</span>`, fn: () => act({ t: 'foot', mode: 'use', slot: k }) })), { label: '돌아간다', fn: footMenu }] }) }] : []),
         { label: '줍는다', disabled: run.bag.length >= bagMax() && !(I.stack && run.bag.some(b => b.id === it.id)), fn: () => act({ t: 'foot', mode: 'pick' }) },
         { label: '가방의 아이템과 바꾼다', disabled: !run.bag.length, fn: () => UI.open({
           title: `무엇과 바꿀까? (${esc(I.n)})`, wide: true,
@@ -1975,6 +2015,16 @@ const Dungeon = (() => {
     if (mode === 'throw') {
       if (it.n > 1) it.n--; else D.items = D.items.filter(i => i !== it);
       throwItem(p, it.id, p.dir);
+      return true;
+    }
+    if (mode === 'use') {
+      // 발밑의 아이템을 잠깐 가방 끝에 넣고 그대로 쓴다 (가방이 가득 차 있어도). 못 쓰면 다시 바닥에 둔다
+      const one = { id: it.id, n: 1 };
+      run.bag.push(one);
+      const ok = useItem(run.bag.length - 1, 'use', slot);
+      const k = run.bag.indexOf(one); if (k >= 0) run.bag.splice(k, 1);
+      if (!ok) return false;
+      if (it.n > 1) it.n--; else D.items = D.items.filter(i => i !== it);
       return true;
     }
     return false;

@@ -35,7 +35,7 @@ const Game = (() => {
   // 동료의 진행(레벨·경험치·기술)을 캐릭터 기록에 남긴다
   function saveParty(r) {
     if (r.mode !== 'normal') return;
-    for (const a of r.party || []) if (save.roster[a.sp]) save.roster[a.sp] = { ...save.roster[a.sp], lv: a.lv, exp: a.exp, moves: a.moves.map(m => m.id) };
+    for (const a of r.party || []) if (save.roster[a.sp]) save.roster[a.sp] = { ...save.roster[a.sp], lv: a.lv, exp: a.exp, moves: a.moves.map(m => m.id), held: a.held || null };   // 던전에서 바꾼 지닌 물건도 남는다
   }
   const entryAbility = (sp, ch) => (ch && DATA.species[sp].ab.some(a => a[0] === ch.ability) ? ch.ability : defaultAbility(sp));
   let newerSave = null;   // 세이브가 이 화면보다 새 버전에서 저장됐으면 그 버전 (덮어쓰지 않는다)
@@ -688,6 +688,9 @@ const Game = (() => {
     save.bag.push({ id, n: 1 }); return true;
   }
   const storeAdd = (id, n = 1) => { save.storage[id] = (save.storage[id] || 0) + n; };
+  // 최근에 판 물건 (되사기용, SOLD_LOG_MAX개까지)
+  const SOLD_LOG_MAX = 10;
+  function logSale(id, n, money, from) { save.soldLog = [{ id, n, money, from }, ...(save.soldLog || [])].slice(0, SOLD_LOG_MAX); }
   const storageUsed = () => storageUsedOf(save.storage);
   const storageRoom = (id, n) => storageUsed() + (ITEMS[id].stack ? (save.storage[id] ? 0 : 1) : n) <= save.storageMax;
   const itemLabel = id => `<span class="ico">${ITEMS[id].icon}</span> <b>${esc(ITEMS[id].n)}</b>`;
@@ -868,7 +871,10 @@ const Game = (() => {
     return `<h3>켈리몬 상점 <span class="dim">· 항상 판매</span></h3><div class="grid2">${SHOP_FIXED.map(id => row(id)).join('')}</div>
       <h3>오늘의 진열 <span class="dim">· 하나씩만 (겹치는 물건은 5개 한 묶음)</span> <button class="btn sm ghost" data-act="shop-reroll" ${save.money < SHOP_REROLL_COST ? 'disabled' : ''} title="오늘 진열을 새로 뽑는다">🔄 새로고침 ₽${SHOP_REROLL_COST}</button></h3><div class="grid2">
       ${save.shop.filter(id => !SHOP_FIXED.includes(id) && ITEMS[id]).map(id => row(id, true)).join('')}</div>
-      <h3>팔기 <span class="dim">(가방의 아이템)</span></h3>
+      ${(save.soldLog || []).length ? `<h3>↩ 최근에 판 물건 <span class="dim">(판 값 그대로 되살 수 있어요, 최근 ${SOLD_LOG_MAX}개)</span></h3>
+        ${save.soldLog.map((e, i) => `<div class="row">${itemLabel(e.id)}${e.n > 1 ? ' ×' + e.n : ''}<span class="grow dim">${e.from === 'storage' ? '창고에서' : '가방에서'} 판 물건</span>
+          <button class="btn sm" data-act="buyback" data-arg="${i}" ${save.money < e.money ? 'disabled' : ''}>₽${e.money}에 되사기</button></div>`).join('')}` : ''}
+      <h3>팔기 <span class="dim">(가방의 아이템 · 창고의 아이템은 창고 탭에서)</span></h3>
       ${save.bag.length ? save.bag.map((b, i) => `<div class="row">${itemLabel(b.id)}${b.n > 1 ? ' ×' + b.n : ''}<span class="grow"></span>
         <button class="btn sm ghost" data-act="sell" data-arg="${i}">₽${sellPrice(b)}에 팔기</button></div>`).join('') : '<p class="dim">가방이 비어 있습니다.</p>'}`;
   }
@@ -898,7 +904,8 @@ const Game = (() => {
       ${all.length > 1 ? `<div class="row sort-row">↕ ${sorts} ${filter}</div>` : ''}
       ${ids.length ? ids.map(id => `<div class="row">${itemLabel(id)} ×${save.storage[id]}<span class="grow"></span>
         <button class="btn sm ghost" data-dexitem="${id}" title="아이템 정보">ℹ</button>${id === 'candy' ? ' <button class="btn sm" data-act="use-candy">사용</button>' : ''}
-        <button class="btn sm" data-act="withdraw" data-arg="${id}" ${bagSlots() >= bagMax() && !ITEMS[id].stack ? 'disabled' : ''}>꺼내기</button></div>`).join('') : `<p class="dim">${all.length ? '이 종류의 아이템이 없습니다.' : '창고가 비어 있습니다.'}</p>`}
+        <button class="btn sm" data-act="withdraw" data-arg="${id}" ${bagSlots() >= bagMax() && !ITEMS[id].stack ? 'disabled' : ''}>꺼내기</button>
+        ${id !== 'quest' ? `<button class="btn sm ghost" data-act="sell-store" data-arg="${id}" title="${ITEMS[id].stack ? '5개씩' : '하나'} 판다 (상점 탭에서 되살 수 있음)">₽${sellValue({ id, n: ITEMS[id].stack ? Math.min(5, save.storage[id]) : 1 })} 팔기</button>` : ''}</div>`).join('') : `<p class="dim">${all.length ? '이 종류의 아이템이 없습니다.' : '창고가 비어 있습니다.'}</p>`}
       </div><div><h3>가방 (${bagSlots()}/${bagMax()})</h3>
       ${save.bag.length ? `<div class="row sort-row"><button class="btn sm" data-act="deposit-all">모두 맡기기</button>${save.bag.length > 1 ? ' <button class="btn sm ghost" data-act="sort-bag">↕ 가방 정리</button>' : ''}</div>` : ''}
       ${save.bag.map((b, i) => `<div class="row">${itemLabel(b.id)}${b.n > 1 ? ' ×' + b.n : ''}<span class="grow"></span>
@@ -1222,7 +1229,27 @@ const Game = (() => {
       }
       case 'sell': {
         const b = save.bag[+arg]; if (!b) return;
-        save.money += sellPrice(b); save.bag.splice(+arg, 1);
+        const v = sellPrice(b);
+        save.money += v; save.bag.splice(+arg, 1); logSale(b.id, b.n, v, 'bag');
+        UI.toast(`${jo(ITEMS[b.id].n, '을')} ₽${v}에 팔았습니다. (상점 탭에서 되살 수 있어요)`);
+        break;
+      }
+      case 'sell-store': {   // 창고에서 바로 팔기: 하나씩 (겹치는 물건은 5개 묶음)
+        const id = arg, have = save.storage[id] || 0; if (!have || !ITEMS[id] || id === 'quest') return;
+        const n = ITEMS[id].stack ? Math.min(5, have) : 1, v = sellValue({ id, n });
+        save.storage[id] -= n; if (save.storage[id] <= 0) delete save.storage[id];
+        save.money += v; logSale(id, n, v, 'storage');
+        UI.toast(`${jo(ITEMS[id].n, '을')} ${n > 1 ? n + '개 ' : ''}₽${v}에 팔았습니다. (상점 탭에서 되살 수 있어요)`);
+        break;
+      }
+      case 'buyback': {   // 최근에 판 물건을 판 값 그대로 되사기
+        const e = (save.soldLog || [])[+arg]; if (!e || save.money < e.money) return;
+        if (e.from === 'bag' && bagAdd(e.id, e.n)) { /* 가방으로 */ }
+        else if (storageRoom(e.id, e.n)) storeAdd(e.id, e.n);
+        else if (bagAdd(e.id, e.n)) { /* 창고가 가득 차면 가방으로 */ }
+        else { UI.toast('가방과 창고가 모두 가득 찼습니다.'); return; }
+        save.money -= e.money; save.soldLog.splice(+arg, 1);
+        UI.toast(`${jo(ITEMS[e.id].n, '을')} 되샀습니다.`);
         break;
       }
       case 'withdraw': {

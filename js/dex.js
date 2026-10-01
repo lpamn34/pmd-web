@@ -109,7 +109,7 @@ const Dex = (() => {
       }
       const lv = f => Math.round(dg.lv[0] + (dg.lv[1] - dg.lv[0]) * (dg.floors > 1 ? (f - 1) / (dg.floors - 1) : 0));
       for (const [sp, fs] of Object.entries(fl)) add(+sp, dg, `${fs[0] === fs[fs.length - 1] ? fs[0] : `${fs[0]}~${fs[fs.length - 1]}`}층 · Lv${lv(fs[0])}~${lv(fs[fs.length - 1])}${[...PARADOX_PAST, ...PARADOX_FUTURE].includes(+sp) && !dg.extra ? ' · 드물게' : ''}`, fs[0]);
-      for (const sp of (dg.extra || []).filter(hasSprite)) add(sp, dg, '테마 시리즈로 섞여 나옴', 1);
+      for (const sp of extraPool(dg)) add(sp, dg, '테마 시리즈로 섞여 나옴', 1);
       for (const sp of midPool(dg)) add(sp, dg, `중간 보스 (${dg.mid.floors.join(', ')}층)`, dg.mid.floors[0]);
       const finals = bossPool(dg).length ? bossPool(dg) : BOSSES[dg.id] && DATA.species[BOSSES[dg.id]] ? [BOSSES[dg.id]] : [];
       for (const sp of finals) add(sp, dg, `👑 최종 보스 (${dg.floors}층${finals.length > 1 ? `, ${finals.length}종 중 하나` : ''})`, dg.floors);
