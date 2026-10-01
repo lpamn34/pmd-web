@@ -442,3 +442,9 @@ i.clear.me { background: #2b6cb0; margin-left: 4px; }
 .pm-moves { font-size: 13px; line-height: 1.7; margin: 4px 0 0 4px; }
 .mastery { color: #ffd966; font-style: normal; font-size: 11px; margin-left: 2px; }
 .md-mastery { margin: 6px 0; padding: 4px 8px; border-radius: 6px; background: #ffd96614; }
+/* 영입한 포켓몬 즐겨찾기 */
+.pk .fav { position: absolute; top: 1px; left: 4px; font-size: 15px; color: #fff6; cursor: pointer; line-height: 1; padding: 2px; }
+.pk .fav.on { color: #ffd34a; }
+.pk .fav:hover { color: #ffe680; }
+.pk-favonly { display: flex; align-items: center; gap: 4px; font-size: 13px; white-space: nowrap; cursor: pointer; }
+.picker-bar .pk-favonly input { flex: none; min-width: 0; width: auto; margin: 0; padding: 0; }

@@ -348,7 +348,11 @@ function abilityHtml(id, hidden) {
 }
 function showAbilityInfo(id, hidden) { UI.alert('특성 정보', abilityHtml(id, hidden)); }
 // 적이 가질 특성 (숨겨진 특성 제외)
+// 적의 특성: 보통은 일반 특성 중 하나, HIDDEN_ABILITY_CHANCE 확률로 숨겨진 특성 (있으면)
+const HIDDEN_ABILITY_CHANCE = 0.1;
 function randomAbility(sp) {
+  const hidden = DATA.species[sp].ab.filter(a => a[1]);
+  if (hidden.length && Math.random() < HIDDEN_ABILITY_CHANCE) return pick(hidden)[0];
   const list = DATA.species[sp].ab.filter(a => !a[1]);
   return (list.length ? pick(list) : DATA.species[sp].ab[0] || [0])[0];
 }

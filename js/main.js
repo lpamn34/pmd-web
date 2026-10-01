@@ -18,7 +18,7 @@ const Game = (() => {
       bag: [{ id: 'oran', n: 1 }, { id: 'oran', n: 1 }, { id: 'apple', n: 1 }],
       storage: {}, cleared: {}, best: {},
       missions: { board: [], accepted: [] }, shop: [], run: null,
-      settings: { fast: false, autoDescend: false }, bagMax: BAG_BASE, storageMax: STORAGE_BASE,
+      settings: { fast: false, autoDescend: false }, bagMax: BAG_BASE, storageMax: STORAGE_BASE, storageV44: true,
     };
   }
   const newEntry = sp => ({ lv: START_LEVEL, exp: expFor(START_LEVEL), moves: defaultMoves(sp, START_LEVEL), ability: defaultAbility(sp) });
@@ -72,7 +72,10 @@ const Game = (() => {
     s.bag = s.bag || []; s.storage = s.storage || {}; s.cleared = s.cleared || {}; s.best = s.best || {};
     s.missions = s.missions || { board: [], accepted: [] }; s.missions.board = s.missions.board || []; s.missions.accepted = s.missions.accepted || [];
     s.shop = s.shop || []; s.money = s.money || 0; s.day = s.day || 1; s.clears = s.clears || {};
-    s.bagMax = s.bagMax || Math.max(BAG_BASE, s.bag.length); s.storageMax = s.storageMax || Math.max(STORAGE_BASE, storageUsedOf(s.storage));
+    s.bagMax = s.bagMax || Math.max(BAG_BASE, s.bag.length);
+    // v0.44: 창고 기본 40 → 300칸. 확장한 단계는 그대로 이어진다 (예: 120칸 = 4단계 → 380칸)
+    if (!s.storageV44) { if (s.storageMax > OLD_STORAGE_BASE) s.storageMax += STORAGE_BASE - OLD_STORAGE_BASE; s.storageV44 = true; }
+    s.storageMax = Math.max(s.storageMax || 0, STORAGE_BASE, storageUsedOf(s.storage));
     for (const [sp, ch] of Object.entries(s.roster || {})) {
       if (!DATA.species[sp]) { delete s.roster[sp]; continue; }
       ch.lv = ch.lv || START_LEVEL; ch.exp = ch.exp ?? expFor(ch.lv); ch.moves = (ch.moves || []).filter(m => DATA.moves[m]);
@@ -619,7 +622,7 @@ const Game = (() => {
     const prog = (floor - 1) / Math.max(1, dg.floors - 1);
     const lvl = Math.round(dg.lv[0] + (dg.lv[1] - dg.lv[0]) * prog);
     const reward = Math.round((80 + floor * 35) * (1 + tier * 0.8) * MISSION_MONEY_MUL / 20) * 10;
-    const m = { id: Date.now() + '' + rand(1e6), dungeon: dg.id, floor, kind, client, reward, lv: lvl + 3 };
+    const m = { id: Date.now() + '' + rand(1e6), dungeon: dg.id, floor, kind, client, reward, lv: Math.min(MAX_LEVEL, lvl + 3) };
     if (Math.random() < 0.4) m.item = pick(['sitrus', 'bigapple', 'elixir', 'reviver', 'candy', 'stone', 'link', 'escape', 'foesleep']);
     if (kind === 'outlaw') {
       // 그 층에 실제로 나오는 포켓몬 중에서 (컨셉 포켓몬 + 타입에 맞는 포켓몬)
@@ -982,8 +985,8 @@ const Game = (() => {
       ${!cand.length && !pl.length ? '<p class="dim">던전에서 영입한 포켓몬이 있어야 동료로 데려갈 수 있어요.</p>' : ''}`;
   }
   function partyAdd() {
-    const pl = partyList(), cand = Object.keys(save.roster).map(Number).filter(id => id !== save.current && !pl.includes(id)).sort((a, b) => save.roster[b].lv - save.roster[a].lv);
-    UI.open({ title: '🤝 동료 추가', wide: true, html: `<div class="roster">${cand.map(id => `<button class="rcard" data-pick="${id}">${portraitImg(id, 'portrait sm', 'Normal', save.roster[id].shiny)}<span>${esc(spName(id))}</span><span class="dim">Lv${save.roster[id].lv}</span></button>`).join('')}</div>`,
+    const pl = partyList(), cand = Object.keys(save.roster).map(Number).filter(id => id !== save.current && !pl.includes(id)).sort((a, b) => (isFav(b) - isFav(a)) || save.roster[b].lv - save.roster[a].lv);
+    UI.open({ title: '🤝 동료 추가', wide: true, html: `<div class="roster">${cand.map(id => `<button class="rcard" data-pick="${id}">${portraitImg(id, 'portrait sm', 'Normal', save.roster[id].shiny)}<span>${isFav(id) ? '⭐ ' : ''}${esc(spName(id))}</span><span class="dim">Lv${save.roster[id].lv}</span></button>`).join('')}</div>`,
       choices: [{ label: '닫기', fn: () => {} }],
       onOpen: (box, md) => box.querySelectorAll('[data-pick]').forEach(b => { b.onclick = () => { save.party = [...partyList(), +b.dataset.pick].slice(0, PARTY_MAX); persist(); UI.close(md); renderTown(); }; }) });
   }
@@ -1402,7 +1405,7 @@ const Game = (() => {
   // 영입: Lv5로 합류. 영입한 그 포켓몬 하나만 (진화 전 모습은 따로 생기지 않는다). 이로치면 진화 전 모습의 이로치도 해금
   function recruit(c) {
     if (save.roster[c.sp]) return;
-    const ab = DATA.species[c.sp].ab.some(a => a[0] === c.ability) ? c.ability : defaultAbility(c.sp);
+    const ab0 = c.baseAbility ?? c.ability, ab = DATA.species[c.sp].ab.some(a => a[0] === ab0) ? ab0 : defaultAbility(c.sp);   // 숨겨진 특성인 적을 영입하면 그 특성 그대로
     save.roster[c.sp] = { lv: RECRUIT_LEVEL, exp: expFor(RECRUIT_LEVEL), moves: defaultMoves(c.sp, RECRUIT_LEVEL), ability: ab, shiny: !!c.shiny };
     if (c.shiny) [c.sp, ...preEvos(c.sp)].forEach(unlockShiny);
     save.recruited = (save.recruited || 0) + 1;
@@ -1450,6 +1453,7 @@ const Game = (() => {
     const entry = save.roster[sp];
     if (shinyOk(sp)) { save.shinyOwned = save.shinyOwned || {}; save.shinyOwned[to] = true; }
     delete save.roster[sp];
+    if (isFav(sp)) save.favs = save.favs.map(x => x === sp ? to : x);   // 즐겨찾기도 진화한 모습으로
     // 진화 후 레벨에서 새로 배우는 기술이 있으면 빈 칸에 추가
     for (const mid of learnedAt(to, entry.lv).concat(learnedAt(to, 1))) if (entry.moves.length < 4 && !entry.moves.includes(mid)) entry.moves.push(mid);
     const slot = DATA.species[sp].ab.findIndex(a => a[0] === entry.ability);
@@ -1464,28 +1468,41 @@ const Game = (() => {
     UI.alert('축하합니다!', `<div class="center">${portraitImg(to, 'portrait big', 'Joyous', entry.shiny)}</div><p>${esc(jo(spName(sp), '은'))} ${esc(jo(spName(to), '으로'))} 진화했다!</p>`);
   }
 
+  // 영입한 포켓몬 즐겨찾기 (캐릭터 변경·동료 추가에서 앞에 나온다)
+  const isFav = id => !!(save && save.favs && save.favs.includes(+id));
+  function toggleFav(id) {
+    save.favs = (save.favs || []).filter(x => save.roster[x]);
+    const on = !save.favs.includes(id);
+    save.favs = on ? [...save.favs, id] : save.favs.filter(x => x !== id);
+    persist(); return on;
+  }
+
   // ───────────────────────── 캐릭터 선택 ─────────────────────────
   // only: 고를 수 있는 포켓몬 (캐릭터 변경은 영입한 포켓몬만)
   function chooseCharacter(cb, first, only, back) {
+    const favMode = !!(only && !first);   // 영입한 포켓몬 고르기: ⭐ 즐겨찾기를 앞에
     const ids = (only || SPECIES_IDS.map(Number)).slice().sort(byDex);
+    if (favMode) ids.sort((a, b) => isFav(b) - isFav(a));
     const gens = [...new Set(ids.map(id => DATA.species[id].g))].sort((a, b) => a - b);
     UI.open({
       title: first ? '함께 모험할 포켓몬을 고르세요' : '캐릭터 변경', wide: true, cancel: first ? false : undefined,
       html: `${only && !first ? `<p class="dim">영입한 포켓몬 ${ids.length}마리 중에서 고릅니다. 던전에서 쓰러뜨린 적이 가끔 동료가 되고 싶어 해요. (지금 영입 확률 ${(recruitRate(save.roster[save.current].lv) * 100).toFixed(1)}%)</p>` : ''}<div class="picker-bar"><input id="pk-q" placeholder="이름 / 영어 / 번호 검색" autocomplete="off">
         <select id="pk-g"><option value="">전체 세대</option>${gens.map(g => `<option value="${g}">${g}세대</option>`).join('')}</select>
         <select id="pk-t"><option value="">전체 타입</option>${DATA.types.map((t, i) => `<option value="${i + 1}">${t}</option>`).join('')}</select>
+        ${favMode ? `<label class="pk-favonly"><input type="checkbox" id="pk-f"> ⭐ 즐겨찾기만</label>` : ''}
         <button class="btn sm ghost" id="pk-r">무작위</button>${back ? ' <button class="btn sm ghost" id="pk-back">← 방법 다시 고르기</button>' : ''}</div>
         <div class="picker" id="pk-grid">${ids.map(id => `<button class="pk" data-id="${id}" data-s="${(DATA.species[id].n + ' ' + DATA.species[id].e + ' ' + dexNo(id) + ' ' + id).toLowerCase()}" data-g="${DATA.species[id].g}" data-t="${DATA.species[id].t.join(',')}">
-          ${portraitImg(id, 'portrait sm', 'Normal', !!(only && !first && save && save.roster[id]?.shiny))}<span>${esc(DATA.species[id].n)}</span>${save && save.roster && save.roster[id] ? `<i>Lv${save.roster[id].lv} ${medalIcons(id)}</i>` : ''}</button>`).join('')}</div>`,
+          ${favMode ? `<b class="fav${isFav(id) ? ' on' : ''}" data-fav="${id}" title="즐겨찾기">${isFav(id) ? '★' : '☆'}</b>` : ''}${portraitImg(id, 'portrait sm', 'Normal', !!(only && !first && save && save.roster[id]?.shiny))}<span>${esc(DATA.species[id].n)}</span>${save && save.roster && save.roster[id] ? `<i>Lv${save.roster[id].lv} ${medalIcons(id)}</i>` : ''}</button>`).join('')}</div>`,
       onOpen: (box, m) => {
-        const q = box.querySelector('#pk-q'), g = box.querySelector('#pk-g'), t = box.querySelector('#pk-t');
+        const q = box.querySelector('#pk-q'), g = box.querySelector('#pk-g'), t = box.querySelector('#pk-t'), f = box.querySelector('#pk-f');
         const filter = () => {
           const s = q.value.trim().toLowerCase();
           box.querySelectorAll('.pk').forEach(b => {
-            b.style.display = (!s || b.dataset.s.includes(s)) && (!g.value || b.dataset.g === g.value) && (!t.value || b.dataset.t.split(',').includes(t.value)) ? '' : 'none';
+            b.style.display = (!s || b.dataset.s.includes(s)) && (!g.value || b.dataset.g === g.value) && (!t.value || b.dataset.t.split(',').includes(t.value))
+              && (!f || !f.checked || isFav(+b.dataset.id)) ? '' : 'none';
           });
         };
-        q.oninput = filter; g.onchange = filter; t.onchange = filter;
+        q.oninput = filter; g.onchange = filter; t.onchange = filter; if (f) f.onchange = filter;
         if (back) box.querySelector('#pk-back').onclick = () => { UI.close(m); setTimeout(back, 0); };
         box.querySelector('#pk-r').onclick = () => { const vis = [...box.querySelectorAll('.pk')].filter(b => b.style.display !== 'none'); if (vis.length) confirmPick(+pick(vis).dataset.id); };
         const confirmPick = async id => {
@@ -1495,7 +1512,17 @@ const Game = (() => {
             <p class="center">${save && save.roster && save.roster[id] ? `저장된 기록: Lv${save.roster[id].lv}` : `Lv${START_LEVEL}부터 시작 (HP ${st.maxhp})`}</p>`, '이 포켓몬으로 한다', '다시 고른다');
           if (ok) { UI.close(m); cb(id); }
         };
-        box.querySelector('#pk-grid').onclick = e => { const b = e.target.closest('.pk'); if (b) confirmPick(+b.dataset.id); };
+        box.querySelector('#pk-grid').onclick = e => {
+          const fv = e.target.closest('[data-fav]');
+          if (fv) {   // ⭐ 누르면 즐겨찾기만 바꾸고 고르지는 않는다
+            const id = +fv.dataset.fav, on = toggleFav(id);
+            fv.classList.toggle('on', on); fv.textContent = on ? '★' : '☆';
+            const grid = box.querySelector('#pk-grid'), btns = [...grid.children];
+            btns.sort((a, b) => (isFav(+b.dataset.id) - isFav(+a.dataset.id)) || byDex(+a.dataset.id, +b.dataset.id)).forEach(b => grid.appendChild(b));
+            filter(); return;
+          }
+          const b = e.target.closest('.pk'); if (b) confirmPick(+b.dataset.id);
+        };
         setTimeout(() => q.focus(), 50);
       },
     });

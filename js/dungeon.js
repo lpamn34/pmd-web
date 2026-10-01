@@ -176,7 +176,7 @@ const Dungeon = (() => {
   }
   function spawnEnemy(pos, sp, lv) {
     sp = sp || pick(D.pool);
-    const c = makeCreature(sp, Math.max(1, (lv || D.lvl) + rint(-1, 1)));
+    const c = makeCreature(sp, clamp((lv || D.lvl) + rint(-1, 1), 1, MAX_LEVEL));
     c.enemy = true; c.x = pos.x; c.y = pos.y; c.dir = rand(8);
     c.shiny = !!DATA.species[sp].sh && Math.random() < SHINY_CHANCE;
     Sprites.load(sp, c.shiny);
@@ -215,14 +215,37 @@ const Dungeon = (() => {
     p.x = cx; p.y = R.y + R.h - 2;
     D.stairs = { x: cx, y: R.y + 1 }; D.stairsHidden = true; D.noSpawn = true;
     const sp = bossSpecies(dg);
-    const b = spawnEnemy({ x: cx, y: R.y + 3 }, sp, D.lvl + 3);
-    b.lv = D.lvl + 3; recalc(b);
+    const blv = Math.min(MAX_LEVEL, D.lvl + 3);   // 최고 레벨은 넘지 않는다
+    const b = spawnEnemy({ x: cx, y: R.y + 3 }, sp, blv);
+    b.lv = blv; recalc(b);
     b.boss = true; b.hpMul = 3.5; b.statMul = 1.1; recalc(b); b.hp = b.maxhp;
+    // 특별한 모습이 있는 보스는 원래 모습으로 나타났다가, 등장 알림 뒤에 눈앞에서 바뀐다
+    bossForm(b, run.floor === dg.floors);
+    setForm(b, null); b.hp = b.maxhp;
+    if (wantedForm(b)) b.introForm = true;
     b.dir = 0; b.target = { x: p.x, y: p.y };
     D.boss = b;
     for (const dx of [-3, 3]) { const m = spawnEnemy({ x: cx + dx, y: R.y + 4 }); m.dir = 0; }
     Sprites.load(sp);
   }
+  // 보스의 모습: 모습을 바꾸는 도구(원시회귀 구슬·금강옥 등·가면·녹슨검/방패)를 지니고, 고르는 모습(테오키스·큐레무·쉐이미·후파)은 하나를 고른다.
+  // 적 Lv BOSS_MEGA_LV 이상 던전의 최종 보스는 메가진화 (레쿠쟈는 화룡점정). 싸우는 도중 바뀌는 포켓몬(지가르데·메로엣타 등)은 그 규칙대로
+  const BOSS_MEGA_LV = 60;
+  function bossForm(b, final) {
+    const sp = b.sp;
+    if (BATTLE_FORMS[sp]) return;
+    const items = Object.keys(ITEMS).filter(k => ITEMS[k].formTo && DATA.species[ITEMS[k].formTo].f[0] === sp);
+    const formItems = items.filter(k => !ITEMS[k].mega), megas = items.filter(k => ITEMS[k].mega);
+    if (formItems.length) { b.held = pick(formItems); return; }
+    if (final && D.dg.lv[1] >= BOSS_MEGA_LV) {
+      if (megas.length) { b.held = pick(megas); return; }
+      const mv = MEGA_NO_STONE[sp];
+      if (mv && FORM_KINDS_MEGA(sp)) { if (!b.moves.some(m => m.id === mv)) b.moves[0] = newMove(b, mv); return; }
+    }
+    const sel = formsOfKind(sp, 'select');
+    if (sel.length) b.selForm = pick(sel);
+  }
+  const FORM_KINDS_MEGA = sp => formsOfKind(sp, 'mega').length > 0;
   function bossIntro() {
     const b = D.boss; if (!b) return;
     stopAuto();
@@ -233,8 +256,16 @@ const Dungeon = (() => {
       html: `<div class="boss-intro">${portraitImg(looksOf(b), 'portrait big', 'Angry', b.shiny)}<div>
         <p><b>${esc(spName(looksOf(b)))}</b> Lv${b.lv}</p><p>${esc(jo(spName(b.sp), '이'))} 앞을 가로막고 있다!</p>
         <p class="dim">쓰러뜨리면 계단이 나타난다. 보스는 상태이상이 절반만 지속된다.</p></div></div>`,
-      choices: [{ label: '싸운다!', fn: () => {} }], cancel: () => {},
+      choices: [{ label: '싸운다!', fn: () => bossTransform(b) }], cancel: () => bossTransform(b),
     });
+  }
+  function bossTransform(b) {
+    if (!b.introForm || b.hp <= 0) return;
+    b.introForm = false;
+    const full = b.hp >= b.maxhp;
+    formCheck(b);
+    if (full) b.hp = b.maxhp;
+    if (b.fsp) Sound.play('shiny', now());
   }
   function bossDefeated(b, at) {
     D.stairsHidden = false;
@@ -374,6 +405,8 @@ const Dungeon = (() => {
     showFloorBanner(fname + (D.weather ? `\n${WEATHERS[D.weather].icon} ${WEATHERS[D.weather].n}` : ''));
     run.turnsOnFloor = 0;
     floorStartAbility(p);
+    // 동료도 층마다 전투 모습을 초기화하고, 돌핀맨은 계단을 내려간 뒤로 마이티폼
+    for (const a of D.mons) if (a.ally && a.hp > 0) { resetBattleForm(a, D.weather); if (run.floor > 1 || run.sos) a.hero = true; formCheck(a, now() + 500); }
     setFace('Determined', 1800);
     if (D.boss) D.prompts.push(bossIntro);
     Game.saveRunSnapshot(run);
@@ -906,7 +939,7 @@ const Dungeon = (() => {
       log(`${jo(nm(c), '은')} 쓰러지고 말았다...`, at);
       Sound.play('down', at);
       D.dead = true;
-      D.prompts = [() => Game.endRun('faint')];   // 같은 턴에 쌓인 계단·영입 창보다 먼저 (계단을 밟으며 쓰러져도 탐험이 끝나게)
+      D.prompts = [faintReport];   // 같은 턴에 쌓인 계단·영입 창보다 먼저 (계단을 밟으며 쓰러져도 탐험이 끝나게)
       return;
     }
     if (c.ally) {   // 동료: 이번 탐험에서 빠진다 (마을로 돌아감)
@@ -1553,7 +1586,9 @@ const Dungeon = (() => {
     }
     if (D.house && !D.house.triggered && D.room[idx(p.x, p.y)] === D.house.room) triggerHouse();
     if (!D.stairsHidden && D.stairs.x === p.x && D.stairs.y === p.y) {
-      if (D.auto && D.auto.kind === 'explore' && Game.save.settings.autoDescend) D.prompts.push(() => descend());
+      // 자동 탐색이 다른 곳(아이템·안 가 본 곳)으로 가다 계단을 지나가는 중이면 그냥 지나간다
+      if (D.auto && D.auto.kind === 'explore' && !D.auto.toStairs) {}
+      else if (D.auto && D.auto.kind === 'explore' && Game.save.settings.autoDescend) D.prompts.push(() => descend());
       else D.prompts.push(stairsPrompt);
     }
   }
@@ -1631,6 +1666,7 @@ const Dungeon = (() => {
       if (D.regen >= 1 && p.hp < p.maxhp && p.hp > 0) { const a = Math.floor(D.regen); p.hp = Math.min(p.maxhp, p.hp + a); D.regen -= a; }
       if (D.regen >= 1) D.regen = 0;
     } else if (p.hp > 0) {
+      if (p.hp <= 1) log('배가 고파서 더는 버틸 수 없었다...', T.base);   // 쓰러진 이유가 기록에 남게
       damage(p, 1, null, T.base);
     }
     if (b0 > 20 && p.belly <= 20) { log('배가 고파졌다...', T.base); stopAuto('배가 고프다!'); }
@@ -2036,7 +2072,17 @@ const Dungeon = (() => {
       step = bfs(p.x, p.y, (x, y) => x === a.x && y === a.y, { known: true, blockMons: true, seenOnly: true, self: p, avoidTraps: true, passAllies: true });
       if (!step) { stopAuto('그곳까지 갈 수 없다.'); return; }
     } else {
-      step = bfs(p.x, p.y, (x, y) => {
+      // 구조 의뢰 대상이 보이면 옆까지 가서 멈춘다 (한 번 멈춘 뒤에는 다시 O를 누르면 그냥 지나간다)
+      const sos = D.mons.find(m => m.npc && m.mission && seen(m) && !(D.npcSeen && D.npcSeen.has(m)));
+      if (sos) {
+        if (Math.max(Math.abs(sos.x - p.x), Math.abs(sos.y - p.y)) <= 1) {
+          (D.npcSeen = D.npcSeen || new Set()).add(sos);
+          stopAuto(`구조할 ${jo(spName(sos.sp), '이')} 바로 옆에 있다! (그쪽으로 움직이면 구조)`); return;
+        }
+        step = bfs(p.x, p.y, (x, y) => Math.max(Math.abs(sos.x - x), Math.abs(sos.y - y)) <= 1, { known: true, blockMons: true, seenOnly: true, self: p, avoidTraps: true, passAllies: true });
+        if (!a.toSos) { a.toSos = true; log(`구조할 ${jo(spName(sos.sp), '을')} 발견했다!`, now()); }
+      }
+      if (!step) step = bfs(p.x, p.y, (x, y) => {
         const it = itemAt(x, y);
         if (it && !it.price && D.explored[idx(x, y)] && !D.ignore.has(idx(x, y))) return true;
         return isFrontier(x, y);
@@ -2487,6 +2533,16 @@ const Dungeon = (() => {
       <div class="dim">특성 ${esc(abilityName(c.ability))}${c.item ? ` · 가진 아이템 ${ITEMS[c.item].icon}${esc(ITEMS[c.item].n)}` : ''}${c.held ? ` · 지닌 물건 ${esc(ITEMS[c.held].n)}` : ''}${st ? ` · 능력 변화 ${esc(st)}` : ''}</div></div></div>`;
   }
   // ── 2. 메시지 기록 / 내 상태
+  // 쓰러졌을 때: 바로 끝내지 않고 마지막 메시지를 보여준다 (무엇에 맞고 쓰러졌는지)
+  function faintReport() {
+    const rows = LOG.slice(-25), end = () => Game.endRun('faint');
+    UI.open({
+      title: '💀 쓰러지고 말았다...', wide: true,
+      html: `<p class="dim">쓰러지기 직전의 메시지</p><div class="log-history">${rows.map(l => `<div${l.cls ? ` class="${l.cls}"` : ''}>${esc(l.text)}</div>`).join('')}</div>`,
+      choices: [{ label: '확인', fn: end }], cancel: end,
+      onOpen: box => { const h = box.querySelector('.log-history'); if (h) h.scrollTop = h.scrollHeight; },
+    });
+  }
   function showLog() {
     if (!D) return;
     const t = now(), rows = LOG.filter(l => l.at <= t).slice(-150);
