@@ -1602,7 +1602,7 @@ const Game = (() => {
     UI.closeAll();
     // 일반 던전에서 쓰러졌을 때: 친구에게 구조를 요청할 수 있다 (요청은 한 번에 하나)
     if (outcome === 'faint' && r.mode === 'normal') {
-      show('town-screen'); renderTown();
+      show('town-screen'); renderTown(); Sound.town();   // 구조 요청 창도 마을에서 띄운다 (던전 음악이 남지 않게)
       if (save.sos) {
         UI.alert('구조 요청 불가', '<p>이미 기다리고 있는 구조 요청이 있어서 새로 요청할 수 없습니다.</p>').then(() => finishRun(r, 'faint'));
         return;

@@ -17,15 +17,25 @@ const Sound = (() => {
       musicGain = ac.createGain(); musicGain.connect(master);
       refresh();
     }
-    if (ac.state === 'suspended') ac.resume();
+    if (ac.state === 'suspended' && !document.hidden) ac.resume();
     return ac;
   }
+  // 다른 앱이나 홈 화면으로 가서 창이 가려지면 소리를 멈추고, 돌아오면 다시 튼다 (휴대폰 브라우저)
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden) {
+      if (ac && ac.state === 'running') ac.suspend().catch(() => {});
+      if (player && player.el && !player.el.paused) player.el.pause();
+    } else {
+      if (ac && ac.state === 'suspended') ac.resume().catch(() => {});
+      if (player && player.el && player.el.paused && unlocked && set().bgm !== false) player.el.play().catch(() => {});
+    }
+  });
   // 설정의 켜기/끄기와 음량을 반영
   function refresh() {
     const s = set();
     const mv = s.bgm === false ? 0 : (s.bgmVol ?? 40) / 100 * 0.8 * trackVol(fileKey);
     if (musicGain) musicGain.gain.value = mv;
-    if (player && player.el) { player.el.volume = mv; if (s.bgm === false) player.el.pause(); else if (unlocked && player.el.paused) player.el.play().catch(() => {}); }
+    if (player && player.el) { player.el.volume = mv; if (s.bgm === false) player.el.pause(); else if (unlocked && player.el.paused && !document.hidden) player.el.play().catch(() => {}); }
     if (s.bgm === false && player && player.src) stopFile(true);
     else if (s.bgm !== false && !player && fileUrl && unlocked) playFile(fileUrl, fileKey);
     if (ac) {
