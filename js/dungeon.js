@@ -777,6 +777,10 @@ const Dungeon = (() => {
     const secondary = !(A.sheer && move.c !== 1) && !(Dd.shieldDust && move.c !== 1);
     if (move.c !== 1) {
       if (r.eff === 0) { log(`${nm(tgt)}에게는 효과가 없는 것 같다...`, at, 'weak'); return; }
+      if (Dd.disguise && !tgt.disguiseBroken && r.dmg > 0) {   // 탈: 층마다 첫 공격을 탈이 대신 맞는다
+        tgt.disguiseBroken = true; abLog(tgt, `${nm(tgt)}의 탈이 대신 공격을 받았다! 탈이 벗겨졌다!`, at);
+        damage(tgt, pctDmg(tgt, 1 / 8), null, at); return;
+      }
       if (move.c === 2 && tgt.sp === 875 && !tgt.noice && (tgt.baseAbility ?? tgt.ability) === 248 && !A.moldBreaker) {
         abLog(tgt, `${jo(nm(tgt), '은')} 얼음 얼굴로 공격을 막아냈다!`, at); tgt.noice = true; formCheck(tgt, at); return;
       }
@@ -785,6 +789,11 @@ const Dungeon = (() => {
       if (R.popBomb && !A.skillLink) { hits = 1; while (hits < move.hits[1] && Math.random() < 0.9) hits++; }
       for (let i = 1; i < hits; i++) total += calcHit(user, tgt, { ...move, a: 0, p: R.escalate ? move.p * (i + 1) : move.p }).dmg || 0;
       if (R.falseSwipe) total = Math.max(0, Math.min(total, tgt.hp - 1));
+      // 앙갚음: 지난 턴 이후 공격으로 받은 데미지의 1.5배 (받은 적이 없으면 실패)
+      if (R.comeuppance) {
+        if (!(user.lastHurt > 0 && user.lastHurtTurn >= D.turn - 1)) { log('그러나 갚아 줄 데미지가 없었다!', at); return; }
+        total = Math.floor(user.lastHurt * 1.5);
+      }
       if (r.crit) log('급소에 맞았다!', at, 'crit');
       // 급소는 분홍, 효과가 굉장하면 주황, 별로면 회청 (급소 + 굉장함은 둘 다 표시)
       const ec = r.crit ? (r.eff > 1 ? 'crit super' : 'crit') : r.eff > 1 ? 'super' : r.eff < 1 ? 'weak' : undefined;
@@ -811,9 +820,10 @@ const Dungeon = (() => {
       if (tgt.hp > 0 && total > 0) onHitAbility(tgt, user, move, mt, at);
       if (isContact(move) && total > 0 && !A.noContact) contactAbility(user, tgt, at);
       const Hu = heldOf(user);
+      // 울퉁불퉁멧은 접촉 반격 특성(까칠한피부 등)과 겹치지 않는다
       if (Hu.shellBell && total > 0 && user.hp > 0) heal(user, Math.max(1, Math.floor(total / Hu.shellBell)), at);
       if (Hu.lifeOrb && total > 0 && user.hp > 0 && !user.lifeOrbHit) { user.lifeOrbHit = true; log(`${jo(nm(user), '은')} 생명이 조금 깎였다!`, at); damage(user, pctDmg(user, 1 / 10), null, at); }
-      if (heldOf(tgt).helmet && isContact(move) && total > 0 && user.hp > 0) { log(`${jo(nm(user), '은')} ${jo(ITEMS[tgt.held].n, '으로')} 데미지를 입었다!`, at); damage(user, pctDmg(user, 1 / heldOf(tgt).helmet), tgt, at); }
+      if (heldOf(tgt).helmet && !abilityOf(tgt).contact?.dmg && isContact(move) && total > 0 && user.hp > 0) { log(`${jo(nm(user), '은')} ${jo(ITEMS[tgt.held].n, '으로')} 데미지를 입었다!`, at); damage(user, pctDmg(user, 1 / heldOf(tgt).helmet), tgt, at); }
       if (tgt.hp > 0 && total > 0 && abilityOf(tgt).colorChange && mt && !(tgt.types.length === 1 && tgt.types[0] === mt)) { tgt.types = [mt]; abLog(tgt, `${jo(nm(tgt), '은')} ${typeName(mt)} 타입이 되었다!`, at); }
     } else if (move.ail) {
       if (Math.random() * 100 < (move.ac || 100)) inflict(tgt, AILMENT_MAP[move.ail], at, true, user);
@@ -914,7 +924,8 @@ const Dungeon = (() => {
   const pctDmg = (c, frac) => Math.max(1, Math.floor(c.maxhp * frac * (c.boss ? BOSS_PCT_MUL : 1)));
   function damage(c, amt, src, at, eff = 1, crit = false) {
     if (c.hp <= 0) return;
-    if (src && party(src) && !party(c)) { wakeNap(c, at, true); if (src.player) c.provoked = true; }   // 잠든 적은 맞으면 깬다 / 리더가 공격한 적 (먼저 공격하지마 작전)
+    if (src && party(src) && !party(c)) { wakeNap(c, at, true); if (src.player) c.provoked = true; }
+    if (src && src !== c) { c.lastHurt = amt; c.lastHurtTurn = D.turn; }   // 앙갚음용: 공격으로 받은 데미지   // 잠든 적은 맞으면 깬다 / 리더가 공격한 적 (먼저 공격하지마 작전)
     const A = abilityOf(c);
     if (!src && A.magicGuard) return;
     if (A.sturdy && c.hp >= c.maxhp && amt >= c.hp && c.maxhp > 1) { amt = c.hp - 1; abLog(c, `${jo(nm(c), '은')} 공격을 버텼다!`, at); }
@@ -922,7 +933,9 @@ const Dungeon = (() => {
     if (amt >= c.hp && c.hp > 1 && ((H.sash && c.hp >= c.maxhp) || (H.band && Math.random() < H.band))) {
       amt = c.hp - 1; log(`${jo(nm(c), '은')} ${jo(ITEMS[c.held].n, '으로')} 버텼다!`, at);
     }
+    const wasAboveHalf = c.hp > c.maxhp / 2;
     c.hp -= amt; c.hurtAt = at;
+    if (A.berserk && wasAboveHalf && c.hp > 0 && c.hp <= c.maxhp / 2 && !c.berserkUsed) { c.berserkUsed = true; abLog(c, `${jo(nm(c), '은')} 발끈했다!`, at); statChange(c, 4, 1, at, c); }
     if (c.player && amt >= c.maxhp * 0.2) setFace('Pain', 1200);
     c.lastHurtSeq = ++D.seq; c.lastHurtBy = src ? src.id : null;
     if (crit) popup(c, amt + (eff > 1 ? '!!' : '!'), '#ff5ce1', at, 'big');
@@ -978,7 +991,7 @@ const Dungeon = (() => {
       if (c.shiny && free) D.items.push({ x: c.x, y: c.y, id: rollMega('shiny', c.lv, D.dg) || weighted(rewardPool(D.lvl + 10, D.dg)), n: 1 });   // 이로치: 보스 보상과 같은 등급
       else if (sig.length && !c.boss && free && Math.random() < SIG_DROP.defeat) D.items.push({ x: c.x, y: c.y, id: pick(sig), n: 1 });
       else if (Math.random() < ENEMY_DROP_CHANCE && free) { const id = rollMega('floor', c.lv, D.dg) || pickDrop(D.lvl, D.dg); D.items.push(id ? { x: c.x, y: c.y, id, n: 1 } : { x: c.x, y: c.y, money: moneyPile(D.lvl) }); }
-      if (c.shiny && Game.unlockShiny(c.sp)) log(`✨ 이제 캐릭터 탭에서 ${spName(c.sp)}의 이로치 모습을 고를 수 있다!`, at + 300);
+      if (c.shiny && Game.unlockShiny(c.sp)) log(`✨ 이제 캐릭터 탭에서 ${jo(spName(c.sp), '과')} 그 진화 계열의 이로치 모습을 고를 수 있다!`, at + 300);
       if (run.mode === 'normal' && !c.outlaw && !NO_RECRUIT.includes(c.sp) && !Game.save.roster[c.sp]) {
         const rate = recruitRate(P().lv) * (DATA.species[c.sp].lg ? 0.5 : 1) * (c.boss ? 0.5 : 1) * (heldOf(P()).recruitMul || 1);
         if (Math.random() < rate) D.prompts.push(() => recruitPrompt(c));
@@ -1685,6 +1698,14 @@ const Dungeon = (() => {
     if (b0 > 20 && p.belly <= 20) { log('배가 고파졌다...', T.base); stopAuto('배가 고프다!'); }
     if (b0 > 10 && p.belly <= 10) log('배가 너무 고프다! 빨리 뭔가 먹어야 한다!', T.base);
     if (b0 > 0 && p.belly <= 0) { log('배가 고파서 기운이 없다! HP가 줄어든다!', T.base); stopAuto(); }
+    // 나이트메어: 주변의 잠든 적이 악몽에 시달린다
+    for (const c of [p, ...D.mons]) {
+      if (c.hp <= 0 || !abilityOf(c).badDreams) continue;
+      for (const e of [p, ...D.mons]) if (e.hp > 0 && e.status === 'slp' && hostileTo(c, e) && cheb(c, e) <= 4) {
+        if (e.player || seen(e)) log(`${jo(nm(e), '은')} 악몽에 시달리고 있다!`, T.base);
+        damage(e, pctDmg(e, 1 / 8), null, T.base);
+      }
+    }
     if (weatherNow() === 'sand' && D.turn % SAND_EVERY === 0) {
       const at = Math.max(T.cursor, T.moveEnd);
       for (const c of [p, ...D.mons]) {
@@ -2029,7 +2050,7 @@ const Dungeon = (() => {
     if (it.use && it.use !== 'none') ch.push({ label: '사용한다', fn: () => useAct(i) });
     if (ALLY_USES.includes(it.use) && liveAllies().length) ch.push({ label: '🤝 동료에게 쓴다', fn: () => pickAllyFor(i, () => itemMenu(i)) });
     if (b.id === 'reviver' && downAllies().length) ch.push({ label: '🌰 쓰러진 동료를 되살린다', fn: () => pickReviveFor(i, () => itemMenu(i)) });
-    if (it.held) ch.push({ label: '지니게 한다', fn: () => {
+    if (it.held) ch.push({ label: '지니게 한다', disabled: !!heldBlockReason(P().baseAbility ?? P().ability, b.id), sub: heldBlockReason(P().baseAbility ?? P().ability, b.id), fn: () => {
       const p = P(), old = p.held;
       run.bag.splice(i, 1); p.held = b.id;
       if (old) run.bag.push({ id: old, n: 1 });

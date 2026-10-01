@@ -114,7 +114,7 @@ function updateForm(c) {
 }
 // 층에 들어설 때 초기화할 전투 상태
 function resetBattleForm(c, weather) {
-  c.blade = false; c.complete = false; c.hangry = false;
+  c.blade = false; c.complete = false; c.hangry = false; c.disguiseBroken = false; c.berserkUsed = false;   // 탈·발끈도 층마다 다시
   if (c.noice && weather === 'snow') c.noice = false;
 }
 // 적으로 나올 때: 골라 둘 수 있는 모습이 있으면 가끔 그 모습

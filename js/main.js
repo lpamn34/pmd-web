@@ -944,7 +944,7 @@ const Game = (() => {
       <div class="btns"><button class="btn" data-act="change-char">🔄 캐릭터 변경</button> <button class="btn" data-act="set-moves">📘 기술 설정</button></div>
       ${DATA.species[sp].sh ? `<h3>모습</h3><div class="row">${portraitImg(sp, 'portrait sm', 'Normal', false)} ${portraitImg(sp, 'portrait sm', 'Normal', true)}
         <span class="grow">${ch.shiny ? '✨ 이로치(색이 다른 모습)로 탐험합니다.' : '보통 모습으로 탐험합니다.'} <span class="dim">(겉모습만 바뀝니다)</span></span>
-        ${shinyOk(sp) ? `<button class="btn sm" data-act="toggle-shiny">${ch.shiny ? '보통 모습으로' : '✨ 이로치로'}</button>` : '<span class="dim tiny">🔒 이 포켓몬의 이로치를 쓰러뜨리거나 영입하면 고를 수 있어요</span>'}</div>` : ''}
+        ${shinyOk(sp) ? `<button class="btn sm" data-act="toggle-shiny">${ch.shiny ? '보통 모습으로' : '✨ 이로치로'}</button>` : '<span class="dim tiny">🔒 이 포켓몬이나 같은 진화 계열의 이로치를 쓰러뜨리거나 영입하면 고를 수 있어요</span>'}</div>` : ''}
       ${formSection(sp, ch)}
       <h3>특성 <span class="dim">(누르면 설명. 바꾸려면 ${ITEMS.abcapsule.icon}특성캡슐 ×${ownedCount('abcapsule')}, 숨겨진 특성은 ${ITEMS.abpatch.icon}특성패치 ×${ownedCount('abpatch')}가 필요)</span></h3>
       ${DATA.species[sp].ab.map(([aid, hid]) => { const cur = entryAbility(sp, save.roster[sp]) === aid, x = abilityDesc(aid); return `<div class="row">
@@ -1368,7 +1368,7 @@ const Game = (() => {
     if (!opts.length) { UI.alert('지닌 물건', '<p>가방이나 창고에 지닐 수 있는 물건이 없습니다.</p><p class="dim">상점에서 매일 지닌 물건 몇 개를 팔고, 던전에서도 가끔 주울 수 있어요.</p>'); return; }
     UI.open({
       title: `${esc(spName(sp))}에게 지니게 할 물건`, wide: true,
-      choices: opts.map(o => ({ label: `${ITEMS[o.id].icon} ${esc(ITEMS[o.id].n)} <span class="dim">(${o.from === 'bag' ? '가방' : '창고'})</span>`, sub: esc(ITEMS[o.id].d), fn: () => {
+      choices: opts.map(o => ({ label: `${ITEMS[o.id].icon} ${esc(ITEMS[o.id].n)} <span class="dim">(${o.from === 'bag' ? '가방' : '창고'})</span>`, sub: esc(heldBlockReason(entryAbility(sp, ch), o.id) || ITEMS[o.id].d), disabled: !!heldBlockReason(entryAbility(sp, ch), o.id), fn: () => {
         if (o.from === 'bag') save.bag.splice(o.i, 1); else { save.storage[o.id]--; if (save.storage[o.id] <= 0) delete save.storage[o.id]; }
         if (ch.held) storeAdd(ch.held);
         ch.held = o.id; persist(); renderTown(); UI.toast(`${jo(ITEMS[o.id].n, '을')} 지니게 했습니다.`);
@@ -1403,7 +1403,8 @@ const Game = (() => {
   }
   function noteShiny(sp) { save.shinySeen = save.shinySeen || {}; save.shinySeen[sp] = (save.shinySeen[sp] || 0) + 1; }
   // 이로치 모습: 그 포켓몬의 이로치를 쓰러뜨리거나 영입하면 해금 (이미 이로치로 쓰던 캐릭터는 그대로 인정)
-  const shinyOk = sp => !!((save.shinyOwned && save.shinyOwned[sp]) || save.roster[sp]?.shiny);
+  // 진화 계열 전체가 함께 풀린다 (미진화체의 이로치를 만나도 진화체에서 쓸 수 있게)
+  const shinyOk = sp => evoFamily(sp).some(x => (save.shinyOwned && save.shinyOwned[x]) || save.roster[x]?.shiny);
   function unlockShiny(sp) {
     if (!DATA.species[sp]?.sh || shinyOk(sp)) return false;
     save.shinyOwned = save.shinyOwned || {}; save.shinyOwned[sp] = true; persist(); return true;
@@ -1413,7 +1414,7 @@ const Game = (() => {
     if (save.roster[c.sp]) return;
     const ab0 = c.baseAbility ?? c.ability, ab = DATA.species[c.sp].ab.some(a => a[0] === ab0) ? ab0 : defaultAbility(c.sp);   // 숨겨진 특성인 적을 영입하면 그 특성 그대로
     save.roster[c.sp] = { lv: RECRUIT_LEVEL, exp: expFor(RECRUIT_LEVEL), moves: defaultMoves(c.sp, RECRUIT_LEVEL), ability: ab, shiny: !!c.shiny };
-    if (c.shiny) [c.sp, ...preEvos(c.sp)].forEach(unlockShiny);
+    if (c.shiny) unlockShiny(c.sp);
     save.recruited = (save.recruited || 0) + 1;
     Progress.check();
     persist();
@@ -1466,6 +1467,7 @@ const Game = (() => {
     entry.ability = (DATA.species[to].ab[slot] || DATA.species[to].ab[0] || [0])[0];
     delete entry.form;   // 골라 둔 모습은 진화 전 포켓몬의 것
     save.roster[to] = entry; save.current = to;
+    if (save.sos && save.sos.sp === sp) save.sos.sp = to;   // 구조를 기다리는 포켓몬이 진화하면 구조 요청도 진화한 모습으로
     // 클리어 기록도 진화한 모습으로 옮긴다
     if (save.clears && save.clears[sp]) { save.clears[to] = { ...save.clears[to], ...save.clears[sp] }; delete save.clears[sp]; }
     Progress.add('evolves'); Progress.check();
@@ -1687,6 +1689,7 @@ const Game = (() => {
       snap: { bag: r.bag, money: r.money, done: r.done, held: p.held || null },
     };
     save.sos = s;
+    save.mySOS = [...(save.mySOS || []), s.id].slice(-50);   // 내가 보낸 구조 요청 (포기한 뒤에도 내 코드로 구조하러 가지 못하게)
     saveParty(r);
     // 레벨은 그대로 남고, 가방과 지닌 물건은 쓰러진 곳에 남아 구조를 기다린다
     save.roster[p.sp] = { ...save.roster[p.sp], lv: p.lv, exp: p.exp, moves: p.moves.map(m => m.id), held: null, ...(p.tms ? { tms: p.tms } : {}), ...(p.boost ? { boost: p.boost } : {}) };
@@ -1754,7 +1757,10 @@ const Game = (() => {
   async function acceptSOS(d, from, docId) {
     const dg = DUNGEONS[d.dg];
     if (!dg || dg.mode !== 'normal' || d.fl < 1 || d.fl > dg.floors || !DATA.species[d.sp]) { UI.alert('코드 오류', '<p>이 게임에서 쓸 수 없는 SOS 코드입니다.</p>'); return; }
-    if (save.sos && save.sos.id === d.id) { UI.alert('구조 불가', '<p>자기 자신의 구조 요청은 받을 수 없어요. 친구에게 보내 주세요.</p>'); return; }
+    const selfMsg = () => UI.alert('구조 불가', '<p>자기 자신의 구조 요청은 받을 수 없어요. 친구에게 보내 주세요.</p>');
+    if ((save.sos && save.sos.id === d.id) || (save.mySOS || []).includes(d.id)) { selfMsg(); return; }
+    // 로그인했으면 서버에서도 확인: 같은 계정이 다른 기기·세이브에서 올린 요청
+    if (!docId && Online.loggedIn()) { try { if (await Online.findMySOS(d.id)) { selfMsg(); return; } } catch (e) { /* 확인 실패: 그대로 진행 */ } }
     if ((save.rescued || {})[d.id] || save.missions.accepted.some(m => m.sosId === d.id)) { UI.alert('구조 불가', '<p>이미 받았거나 구조를 마친 요청입니다.</p>'); return; }
     if (!unlocked(dg)) { UI.alert('구조 불가', `<p>${esc(jo(dg.n, '은'))} 아직 열리지 않은 던전이라 구조하러 갈 수 없어요.</p><p class="dim">${esc(jo(dungeonById(dg.req).n, '을'))} 클리어하면 열립니다.</p>`); return; }
     if (save.missions.accepted.length >= 4) { UI.alert('구조 불가', '<p>진행 중인 임무가 4개입니다. 하나를 끝내거나 취소한 뒤 받아 주세요.</p>'); return; }
@@ -1823,6 +1829,8 @@ const Game = (() => {
   // 구조된 뒤 이어서 탐험
   function resumeSOS() {
     const s = save.sos; if (!s || !s.revived) return;
+    // 기다리는 동안 진화했으면 진화한 모습으로 (예전 세이브: 진화할 때 구조 요청이 따라가지 않았다)
+    if (!save.roster[s.sp]) { const evo = evolvedInRoster(s.sp); if (evo) s.sp = evo; }
     const ch = save.roster[s.sp] || newEntry(s.sp);
     const p = makeCreature(s.sp, ch.lv, { player: true, exp: ch.exp, moves: ch.moves.length ? ch.moves : undefined, ability: entryAbility(s.sp, ch), boost: ch.boost });
     Progress.add('rescued');
@@ -1838,6 +1846,12 @@ const Game = (() => {
     Dungeon.enter(run);
   }
 
+  // 영입한 포켓몬 중 sp가 진화한 모습 (여럿이면 레벨이 가장 높은 것)
+  function evolvedInRoster(sp) {
+    const out = [], todo = [...DATA.species[sp].v.map(v => v[0])];
+    while (todo.length) { const x = todo.shift(); if (!DATA.species[x] || out.includes(x)) continue; out.push(x); todo.push(...DATA.species[x].v.map(v => v[0])); }
+    return out.filter(x => save.roster[x]).sort((a, b) => save.roster[b].lv - save.roster[a].lv)[0] || null;
+  }
   // 구조를 포기: 그때 쓰러진 것으로 처리
   async function giveUpSOS() {
     const s = save.sos; if (!s) return;
