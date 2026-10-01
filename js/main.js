@@ -130,7 +130,14 @@ const Game = (() => {
     const m = syncMeta();
     if (m && m.uid === Online.uid() && m.at === save.savedAt) { upPending = false; return true; }   // 바뀐 것 없음
     lastUp = Date.now();
-    try { await Online.pushCloud(JSON.stringify(save), save.savedAt || 0); setSyncMeta({ uid: Online.uid(), at: save.savedAt || 0 }); cloudErr = null; upPending = false; return true; }
+    // 올리는 동안 세이브가 또 바뀔 수 있다: 올린 그 시점의 값으로 기록해야 바뀐 부분이 다음에 다시 올라간다
+    // (예전에는 올린 뒤의 savedAt을 적어서, 그 사이 바뀐 내용이 클라우드에 안 올라가고 다음 접속 때 옛 클라우드 세이브로 덮였다)
+    const at = save.savedAt || 0;
+    try {
+      await Online.pushCloud(JSON.stringify(save), at); setSyncMeta({ uid: Online.uid(), at }); cloudErr = null;
+      upPending = (save.savedAt || 0) !== at; if (upPending) scheduleUpload();
+      return true;
+    }
     catch (e) { cloudErr = Online.why(e); console.warn(e); scheduleUpload(); return false; }   // 실패하면 다음 주기에 다시
   }
   // 올릴 게 남아 있으면 바로 올린다 (창을 닫거나 숨길 때, 던전에서 돌아왔을 때)
@@ -382,17 +389,31 @@ const Game = (() => {
 
   // 구조 게시판 확인: 내 요청이 구조됐는지, 내가 구조한 친구가 감사 편지를 보냈는지 (자주 읽지 않게 1분 30초 간격)
   let lastCheck = 0, checking = false;
+  let sosRelinked = false;
   async function checkOnline(force) {
     if (!save || !bound || !Online.loggedIn() || checking || (!force && Date.now() - lastCheck < 90 * 1000)) return;
     checking = true; lastCheck = Date.now();
     try {
       await flushThanks();
       const s = save.sos;
+      // 게시판에 올린 표시가 세이브에서 빠진 요청 (예전 클라우드 동기화 버그): 서버에서 내 요청을 찾아 다시 잇는다 (접속마다 한 번)
+      if (s && !s.online && !s.revived && !sosRelinked) {
+        sosRelinked = true;
+        const docId = await Online.findMySOS(s.id);
+        if (docId) { s.docId = docId; s.online = true; persist(); }
+      }
       if (s && s.online && !s.revived) {
         const d = await Online.getSOS(s.docId || s.id);
         // 서버의 값은 다른 사람이 쓴 것이라 숫자·이름을 다시 확인한다 (조작된 값이 화면에 그대로 들어가지 않게)
+        // 구조한 사람의 포켓몬이 이 버전에 없어도 (더 새 버전에서 구조) 부활은 시킨다. 그림만 내 포켓몬으로
         const rs = d && d.rescuer;
-        if (d && d.status === 'rescued' && rs && hasKey(DATA.species, rs.sp)) await receiveAOK({ id: s.id, sp: +rs.sp, lv: clamp(Math.floor(+rs.lv) || 1, 1, MAX_LEVEL), sh: rs.shiny ? 1 : 0 }, Online.cleanName(rs.name));
+        if (d && d.status === 'rescued' && rs) {
+          const known = hasKey(DATA.species, rs.sp);
+          await receiveAOK({ id: s.id, sp: known ? +rs.sp : s.sp, lv: clamp(Math.floor(+rs.lv) || 1, 1, MAX_LEVEL), sh: known && rs.shiny ? 1 : 0 }, Online.cleanName(rs.name));
+        } else if (!d) {   // 요청이 서버에서 사라짐: 게시판으로는 더 기다릴 수 없다 (코드로 구조받거나 포기)
+          s.online = false; persist();
+          UI.alert('🆘 구조 요청', '<p>구조 게시판에서 내 구조 요청을 찾을 수 없어요. 임무 탭에서 SOS 코드를 친구에게 보내거나, 포기하고 돌아갈 수 있어요.</p>');
+        }
       }
       for (const [id, r] of Object.entries(save.rescued || {})) {
         if (!r.online || r.thanked) continue;
@@ -402,7 +423,7 @@ const Game = (() => {
           if (ok) {
             // 구조 보답: 요청자가 게임을 그만둬도 받을 수 있게 바로 준다 (감사 편지는 따로)
             r.claimed = true;
-            const item = weighted(DROP_TABLE.filter(([k]) => k !== 'quest')), money = 50 + (r.floor || 5) * 15;
+            const item = rollMega('rescue') || weighted(rewardPool(dungeonById(r.dungeon)?.lv?.[1] || r.me?.lv || 20)), money = 50 + (r.floor || 5) * 15;
             storeAdd(item); save.money += money;
             UI.alert('✅ 구조 완료', `<div class="center">${portraitImg(r.sp, 'portrait big', 'Joyous', r.shiny)}</div>
               <p class="center">${esc(spName(r.sp))}의 구조 완료를 요청자에게 전했어요!</p>
@@ -1311,12 +1332,13 @@ const Game = (() => {
 
   function setMoves() {
     const sp = save.current, ch = save.roster[sp];
-    const all = [...new Set([...learnableUpTo(sp, ch.lv), ...(ch.tms || []).filter(m => DATA.moves[m])])];
+    // 진화 전 모습이 이 레벨까지 배우는 기술과 지금 쓰고 있는 기술도 고를 수 있다 (진화해도 잊지 않는다)
+    const all = [...new Set([...ch.moves, ...learnableUpTo(sp, ch.lv), ...preEvos(sp).flatMap(p => learnableUpTo(p, ch.lv)), ...(ch.tms || [])])].filter(m => DATA.moves[m]);
     if (!all.length) { UI.alert('기술 설정', '<p>배울 수 있는 기술이 없습니다.</p>'); return; }
     const sel = new Set(ch.moves);
     UI.open({
       title: '기술 설정 (최대 4개)', wide: true,
-      html: `<p class="dim">현재 레벨까지 배울 수 있는 기술과 기술머신으로 배운 기술 중에서 자유롭게 고르세요. <b>?</b>를 누르면 기술 설명을 볼 수 있습니다.</p><div class="move-pick">${all.map(id => `<label class="move-row"><input type="checkbox" value="${id}" ${sel.has(id) ? 'checked' : ''}> ${moveLine(id)}<span class="info" data-move="${id}" title="기술 정보">?</span></label>`).join('')}</div>`,
+      html: `<p class="dim">현재 레벨까지 배울 수 있는 기술(진화 전 모습의 기술 포함)과 기술머신으로 배운 기술 중에서 자유롭게 고르세요. <b>?</b>를 누르면 기술 설명을 볼 수 있습니다.</p><div class="move-pick">${all.map(id => `<label class="move-row"><input type="checkbox" value="${id}" ${sel.has(id) ? 'checked' : ''}> ${moveLine(id)}<span class="info" data-move="${id}" title="기술 정보">?</span></label>`).join('')}</div>`,
       choices: [{ label: '저장', fn: () => { ch.moves = [...sel]; persist(); renderTown(); } }, { label: '취소', fn: () => {} }],
       onOpen: box => {
         box.querySelectorAll('input[type=checkbox]').forEach(cb => cb.onchange = () => {
@@ -1747,7 +1769,7 @@ const Game = (() => {
         for (const m of save.missions.accepted.filter(m => r.done.includes(m.id))) {
           if (m.kind === 'sos' && m.online) {
             save.rescued = save.rescued || {};
-            save.rescued[m.sosId] = { sp: m.client, shiny: m.shiny, thanked: false, online: true, claimed: false, docId: m.docId, floor: m.floor, me: { sp: p.sp, lv: p.lv, shiny: !!p.shiny } };
+            save.rescued[m.sosId] = { sp: m.client, shiny: m.shiny, thanked: false, online: true, claimed: false, docId: m.docId, dungeon: m.dungeon, floor: m.floor, me: { sp: p.sp, lv: p.lv, shiny: !!p.shiny } };
             Progress.add('rescues'); milestoneGift('rescues', lines);
           } else if (m.kind === 'sos') {
             const code = Codes.encode('aok', { id: m.sosId, sp: p.sp, lv: p.lv, sh: p.shiny ? 1 : 0 });

@@ -26,9 +26,11 @@ const FORM_ITEMS = {
 };
 for (const [item, fi] of Object.entries(FORM_ITEMS)) if (ITEMS[item] && FORM_ID[fi]) ITEMS[item].formTo = FORM_ID[fi];
 
-// ── 메가스톤: 메가진화 모습마다 하나 (아주 드문 등급, 던전에서만) ──
+// ── 메가스톤: 메가진화 모습마다 하나 (던전에서만, 드롭 확률은 MEGA_RATE) ──
 const MEGA_STONE_PRICE = 30000;
-const MEGA_DROP_WEIGHT = 0.03;
+// 메가스톤 드롭 확률: 일반 드롭 테이블과 따로 굴린다 (보스·이로치 1%, 구조 보답·층 아이템·적이 떨어뜨리는 아이템 0.1%)
+const MEGA_RATE = { boss: 0.01, shiny: 0.01, rescue: 0.001, floor: 0.001 };
+const rollMega = kind => (MEGA_STONES.length && Math.random() < MEGA_RATE[kind] ? pick(MEGA_STONES) : null);
 const MEGA_NO_STONE = { 384: 620 };   // 레쿠쟈: 메가스톤 대신 화룡점정을 알고 있으면
 const MEGA_STONES = [];
 for (const [fi, fid] of Object.entries(FORM_ID)) {
@@ -41,7 +43,6 @@ for (const [fi, fid] of Object.entries(FORM_ID)) {
     hold: { only: [base] }, formTo: fid,
   };
   MEGA_STONES.push(id);
-  DROP_TABLE.push([id, MEGA_DROP_WEIGHT]);
 }
 
 // ── 전투 중 바뀌는 모습: 원래 포켓몬 번호 → 지금 되어야 할 모습의 포켓API 이름 (없으면 원래 모습) ──

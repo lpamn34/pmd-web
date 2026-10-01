@@ -214,10 +214,7 @@ const Dungeon = (() => {
     // 전용 도구의 주인이 보스면 가끔 그 도구를 떨어뜨린다
     const sig = sigItemsFor([b.sp]);
     // 초반 보스는 조금 드문 아이템, 그 뒤로는 지닌 물건·기술머신·사탕 (층 레벨보다 한 등급 위까지)
-    const table = dropTable(D.lvl + 10);
-    let pool = table.filter(d => ITEMS[d[0]].held || ITEMS[d[0]].tm || d[0] === 'candy' || d[0] === 'reviver');
-    if (pool.length < 5) pool = table.filter(d => itemTier(d[0]) >= 2);
-    const id = sig.length && Math.random() < SIG_DROP.boss ? pick(sig) : weighted(pool);
+    const id = sig.length && Math.random() < SIG_DROP.boss ? pick(sig) : (rollMega('boss') || weighted(rewardPool(D.lvl + 10)));
     for (const [dx, dy] of [[0, 0], ...DIRS]) {
       const x = b.x + dx, y = b.y + dy;
       if (floorAt(x, y) && !itemAt(x, y) && !(x === D.stairs.x && y === D.stairs.y)) { D.items.push({ x, y, id, n: 1 }); break; }
@@ -284,7 +281,7 @@ const Dungeon = (() => {
     if (lvl >= FEATURE_LV.house && Math.random() < HOUSE_CHANCE && freeRooms.length) {
       const room = freeRooms.splice(rand(freeRooms.length), 1)[0];
       D.house = { room, triggered: false };
-      for (let i = rint(3, 6); i > 0; i--) { const t = randomRoomTile({ room, noItem: true }); if (t) D.items.push({ ...t, id: weighted(dropTable(lvl)), n: 1 }); }
+      for (let i = rint(3, 6); i > 0; i--) { const t = randomRoomTile({ room, noItem: true }); if (t) D.items.push({ ...t, id: rollMega('floor') || weighted(dropTable(lvl)), n: 1 }); }
     }
     if (lvl >= FEATURE_LV.trap) {
       const kinds = Object.keys(TRAPS);
@@ -296,7 +293,7 @@ const Dungeon = (() => {
     }
     // 아이템 / 돈
     const nItems = rint(ITEMS_PER_FLOOR[0], ITEMS_PER_FLOOR[1]);
-    for (let i = 0; i < nItems; i++) { const t = randomRoomTile({ noItem: true }); if (t) D.items.push({ ...t, id: weighted(dropTable(lvl)), n: 1 }); }
+    for (let i = 0; i < nItems; i++) { const t = randomRoomTile({ noItem: true }); if (t) D.items.push({ ...t, id: rollMega('floor') || weighted(dropTable(lvl)), n: 1 }); }
     // 전용 도구: 그 주인이 이 층에 나오면 드물게 바닥에 하나
     const sig = sigItemsFor(pool);
     if (sig.length && Math.random() < SIG_DROP.floor) { const t = randomRoomTile({ noItem: true }); if (t) D.items.push({ ...t, id: pick(sig), n: 1 }); }
@@ -844,9 +841,9 @@ const Dungeon = (() => {
       gainExp(Math.floor(expGain(c, P().lv) * (c.outlaw || c.boss ? BOSS_EXP_MUL : 1) * (c.shiny ? 2 : 1) * (heldOf(P()).expMul || 1)), at);
       const free = !itemAt(c.x, c.y) && !(D.stairs.x === c.x && D.stairs.y === c.y);
       const sig = sigItemsFor([c.sp]);
-      if (c.shiny && free) D.items.push({ x: c.x, y: c.y, id: weighted(DROP_TABLE.filter(d => ITEMS[d[0]].held || ITEMS[d[0]].tm || d[0] === 'candy')), n: 1 });
+      if (c.shiny && free) D.items.push({ x: c.x, y: c.y, id: rollMega('shiny') || weighted(rewardPool(D.lvl + 10)), n: 1 });   // 이로치: 보스 보상과 같은 등급
       else if (sig.length && !c.boss && free && Math.random() < SIG_DROP.defeat) D.items.push({ x: c.x, y: c.y, id: pick(sig), n: 1 });
-      else if (Math.random() < ENEMY_DROP_CHANCE && free) D.items.push({ x: c.x, y: c.y, id: weighted(dropTable(D.lvl)), n: 1 });
+      else if (Math.random() < ENEMY_DROP_CHANCE && free) D.items.push({ x: c.x, y: c.y, id: rollMega('floor') || weighted(dropTable(D.lvl)), n: 1 });
       if (c.shiny && Game.unlockShiny(c.sp)) log(`✨ 이제 캐릭터 탭에서 ${spName(c.sp)}의 이로치 모습을 고를 수 있다!`, at + 300);
       if (run.mode === 'normal' && !c.outlaw && !NO_RECRUIT.includes(c.sp) && !Game.save.roster[c.sp]) {
         const rate = recruitRate(P().lv) * (DATA.species[c.sp].lg ? 0.5 : 1) * (c.boss ? 0.5 : 1) * (heldOf(P()).recruitMul || 1);

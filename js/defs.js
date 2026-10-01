@@ -3,7 +3,7 @@
 
 // 게임 버전: 업데이트할 때 올리고, index.html의 ?v= 숫자도 같이 올린다
 // (친구와 구조 코드·오늘의 도전을 주고받으려면 버전이 같아야 한다)
-const GAME_VERSION = '0.35';
+const GAME_VERSION = '0.36';
 // 버전 비교: '0.25' > '0.9' 처럼 숫자로 비교한다
 function cmpVer(a, b) {
   const x = String(a).split('.').map(Number), y = String(b).split('.').map(Number);
@@ -12,6 +12,7 @@ function cmpVer(a, b) {
 }
 const GAME_DATE = '2026-10-01';
 const VERSION_NOTES = [
+  ['0.36', ['진화 후 기술 설정에 진화 전 모습의 기술도 나오고, 쓰고 있던 기술을 바꿀 수 있음 (도구 진화 후 기술을 못 바꾸던 문제)', '메가스톤 드롭 확률 조정: 보스 보상·이로치 1%, 구조 보답·바닥 아이템·적이 떨어뜨리는 아이템 0.1% (던전 레벨과 상관없이)', '이로치·구조 보답은 던전 레벨에 맞는 아이템으로', '클라우드 저장 중에 바뀐 내용이 빠져서 다음 접속 때 옛 세이브로 덮이던 문제 수정 (구조 요청이 게시판과 끊겨 구조돼도 알림이 안 오던 원인)', '끊긴 구조 요청은 자동으로 다시 이어서, 이미 구조됐으면 바로 부활', '구조한 사람의 포켓몬이 내 버전에 없어도 구조되면 부활']],
   ['0.35', ['구조 게시판에 다른 버전 플레이어의 구조 요청도 보임 (업데이트해도 기다리던 요청이 사라지지 않음)']],
   ['0.34', ['던전 그림이 없어 빠져 있던 진화형 17종 추가 (형사구스, 바오키, 마셰이드 등): 던전에서는 진화 전 모습의 그림을 빌려 쓰고, 종족값·특성·기술은 원래대로', '마임꽁꽁은 가라르 마임맨에서 진화']],
   ['0.33', ['원거리 기술 사거리 8칸 → 5칸', '구조를 기다리는 던전에는 구조받거나 포기할 때까지 들어갈 수 없음', '정보 탭에 스타팅 순위 (로그인한 탐험대가 처음 고른 포켓몬, 하루에 한 번 갱신)']],
@@ -514,6 +515,13 @@ function dropTable(lvl) {
     if (lvl < TIER_LV[t]) return false;
     return !(lvl >= HIGH_LV && t === 1 && !ALWAYS_DROP.includes(id));
   }));
+}
+// 보상용 좋은 아이템 (보스·이로치·구조 보답): 그 레벨에서 나오는 지닌 물건·기술머신·사탕
+// 메가스톤은 여기에 없고 따로 굴린다 (js/forms.js의 rollMega)
+function rewardPool(lvl) {
+  const table = dropTable(lvl);
+  const pool = table.filter(d => ITEMS[d[0]].held || ITEMS[d[0]].tm || d[0] === 'candy' || d[0] === 'reviver');
+  return pool.length >= 5 ? pool : table.filter(d => itemTier(d[0]) >= 2);
 }
 const tmBits = {};
 function canLearnTM(sp, mid) {

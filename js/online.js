@@ -254,6 +254,12 @@ const Online = (() => {
     const d = await ref.get();
     if (d.exists && d.data().status === 'open' && d.data().takenBy === user.uid) await ref.update({ takenBy: null, takenAt: null });
   }
+  // 내가 올린 요청 중 요청 번호가 id인 문서 이름 (없으면 null)
+  async function findMySOS(id) {
+    const q = await db.collection('sos').where('owner', '==', user.uid).limit(20).get();
+    const d = q.docs.find(x => idOf(x.id) === +id);
+    return d ? d.id : null;
+  }
   async function getSOS(id) {
     const d = await db.collection('sos').doc(String(id)).get();
     return d.exists ? d.data() : null;
@@ -321,6 +327,6 @@ const Online = (() => {
     enabled, init, onChange, loggedIn, name, userId, why, nameTaken: () => !!(profile && profile.nameTaken),
     signUp, signIn, signOut, setName, deleteAccount, cleanName, uid: () => user && user.uid,
     fetchCloud, pushCloud, clearCloud,
-    postSOS, listSOS, takeSOS, releaseSOS, getSOS, claimRescue, thankSOS, deleteSOS, idOf,
+    postSOS, listSOS, takeSOS, releaseSOS, getSOS, findMySOS, claimRescue, thankSOS, deleteSOS, idOf,
   };
 })();
