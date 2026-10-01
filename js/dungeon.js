@@ -380,23 +380,26 @@ const Dungeon = (() => {
     }
     return true;
   }
+  // 시야: 리더와 동료가 보는 곳을 합친다 (있는 방 전체 + 주변 몇 칸)
   function computeVis() {
-    const p = P();
     D.visible.fill(0);
     const rs = new Set();
-    for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
-      if (!inb(p.x + dx, p.y + dy)) continue;
-      const r = D.room[idx(p.x + dx, p.y + dy)];
-      if (r >= 0 && (dx === 0 || dy === 0 || floorAt(p.x + dx, p.y) || floorAt(p.x, p.y + dy))) rs.add(r);
+    const viewers = [P(), ...(D.mons || []).filter(m => m.ally && m.hp > 0)];
+    for (const v of viewers) {
+      for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+        if (!inb(v.x + dx, v.y + dy)) continue;
+        const r = D.room[idx(v.x + dx, v.y + dy)];
+        if (r >= 0 && (dx === 0 || dy === 0 || floorAt(v.x + dx, v.y) || floorAt(v.x, v.y + dy))) rs.add(r);
+      }
+      const vr = (abilityOf(v).illuminate ? 3 : 2) - (weatherNow() === 'fog' ? 1 : 0);
+      for (let dy = -vr; dy <= vr; dy++) for (let dx = -vr; dx <= vr; dx++) {
+        const x = v.x + dx, y = v.y + dy;
+        if (inb(x, y) && los(v.x, v.y, x, y)) D.visible[idx(x, y)] = 1;
+      }
     }
     for (const r of rs) {
       const R = D.rooms[r];
       for (let y = R.y - 1; y <= R.y + R.h; y++) for (let x = R.x - 1; x <= R.x + R.w; x++) if (inb(x, y)) D.visible[idx(x, y)] = 1;
-    }
-    const vr = (abilityOf(p).illuminate ? 3 : 2) - (weatherNow() === 'fog' ? 1 : 0);
-    for (let dy = -vr; dy <= vr; dy++) for (let dx = -vr; dx <= vr; dx++) {
-      const x = p.x + dx, y = p.y + dy;
-      if (inb(x, y) && los(p.x, p.y, x, y)) D.visible[idx(x, y)] = 1;
     }
     for (let i = 0; i < D.visible.length; i++) if (D.visible[i]) D.explored[i] = 1;
     if (D.mons) intimidateCheck();
@@ -859,7 +862,7 @@ const Dungeon = (() => {
       log(`${jo(nm(c), '은')} 쓰러지고 말았다...`, at);
       Sound.play('down', at);
       D.dead = true;
-      D.prompts.push(() => Game.endRun('faint'));
+      D.prompts = [() => Game.endRun('faint')];   // 같은 턴에 쌓인 계단·영입 창보다 먼저 (계단을 밟으며 쓰러져도 탐험이 끝나게)
       return;
     }
     if (c.ally) {   // 동료: 이번 탐험에서 빠진다 (마을로 돌아감)
@@ -1511,6 +1514,7 @@ const Dungeon = (() => {
   }
 
   function stairsPrompt() {
+    if (D.dead || P().hp <= 0) return;
     stopAuto();
     const last = run.floor >= dungeonById(run.dungeon).floors;
     UI.open({
@@ -1520,6 +1524,7 @@ const Dungeon = (() => {
   }
   function descend() {
     const p = P();
+    if (D.dead || p.hp <= 0) return;   // 쓰러졌으면 내려가지 않는다
     if (!(D.stairs.x === p.x && D.stairs.y === p.y)) return;
     stopAuto();
     const dg = dungeonById(run.dungeon);
@@ -1559,7 +1564,7 @@ const Dungeon = (() => {
     if (run.turnsOnFloor >= WIND.limit && !D.dead) {
       log('거센 바람에 날려 던전 밖으로 쫓겨났다!', T.base);
       D.dead = true; stopAuto();
-      D.prompts.push(() => Game.endRun('wind'));
+      D.prompts = [() => Game.endRun('wind')];
     }
     for (const dl of D.delayed.filter(x => D.turn >= x.at)) {
       if (dl.t.hp > 0 && (dl.t.player || D.mons.includes(dl.t))) {
