@@ -23,6 +23,20 @@ const Game = (() => {
   }
   const newEntry = sp => ({ lv: START_LEVEL, exp: expFor(START_LEVEL), moves: defaultMoves(sp, START_LEVEL), ability: defaultAbility(sp) });
   // 저장된 특성이 그 포켓몬의 것이 아니면 기본 특성으로
+  // ── 동료: 영입한 포켓몬 중 최대 PARTY_MAX마리를 데리고 일반·테마 던전에 간다 (각자 레벨) ──
+  const PARTY_MAX = 3;
+  const partyList = () => (save.party || []).filter(sp => save.roster[sp] && sp !== save.current).slice(0, PARTY_MAX);
+  function makePartner(sp) {
+    const ch = save.roster[sp];
+    const a = makeCreature(sp, ch.lv, { ally: true, exp: ch.exp, moves: ch.moves.length ? ch.moves : undefined, ability: entryAbility(sp, ch), boost: ch.boost });
+    a.ally = true; a.held = ch.held || null; a.shiny = !!ch.shiny; a.tms = (ch.tms || []).slice(); a.selForm = ch.form || undefined;
+    return a;
+  }
+  // 동료의 진행(레벨·경험치·기술)을 캐릭터 기록에 남긴다
+  function saveParty(r) {
+    if (r.mode !== 'normal') return;
+    for (const a of r.party || []) if (save.roster[a.sp]) save.roster[a.sp] = { ...save.roster[a.sp], lv: a.lv, exp: a.exp, moves: a.moves.map(m => m.id) };
+  }
   const entryAbility = (sp, ch) => (ch && DATA.species[sp].ab.some(a => a[0] === ch.ability) ? ch.ability : defaultAbility(sp));
   let newerSave = null;   // 세이브가 이 화면보다 새 버전에서 저장됐으면 그 버전 (덮어쓰지 않는다)
   let lastBody = null;   // 저장 시각을 뺀 세이브 내용 (내용이 바뀌었을 때만 저장 시각을 갱신한다)
@@ -643,7 +657,8 @@ const Game = (() => {
         <tr><td>특방</td><td>${st.spd}</td><td>스피드</td><td>${st.spe}</td></tr></table>
       <div class="cc-ability">지닌 물건 ${ch.held ? `${ITEMS[ch.held].icon} <b>${esc(ITEMS[ch.held].n)}</b>` : '<span class="dim">없음</span>'}</div>
       <div class="cc-ability">특성 <span class="ab-link" data-ability="${entryAbility(sp, ch)}">${esc(abilityName(entryAbility(sp, ch)))}</span></div>
-      <div class="cc-moves">${ch.moves.map(m => `<div class="move-row clickable" data-move="${m}" title="클릭하면 기술 설명">${moveLine(m)}</div>`).join('') || '<div class="dim">배운 기술이 없습니다</div>'}</div></details>`;
+      <div class="cc-moves">${ch.moves.map(m => `<div class="move-row clickable" data-move="${m}" title="클릭하면 기술 설명">${moveLine(m)}</div>`).join('') || '<div class="dim">배운 기술이 없습니다</div>'}</div></details>
+      ${partyCard()}`;
     const det = document.querySelector('#char-card .cc-more'); det.ontoggle = () => { ccOpen = det.open; };
     document.querySelectorAll('#town-tabs button').forEach(b => b.classList.toggle('on', b.dataset.tab === tab));
     const el = document.getElementById('tab-content');
@@ -651,6 +666,7 @@ const Game = (() => {
     if (tab === 'dex') Dex.wire(el);
     if (tab === 'mission') checkOnline();
     el.onclick = e => { const b = e.target.closest('[data-act]'); if (b && !b.disabled) onAction(b.dataset.act, b.dataset.arg); };
+    document.getElementById('char-card').onclick = el.onclick;   // 캐릭터 카드의 동료 버튼
   }
 
   const bagSlots = () => save.bag.length;
@@ -931,7 +947,36 @@ const Game = (() => {
       ${evos.length ? evos.map(e => `<div class="row">${portraitImg(e.to, 'portrait sm')}<div class="grow"><b>${esc(spName(e.to))}</b> ${typeBadges(DATA.species[e.to].t)}<div class="dim">${e.req}</div>${borrowNote(e.to) ? `<div class="dim tiny">${esc(borrowNote(e.to))}</div>` : ''}</div>
         <button class="btn sm" data-act="evolve" data-arg="${e.to}" ${e.ok ? '' : 'disabled'}>진화</button></div>`).join('') : '<p class="dim">더 이상 진화하지 않습니다.</p>'}
       <h3>영입한 포켓몬 <span class="dim">(각자 레벨이 따로 저장됩니다 · 지금 영입 확률 ${(recruitRate(ch.lv) * 100).toFixed(1)}%)</span></h3>
-      <div class="roster">${roster.map(id => `<button class="rcard ${id === sp ? 'on' : ''}" data-act="switch" data-arg="${id}">${portraitImg(id, 'portrait sm')}<span>${esc(spName(id))}</span><span class="dim">Lv${save.roster[id].lv}</span></button>`).join('')}</div>`;
+      <div class="roster">${roster.map(id => `<button class="rcard ${id === sp ? 'on' : ''}" data-act="switch" data-arg="${id}">${portraitImg(id, 'portrait sm')}<span>${esc(spName(id))}</span><span class="dim">Lv${save.roster[id].lv}</span></button>`).join('')}</div>
+      ${partySection()}`;
+  }
+  // 왼쪽 캐릭터 카드 아래: 동료 정보와 기술·지닌 물건 변경, 작전
+  function partyCard() {
+    const pl = partyList();
+    const one = id => {
+      const c = save.roster[id], s = applyBoost(calcStats(id, c.lv, 31), c.boost), mv = c.moves.length ? c.moves : defaultMoves(id, c.lv);
+      return `<details class="cc-mate"><summary>${portraitImg(id, 'portrait xs', 'Normal', c.shiny)} <b>${esc(spName(id))}</b> Lv${c.lv}${c.held ? ` ${ITEMS[c.held].icon}` : ''}</summary>
+        <div class="dim">${typeBadges(DATA.species[id].t)} HP ${s.maxhp} · 특성 <span class="ab-link" data-ability="${entryAbility(id, c)}">${esc(abilityName(entryAbility(id, c)))}</span></div>
+        <div class="cc-ability">지닌 물건 ${c.held ? `${ITEMS[c.held].icon} <b>${esc(ITEMS[c.held].n)}</b>` : '<span class="dim">없음</span>'}</div>
+        <div class="cc-moves">${mv.map(m => `<div class="move-row clickable" data-move="${m}">${moveLine(m)}</div>`).join('')}</div>
+        <div class="btns"><button class="btn sm" data-act="set-moves" data-arg="${id}">📘 기술</button> <button class="btn sm" data-act="hold" data-arg="${id}">지닌 물건</button>${c.held ? ` <button class="btn sm ghost" data-act="unhold" data-arg="${id}">빼기</button>` : ''} <button class="btn sm ghost danger" data-act="party-remove" data-arg="${id}">동료에서 빼기</button></div></details>`;
+    };
+    return `<div class="cc-party"><div class="cc-party-head">🤝 동료 ${pl.length}/${PARTY_MAX}${pl.length < PARTY_MAX ? ' <button class="btn sm ghost" data-act="party-add">＋ 추가</button>' : ''}</div>
+      ${pl.length ? `<div class="dim tiny">작전은 던전에서 🤝 동료 버튼(V)으로 바꿔요. 탐험마다 '나를 따라와'로 시작해요.</div>${pl.map(one).join('')}` : `<div class="dim">동료 없이 혼자 탐험합니다. <span title="혼자 탐험 보정">(적에게 받는 데미지 ${SOLO_DMG_MUL}배)</span></div>`}</div>`;
+  }
+  function partySection() {
+    const pl = partyList(), cand = Object.keys(save.roster).map(Number).filter(id => id !== save.current && !pl.includes(id));
+    return `<h3>🤝 동료 <span class="dim">(${pl.length}/${PARTY_MAX} · 일반·테마 던전에 함께 간다. 로그라이크와 오늘의 도전은 혼자)</span></h3>
+      <p class="dim">동료는 스스로 싸우고 리더를 따라온다. 경험치도 함께 받는다. 쓰러지면 그 탐험에서만 빠지고, 리더가 쓰러지면 탐험이 끝난다. 동료가 있으면 혼자 탐험 보정(받는 데미지 ${SOLO_DMG_MUL}배)은 없다.</p>
+      <div class="roster">${pl.map(id => `<button class="rcard on" data-act="party-remove" data-arg="${id}" title="눌러서 빼기">${portraitImg(id, 'portrait sm', 'Normal', save.roster[id].shiny)}<span>${esc(spName(id))}</span><span class="dim">Lv${save.roster[id].lv} · 빼기</span></button>`).join('')}
+        ${pl.length < PARTY_MAX && cand.length ? '<button class="rcard" data-act="party-add"><span style="font-size:22px">＋</span><span>동료 추가</span></button>' : ''}</div>
+      ${!cand.length && !pl.length ? '<p class="dim">던전에서 영입한 포켓몬이 있어야 동료로 데려갈 수 있어요.</p>' : ''}`;
+  }
+  function partyAdd() {
+    const pl = partyList(), cand = Object.keys(save.roster).map(Number).filter(id => id !== save.current && !pl.includes(id)).sort((a, b) => save.roster[b].lv - save.roster[a].lv);
+    UI.open({ title: '🤝 동료 추가', wide: true, html: `<div class="roster">${cand.map(id => `<button class="rcard" data-pick="${id}">${portraitImg(id, 'portrait sm', 'Normal', save.roster[id].shiny)}<span>${esc(spName(id))}</span><span class="dim">Lv${save.roster[id].lv}</span></button>`).join('')}</div>`,
+      choices: [{ label: '닫기', fn: () => {} }],
+      onOpen: (box, md) => box.querySelectorAll('[data-pick]').forEach(b => { b.onclick = () => { save.party = [...partyList(), +b.dataset.pick].slice(0, PARTY_MAX); persist(); UI.close(md); renderTown(); }; }) });
   }
 
   // 폼체인지·메가진화 (js/forms.js): 고를 수 있는 모습은 여기서 고르고, 나머지는 던전에서 바뀌는 방법을 보여준다
@@ -1200,7 +1245,9 @@ const Game = (() => {
       }
       case 'change-char': chooseCharacter(sp => switchChar(sp), false, Object.keys(save.roster).map(Number)); return;
       case 'switch': if (save.roster[+arg]) switchChar(+arg); break;
-      case 'set-moves': return setMoves();
+      case 'party-add': return partyAdd();
+      case 'party-remove': save.party = partyList().filter(id => id !== +arg); break;
+      case 'set-moves': return setMoves(arg && save.roster[+arg] ? +arg : save.current);
       case 'code-enter': return enterCode();
       case 'account': return accountDialog();
       case 'sos-board': return sosBoard();
@@ -1228,8 +1275,8 @@ const Game = (() => {
       case 'toggle-shiny': { const ch = save.roster[save.current]; if (!shinyOk(save.current)) return; ch.shiny = !ch.shiny; UI.toast(ch.shiny ? '✨ 이로치로 바꿨습니다.' : '보통 모습으로 바꿨습니다.'); break; }
       case 'save-export': exportSave(); return;
       case 'save-import': document.getElementById('save-file').click(); return;
-      case 'unhold': { const ch = save.roster[save.current]; if (ch.held) { storeAdd(ch.held); ch.held = null; UI.toast('지닌 물건을 창고에 넣었습니다.'); } break; }
-      case 'hold': return chooseHeld();
+      case 'unhold': { const ch = save.roster[arg ? +arg : save.current]; if (ch && ch.held) { storeAdd(ch.held); ch.held = null; UI.toast('지닌 물건을 창고에 넣었습니다.'); } break; }
+      case 'hold': return chooseHeld(arg && save.roster[+arg] ? +arg : save.current);
       case 'use-tm': return useTM(arg);
       case 'set-ability': return changeAbility(+arg);
       case 'evolve': return evolve(+arg);
@@ -1294,14 +1341,14 @@ const Game = (() => {
   }
 
   // 가방/창고의 지닌 물건 중에서 고르기 (원래 지니던 것은 창고로)
-  function chooseHeld() {
-    const ch = save.roster[save.current];
+  function chooseHeld(sp = save.current) {
+    const ch = save.roster[sp];
     const opts = [];
     save.bag.forEach((b, i) => { if (ITEMS[b.id]?.held) opts.push({ id: b.id, from: 'bag', i }); });
     Object.keys(save.storage).forEach(id => { if (ITEMS[id]?.held && save.storage[id] > 0) opts.push({ id, from: 'storage' }); });
     if (!opts.length) { UI.alert('지닌 물건', '<p>가방이나 창고에 지닐 수 있는 물건이 없습니다.</p><p class="dim">상점에서 매일 지닌 물건 몇 개를 팔고, 던전에서도 가끔 주울 수 있어요.</p>'); return; }
     UI.open({
-      title: '지니게 할 물건', wide: true,
+      title: `${esc(spName(sp))}에게 지니게 할 물건`, wide: true,
       choices: opts.map(o => ({ label: `${ITEMS[o.id].icon} ${esc(ITEMS[o.id].n)} <span class="dim">(${o.from === 'bag' ? '가방' : '창고'})</span>`, sub: esc(ITEMS[o.id].d), fn: () => {
         if (o.from === 'bag') save.bag.splice(o.i, 1); else { save.storage[o.id]--; if (save.storage[o.id] <= 0) delete save.storage[o.id]; }
         if (ch.held) storeAdd(ch.held);
@@ -1361,14 +1408,14 @@ const Game = (() => {
     UI.toast(`${jo(spName(sp), '으로')} 변경했습니다.`);
   }
 
-  function setMoves() {
-    const sp = save.current, ch = save.roster[sp];
+  function setMoves(sp = save.current) {
+    const ch = save.roster[sp];
     // 진화 전 모습이 이 레벨까지 배우는 기술과 지금 쓰고 있는 기술도 고를 수 있다 (진화해도 잊지 않는다)
     const all = [...new Set([...ch.moves, ...learnableUpTo(sp, ch.lv), ...preEvos(sp).flatMap(p => learnableUpTo(p, ch.lv)), ...(ch.tms || [])])].filter(m => DATA.moves[m]);
     if (!all.length) { UI.alert('기술 설정', '<p>배울 수 있는 기술이 없습니다.</p>'); return; }
     const sel = new Set(ch.moves);
     UI.open({
-      title: '기술 설정 (최대 4개)', wide: true,
+      title: `${esc(spName(sp))} 기술 설정 (최대 4개)`, wide: true,
       html: `<p class="dim">현재 레벨까지 배울 수 있는 기술(진화 전 모습의 기술 포함)과 기술머신으로 배운 기술 중에서 자유롭게 고르세요. <b>?</b>를 누르면 기술 설명을 볼 수 있습니다.</p><div class="move-pick">${all.map(id => `<label class="move-row"><input type="checkbox" value="${id}" ${sel.has(id) ? 'checked' : ''}> ${moveLine(id)}<span class="info" data-move="${id}" title="기술 정보">?</span></label>`).join('')}</div>`,
       choices: [{ label: '저장', fn: () => { ch.moves = [...sel]; persist(); renderTown(); } }, { label: '취소', fn: () => {} }],
       onOpen: box => {
@@ -1465,6 +1512,7 @@ const Game = (() => {
       const ok = await UI.confirm(esc(dg.n), `<p>${dg.floors}층짜리 던전입니다. (적 Lv ${dg.lv[0]}~${dg.lv[1]}, 내 레벨 ${ch.lv})</p>
         <p>가방: ${save.bag.length}/${bagMax()}칸${save.bag.length ? '' : ' <span class="warn">(비어 있음!)</span>'}</p>
         ${ms.length ? `<p>이 던전의 임무: ${ms.map(m => m.floor + 'F').join(', ')}</p>` : ''}
+        ${partyList().length ? `<p>🤝 동료: ${partyList().map(id => `${esc(spName(id))} Lv${save.roster[id].lv}`).join(', ')}</p>` : `<p class="dim">혼자 갑니다. 혼자 탐험 보정으로 적에게 받는 데미지가 ${SOLO_DMG_MUL}배예요. (캐릭터 탭에서 동료를 고를 수 있어요)</p>`}
         <p class="dim">쓰러지면 가방 아이템의 절반(무작위)과 이번 탐험에서 주운 돈을 잃습니다. 레벨은 유지됩니다.</p>`, '출발한다', '그만둔다');
       if (!ok) return;
     }
@@ -1487,7 +1535,7 @@ const Game = (() => {
     }
     p.selForm = ch.form || undefined;   // 캐릭터 탭에서 골라 둔 모습 (로토무 등)
     p.belly = 100;
-    const run = { dungeon: dg.id, floor: 1, mode: dg.mode, p, bag, money: 0, done: [] };
+    const run = { dungeon: dg.id, floor: 1, mode: dg.mode, p, bag, money: 0, done: [], party: dg.mode === 'normal' ? partyList().map(makePartner) : [] };
     show('dungeon-screen');
     Dungeon.enter(run);
   }
@@ -1517,6 +1565,8 @@ const Game = (() => {
     const p = r.p;
     save.run = { dungeon: r.dungeon, floor: r.floor, mode: r.mode, bag: r.bag, money: r.money, done: r.done, daily: r.daily || null, turns: r.turns || 0, kills: r.kills || 0,
       p: { sp: p.sp, lv: p.lv, exp: p.exp, hp: p.hp, belly: p.belly, status: p.status, statusT: p.statusT, moves: p.moves.map(m => m.id), pp: p.moves.map(m => m.pp), ability: p.baseAbility ?? p.ability, held: p.held || null, tms: p.tms || [], shiny: !!p.shiny, boost: p.boost || null, form: p.selForm || null } };
+    save.run.party = (r.party || []).map(a => ({ sp: a.sp, lv: a.lv, exp: a.exp, hp: a.hp, moves: a.moves.map(m => m.id), pp: a.moves.map(m => m.pp), ability: a.baseAbility ?? a.ability, fainted: !!a.fainted, status: a.status, statusT: a.statusT }));
+    saveParty(r);
     // 일반 던전은 층마다 레벨도 저장
     if (r.mode === 'normal') save.roster[p.sp] = { ...save.roster[p.sp], lv: p.lv, exp: p.exp, moves: p.moves.map(m => m.id), held: p.held || null, tms: p.tms || [], ...(p.boost ? { boost: p.boost } : {}) };
     persist();
@@ -1527,7 +1577,13 @@ const Game = (() => {
     if (s.daily) Progress.setupDaily(s.daily);
     const p = makeCreature(s.p.sp, s.p.lv, { player: true, exp: s.p.exp, moves: s.p.moves, pp: s.p.pp, ability: s.p.ability ?? entryAbility(s.p.sp, save.roster[s.p.sp]), boost: s.p.boost || undefined });
     p.hp = clamp(s.p.hp, 1, p.maxhp); p.belly = s.p.belly; p.held = s.p.held || null; p.tms = s.p.tms || []; p.shiny = !!s.p.shiny; p.status = s.p.status; p.statusT = s.p.statusT; p.selForm = s.p.form || undefined;
-    const run = { dungeon: s.dungeon, floor: s.floor, mode: s.mode, p, bag: s.bag, money: s.money, done: s.done, daily: s.daily || null, turns: s.turns || 0, kills: s.kills || 0 };
+    const party = (s.party || []).filter(x => save.roster[x.sp]).map(x => {
+      const a = makePartner(x.sp);
+      Object.assign(a, makeCreature(x.sp, x.lv, { ally: true, exp: x.exp, moves: x.moves, pp: x.pp, ability: x.ability, boost: save.roster[x.sp].boost }), { ally: true, held: a.held, shiny: a.shiny, tms: a.tms, selForm: a.selForm });
+      a.hp = clamp(x.hp, 1, a.maxhp); a.fainted = !!x.fainted; a.status = x.status; a.statusT = x.statusT;
+      return a;
+    });
+    const run = { dungeon: s.dungeon, floor: s.floor, mode: s.mode, p, bag: s.bag, money: s.money, done: s.done, daily: s.daily || null, turns: s.turns || 0, kills: s.kills || 0, party };
     show('dungeon-screen');
     Dungeon.enter(run);
   }
@@ -1590,6 +1646,7 @@ const Game = (() => {
       snap: { bag: r.bag, money: r.money, done: r.done, held: p.held || null },
     };
     save.sos = s;
+    saveParty(r);
     // 레벨은 그대로 남고, 가방과 지닌 물건은 쓰러진 곳에 남아 구조를 기다린다
     save.roster[p.sp] = { ...save.roster[p.sp], lv: p.lv, exp: p.exp, moves: p.moves.map(m => m.id), held: null, ...(p.tms ? { tms: p.tms } : {}), ...(p.boost ? { boost: p.boost } : {}) };
     save.bag = [];   // 가방은 쓰러진 곳에서 구조를 기다린다 (s.snap.bag)
@@ -1729,8 +1786,10 @@ const Game = (() => {
     p.held = s.snap.held; p.tms = (ch.tms || []).slice(); p.shiny = !!ch.shiny; p.belly = 100; p.selForm = ch.form || undefined;
     // 기다리는 동안 모은 가방은 창고로 (구조된 가방을 돌려받기 위해)
     if (save.bag.length) { save.bag.forEach(b => storeAdd(b.id, b.n)); UI.toast('지금 가방의 아이템은 창고에 넣었습니다.'); save.bag = []; }
-    const run = { dungeon: s.dungeon, floor: s.floor, mode: 'normal', p, bag: s.snap.bag, money: s.snap.money, done: s.snap.done || [] };
-    save.current = s.sp; save.sos = null; persist();
+    save.current = s.sp;
+    // 동료도 다시 함께 (구조되어 모두 기운을 되찾았다)
+    const run = { dungeon: s.dungeon, floor: s.floor, mode: 'normal', p, bag: s.snap.bag, money: s.snap.money, done: s.snap.done || [], party: partyList().map(makePartner) };
+    save.sos = null; persist();
     UI.closeAll();
     show('dungeon-screen');
     Dungeon.enter(run);
@@ -1784,6 +1843,7 @@ const Game = (() => {
       if (!was) lines.push(`✔ ${esc(jo(spName(p.sp), '으로'))} ${esc(jo(dg.n, '을'))} 처음 클리어했다!`);
       for (const m of got) lines.push(`${m.icon} <b>메달 획득: ${esc(m.n)}</b> — ${esc(jo(spName(p.sp), '으로'))} ${esc(m.d.replace('모두 클리어', '모두 클리어했다!'))}`);
     }
+    saveParty(r);
     if (dg.mode === 'normal') {
       if (save.roster[p.sp] || p.sp === save.current) save.roster[p.sp] = { ...save.roster[p.sp], lv: p.lv, exp: p.exp, moves: p.moves.map(m => m.id), held: p.held || null, ...(p.tms ? { tms: p.tms } : {}), ...(p.boost ? { boost: p.boost } : {}) };
       if (success) {
@@ -1904,6 +1964,7 @@ const Game = (() => {
         { label: '📊 내 상태 (P)', fn: () => setTimeout(Dungeon.showStatus, 0) },
         { label: '조작법', fn: Dungeon.showHelp },
         { label: '게임 가이드 (타입 상성표 등)', fn: Guide.menu },
+        ...((Dungeon.run?.party || []).length ? [{ label: '🤝 동료 (V) — 상태·작전', fn: () => setTimeout(Dungeon.partyMenu, 0) }] : []),
         { label: `빠른 연출: ${s.fast ? '켜짐' : '꺼짐'}`, fn: () => { s.fast = !s.fast; persist(); dungeonMenu(); } },
         { label: `계단 자동 하강: ${s.autoDescend ? '켜짐' : '꺼짐'}`, fn: () => { s.autoDescend = !s.autoDescend; persist(); dungeonMenu(); } },
         { label: `효과음: ${s.sfx !== false ? '켜짐' : '꺼짐'}`, fn: () => { s.sfx = s.sfx === false; persist(); Sound.refresh(); dungeonMenu(); } },

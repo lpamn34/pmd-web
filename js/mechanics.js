@@ -1,7 +1,9 @@
 // 전투 / 성장 메커니즘
 'use strict';
 
-const NORMAL_ATTACK = { n: '공격', t: 0, p: 40, a: 100, pp: 0, c: 2, r: 'f', fg: [1] };
+const NORMAL_ATTACK = { n: '공격', t: 0, p: 40, a: 100, pp: 0, c: 2, r: 'f', fg: [1], basic: true };
+// 불가사의부적(껍질몬)도 그냥 공격은 이 확률로 맞는다
+const WONDER_GUARD_BASIC = 0.3;
 const MAX_LEVEL = 100;
 
 const expFor = lv => lv >= MAX_LEVEL ? Infinity : Math.pow(lv, 3);
@@ -47,14 +49,14 @@ const learnedAt = (sp, lv) => DATA.species[sp].l.filter(([l]) => l === lv).map(x
 // 던전 안에서 쓰는 개체
 function makeCreature(sp, lv, opts = {}) {
   const d = DATA.species[sp];
-  const iv = opts.player ? 31 : 8;
+  const iv = opts.player || opts.ally ? 31 : 8;   // 플레이어와 동료는 개체값 최고
   const c = {
     sp, lv, exp: opts.exp || expFor(lv), types: d.t.slice(), player: !!opts.player,
     iv, stages: {}, status: null, statusT: 0, flinch: false, dir: 0, x: 0, y: 0, id: Math.random(),
     ...applyBoost(calcStats(sp, lv, iv), opts.boost),
   };
   if (opts.boost) c.boost = { ...opts.boost };
-  c.ability = opts.ability != null ? opts.ability : (opts.player ? defaultAbility(sp) : randomAbility(sp));
+  c.ability = opts.ability != null ? opts.ability : (opts.player || opts.ally ? defaultAbility(sp) : randomAbility(sp));
   c.hp = c.maxhp;
   const ml = opts.moves || defaultMoves(sp, lv);
   c.moves = ml.map(id => ({ id, pp: DATA.moves[id].pp, max: DATA.moves[id].pp }));
@@ -188,7 +190,7 @@ function calcHit(att, def, move) {
   if (A.scrappy && (mt === 1 || mt === 2) && def.types.includes(8)) eff = typeEff(mt, def.types.filter(t => t !== 8));
   if (Dd.levitate && mt === 5) eff = 0;
   if (Dd.immuneFlag && hasFlag(move, Dd.immuneFlag)) eff = 0;
-  if (Dd.wonderGuard && eff <= 1) eff = 0;
+  if (Dd.wonderGuard && eff <= 1 && !(move.basic && Math.random() < WONDER_GUARD_BASIC)) eff = 0;
   if (eff === 0) return { hit: true, dmg: 0, eff: 0 };
   const phys = move.c === 2;
   let aSt = Dd.unaware ? 0 : (att.stages[phys ? 2 : 4] || 0);
@@ -213,6 +215,7 @@ function calcHit(att, def, move) {
   if (A.tinted && eff < 1) dmg *= 2;
   dmg *= (crit ? (A.sniper ? 2.25 : 1.5) : 1) * (0.85 + Math.random() * 0.15);
   dmg *= guardMul(def, Dd, move, mt, eff);
+  if (!att.player && def.player && !def.partners) dmg *= SOLO_DMG_MUL;   // 혼자 탐험하므로 조금 완화 (동료가 있으면 없음)
   return { hit: true, dmg: Math.max(1, Math.floor(dmg)), eff, crit };
 }
 
@@ -225,7 +228,8 @@ function moveScore(att, def, move) {
   const stab = mt && (att.types.includes(mt) || Ab.protean) ? (Ab.adapt ? 2 : 1.5) : 1;
   const hits = move.hits ? (Ab.skillLink ? move.hits[1] : (move.hits[0] + move.hits[1]) / 2) : 1;
   let eff = typeEff(mt, def.types);
-  if ((Dd.levitate && mt === 5) || (Dd.absorb && Dd.absorb.t === mt) || (Dd.wonderGuard && eff <= 1)) eff = 0;
+  if ((Dd.levitate && mt === 5) || (Dd.absorb && Dd.absorb.t === mt)) eff = 0;
+  if (Dd.wonderGuard && eff <= 1) eff = move.basic ? eff * WONDER_GUARD_BASIC : 0;
   return move.p * powerMul(att, def, move, mt, Ab) * hits * stab * eff * (A / D) * ((move.a || 100) / 100);
 }
 
@@ -239,6 +243,8 @@ function effText(eff) {
 // 5세대식: 상대보다 레벨이 높을수록 경험치 감소
 // 내 레벨보다 LOW_LV_GAP 이상 낮은 적은 전체 배율 EXP_RATE 대신 LOW_LV_MUL배
 const LOW_LV_GAP = 6, LOW_LV_MUL = 0.1;
+// 혼자 탐험할 때 적에게 받는 데미지 배율
+const SOLO_DMG_MUL = 0.85;
 function expGain(enemy, plv) {
   const e = enemy.lv, scale = Math.pow((2 * e + 10) / (e + plv + 10), 2.5);
   return Math.max(1, Math.floor(DATA.species[enemy.sp].x * e / 7 * scale * (plv - e >= LOW_LV_GAP ? LOW_LV_MUL : EXP_RATE)));

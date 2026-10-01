@@ -141,6 +141,13 @@ const Dungeon = (() => {
     dg.bosses = [...set].sort((a, b) => a - b);
   }
 
+  // 층에 처음 있는 적 중 이 확률로 잠들어 있다. 공격받거나, 탐험대가 옆에 오면 가끔 깬다
+  const NAP_CHANCE = 0.2, NAP_WAKE = 0.3;
+  function wakeNap(c, at, msg) {
+    if (!c.napping) return;
+    c.napping = false; if (c.status === 'slp') { c.status = null; c.statusT = 0; }
+    if (msg && seen(c)) log(`${jo(nm(c), '이')} 눈을 떴다!`, at);
+  }
   function spawnEnemy(pos, sp, lv) {
     sp = sp || pick(D.pool);
     const c = makeCreature(sp, Math.max(1, (lv || D.lvl) + rint(-1, 1)));
@@ -306,8 +313,13 @@ const Dungeon = (() => {
     // 적
     computeVis();
     const nEn = Math.min(10, rint(4, 6) + Math.floor(run.floor / 3));
-    for (let i = 0; i < nEn; i++) { const t = randomRoomTile({ far: 5 }); if (t) spawnEnemy(t); }
+    for (let i = 0; i < nEn; i++) {
+      const t = randomRoomTile({ far: 5 }); if (!t) continue;
+      const e = spawnEnemy(t);
+      if (Math.random() < NAP_CHANCE) { e.napping = true; e.status = 'slp'; e.statusT = 99999; }   // 가끔 제자리에서 자고 있다
     }
+    }
+    placeAllies(p);
     // 임무 대상
     if (dg.mode === 'normal') {
       for (const ms of Game.save.missions.accepted) {
@@ -339,6 +351,20 @@ const Dungeon = (() => {
     setFace('Determined', 1800);
     if (D.boss) D.prompts.push(bossIntro);
     Game.saveRunSnapshot(run);
+    updateTacticBtn();
+  }
+
+  // 동료를 리더 근처 빈 칸에 세운다 (층에 들어설 때)
+  function placeAllies(p) {
+    for (const a of run.party || []) {
+      if (a.fainted || a.hp <= 0) continue;
+      const spot = bfs(p.x, p.y, (x, y) => (x !== p.x || y !== p.y) && !creatureAt(x, y), { max: 400 });
+      if (!spot) continue;
+      a.x = spot.x; a.y = spot.y; a.dir = p.dir; a.tween = null; a.act = null; a.dead = false;
+      a.stages = a.stages || {}; a.stageT = a.stageT || {};
+      a.charging = null; a.rampage = null; a.recharge = false; a.struck = new Set(); a.target = null;
+      D.mons.push(a); Sprites.load(looksOf(a), a.shiny);
+    }
   }
 
   // ───────────────────────── 시야 ─────────────────────────
@@ -434,7 +460,7 @@ const Dungeon = (() => {
   function intimidateCheck() {
     const p = P(), pa = abilityOf(p), at = Math.max(T.cursor, T.moveEnd, now());
     for (const e of D.mons) {
-      if (e.npc || e.metPlayer || !seen(e)) continue;
+      if (e.npc || e.ally || e.metPlayer || !seen(e)) continue;
       e.metPlayer = true;
       Progress.seen(e.sp);
       if (e.shiny) { Sound.play('shiny', at); log(`✨ 색이 다른 ${jo(spName(e.sp), '이')} 나타났다!`, at); setFace('Surprised', 2000); D.fx.push({ kind: 'ring', x: e.x, y: e.y, at, dur: 700, color: '#fff6a0' }); Game.noteShiny(e.sp); }
@@ -449,7 +475,7 @@ const Dungeon = (() => {
     abLog(src, `${jo(nm(tgt), '을')} 위협했다!`, at);
     statChange(tgt, st, -1, at, src);
   }
-  const hostilesVisible = () => D.mons.filter(m => !m.npc && seen(m));
+  const hostilesVisible = () => D.mons.filter(m => !m.npc && !m.ally && seen(m));
 
   // ───────────────────────── 조회 ─────────────────────────
   function creatureAt(x, y) {
@@ -462,7 +488,10 @@ const Dungeon = (() => {
     const x = c.x + dx, y = c.y + dy;
     return floorAt(x, y) && diagOK(c.x, c.y, dx, dy) && !creatureAt(x, y);
   }
-  const hostileTo = (a, b) => !!b && !b.npc && b !== a && (a.player ? !b.player : b.player);
+  // 편: 플레이어와 동료(ally)가 한 편, 나머지 적이 한 편
+  const party = c => !!(c && (c.player || c.ally));
+  const hostileTo = (a, b) => !!b && !b.npc && b !== a && party(a) !== party(b);
+  const allies = () => D.mons.filter(m => m.ally && m.hp > 0);
 
   // BFS: 목표를 만족하는 가장 가까운 칸과 그 첫 걸음
   function bfs(sx, sy, isGoal, opts = {}) {
@@ -485,7 +514,7 @@ const Dungeon = (() => {
         if (opts.known && !D.explored[ni]) continue;
         if (!diagOK(x, y, DIRS[d][0], DIRS[d][1])) continue;
         if (opts.avoidTraps && !isGoal(nx, ny) && D.traps.some(t => t.seen && t.x === nx && t.y === ny)) continue;
-        if (opts.blockMons && !isGoal(nx, ny)) { const c = creatureAt(nx, ny); if (c && c !== opts.self && (opts.seenOnly ? seen(c) : true)) continue; }
+        if (opts.blockMons && !isGoal(nx, ny)) { const c = creatureAt(nx, ny); if (c && c !== opts.self && !(opts.passAllies && c.ally) && (opts.seenOnly ? seen(c) : true)) continue; }
         prev[ni] = cur; q.push(ni);
       }
     }
@@ -564,11 +593,12 @@ const Dungeon = (() => {
         x += dx; y += dy;
         if (!floorAt(x, y)) break;
         const t = creatureAt(x, y);
+        if (t && party(user) && party(t)) continue;   // 탐험대의 직선 기술은 동료를 지나간다
         if (t) { if (hostileTo(user, t)) targets = [t]; break; }
       }
       D.fx.push({ kind: 'proj', x0: user.x, y0: user.y, x1: targets[0]?.x ?? x, y1: targets[0]?.y ?? y, at: t0 + dur * 0.3, dur: dur * 0.3, color });
     } else if (move.r === 'r') {
-      const pool = user.player ? D.mons : [D.player];
+      const pool = [D.player, ...D.mons].filter(t => t && t.hp > 0);
       targets = pool.filter(t => hostileTo(user, t) && Math.max(Math.abs(t.x - user.x), Math.abs(t.y - user.y)) <= 3 && los(user.x, user.y, t.x, t.y));
       D.fx.push({ kind: 'ring', x: user.x, y: user.y, at: t0 + dur * 0.3, dur: 350 * spd(), color });
     }
@@ -640,7 +670,7 @@ const Dungeon = (() => {
 
   // 난동 중: 가까운 적을 자동으로 공격
   function rampageStep(c) {
-    const foes = c.player ? D.mons.filter(m => hostileTo(c, m)) : [D.player];
+    const foes = [D.player, ...D.mons].filter(m => hostileTo(c, m));
     const adj = foes.find(f => Math.max(Math.abs(f.x - c.x), Math.abs(f.y - c.y)) === 1 && diagOK(c.x, c.y, Math.sign(f.x - c.x), Math.sign(f.y - c.y)));
     const dir = adj ? dirIndex(adj.x - c.x, adj.y - c.y) : c.dir;
     useMove(c, c.rampage.slot, confuse(c, dir), { free: true });
@@ -798,6 +828,7 @@ const Dungeon = (() => {
   const pctDmg = (c, frac) => Math.max(1, Math.floor(c.maxhp * frac * (c.boss ? BOSS_PCT_MUL : 1)));
   function damage(c, amt, src, at, eff = 1, crit = false) {
     if (c.hp <= 0) return;
+    if (src && party(src) && !party(c)) { wakeNap(c, at, true); if (src.player) c.provoked = true; }   // 잠든 적은 맞으면 깬다 / 리더가 공격한 적 (먼저 공격하지마 작전)
     const A = abilityOf(c);
     if (!src && A.magicGuard) return;
     if (A.sturdy && c.hp >= c.maxhp && amt >= c.hp && c.maxhp > 1) { amt = c.hp - 1; abLog(c, `${jo(nm(c), '은')} 공격을 버텼다!`, at); }
@@ -831,9 +862,18 @@ const Dungeon = (() => {
       D.prompts.push(() => Game.endRun('faint'));
       return;
     }
+    if (c.ally) {   // 동료: 이번 탐험에서 빠진다 (마을로 돌아감)
+      c.dead = true; c.deadAt = at; c.fainted = true;
+      D.mons = D.mons.filter(m => m !== c); D.corpses.push(c);
+      Sound.play('faint', at);
+      log(`${jo(nm(c), '은')} 쓰러져서 탐험대에서 빠졌다...`, at);
+      updateTacticBtn();
+      return;
+    }
     c.dead = true; c.deadAt = at;
     if (seen(c) || src === P()) Sound.play('faint', at);
-    if (src && src.player) { Progress.add('kills'); Progress.beaten(c.sp); run.kills = (run.kills || 0) + 1; checkLater(); }
+    const byParty = !!(src && (src.player || src.ally));
+    if (byParty) { Progress.add('kills'); Progress.beaten(c.sp); run.kills = (run.kills || 0) + 1; checkLater(); }
     D.mons = D.mons.filter(m => m !== c);
     D.corpses.push(c);
     if (c.item) { landItem(c.x, c.y, c.item, 1, at); c.item = null; }
@@ -843,8 +883,10 @@ const Dungeon = (() => {
       if (sa.onKO) statChange(src, sa.onKO === 'best' ? (src.atk >= src.spa ? 2 : 4) : 2, 1, at, src);
     }
     if (src && abilityOf(c).aftermath && src.hp > 0) { abLog(c, `${jo(nm(src), '은')} 폭발에 휘말렸다!`, at); damage(src, pctDmg(src, 1 / 4), c, at); }
-    if (src && src.player) {
-      gainExp(Math.floor(expGain(c, P().lv) * (c.outlaw || c.boss ? BOSS_EXP_MUL : 1) * (c.shiny ? 2 : 1) * (heldOf(P()).expMul || 1)), at);
+    if (byParty) {
+      const expOf = m => Math.floor(expGain(c, m.lv) * (c.outlaw || c.boss ? BOSS_EXP_MUL : 1) * (c.shiny ? 2 : 1) * (heldOf(m).expMul || 1));
+      gainExp(expOf(P()), at);
+      for (const a of allies()) allyExp(a, expOf(a), at);   // 동료도 같은 방식으로 경험치를 받는다
       const free = !itemAt(c.x, c.y) && !(D.stairs.x === c.x && D.stairs.y === c.y);
       const sig = sigItemsFor([c.sp]);
       if (c.shiny && free) D.items.push({ x: c.x, y: c.y, id: rollMega('shiny', c.lv, D.dg) || weighted(rewardPool(D.lvl + 10, D.dg)), n: 1 });   // 이로치: 보스 보상과 같은 등급
@@ -858,6 +900,17 @@ const Dungeon = (() => {
     }
     if (c.boss) bossDefeated(c, at);
     if (c.outlaw) missionDone(c.mission, `현상수배범 ${jo(spName(c.sp), '을')} 붙잡았다!`);
+  }
+  // 동료의 경험치: 레벨이 오르면 새 기술은 빈 칸에만 (나머지는 마을의 기술 설정에서)
+  function allyExp(a, amt, at) {
+    if (a.lv >= MAX_LEVEL) return;
+    a.exp += Math.max(1, Math.floor(amt / expDiv(a.sp)));
+    while (a.lv < MAX_LEVEL && a.exp >= expFor(a.lv + 1)) {
+      a.lv++; recalc(a);
+      log(`${jo(nm(a), '은')} 레벨 ${jo(a.lv, '으로')} 올랐다!`, at);
+      popup(a, 'LEVEL UP', '#ffe066', at + 200);
+      for (const mid of learnedAt(a.sp, a.lv)) if (!a.moves.some(m => m.id === mid) && a.moves.length < 4) { a.moves.push({ id: mid, pp: DATA.moves[mid].pp, max: DATA.moves[mid].pp }); log(`${jo(nm(a), '은')} ${jo(DATA.moves[mid].n, '을')} 배웠다!`, at); }
+    }
   }
   // raw: 이상한사탕처럼 정해진 만큼 (전설 보정 없이)
   function gainExp(amt, at, raw) {
@@ -940,10 +993,130 @@ const Dungeon = (() => {
   const confuse = (c, dir) => (c.status === 'cnf' && Math.random() < 0.5 ? rand(8) : dir);
 
   // ───────────────────────── 적 AI ─────────────────────────
-  function enemyAct(e) {
-    if (e.hp <= 0 || e.npc) return;
-    if (!canAct(e)) return;
+  // 적이 노릴 상대: 보이는 탐험대(플레이어·동료) 중 가장 가까운 쪽. 아무도 안 보이면 플레이어 (기억해 둔 곳으로 간다)
+  // 동료가 노릴 상대: 리더 근처에서 보이는 가장 가까운 적. 없으면 null (리더를 따라간다)
+  const cheb = (a, b) => Math.max(Math.abs(a.x - b.x), Math.abs(a.y - b.y));
+  // 동료 작전 (탐험마다 '나를 따라와'로 시작, 던전 안에서 바꾼다)
+  //   follow 나를 따라와: 리더 뒤에 줄지어 따라오고, 나나 동료 가까이 온 적을 가까운 것부터 처리한다
+  //   free 각자 행동: 보이는 적을 각자 쫓아가 싸우고, 없으면 근처로 모인다
+  //   wait 여기서 기다려: 그 자리에서 기다린다. 옆에 온 적에게만 반격한다
+  //   attack 적을 공격해: 멀리 있는 적도 쫓아가 공격한다 (보스가 보이면 보스부터)
+  //   passive 먼저 공격하지마: 리더가 공격한 적만 상대하고, 그 밖에는 따라오기만 한다
+  const tactic = () => (run && run.tactic) || 'follow';
+  const TACTIC_NAMES = { follow: '나를 따라와', free: '각자 행동', wait: '여기서 기다려', attack: '적을 공격해', passive: '먼저 공격하지마' };
+  const TACTIC_DESC = {
+    follow: '리더 뒤에 줄지어 따라오고, 나나 동료 가까이 온 적을 가까운 것부터 처리하고 다시 따라온다',
+    free: '보이는 적을 각자 쫓아가 싸우고, 적이 없으면 근처로 모인다',
+    wait: '그 자리에서 기다린다. 옆에 온 적에게만 반격한다',
+    attack: '멀리 있는 적도 쫓아가 공격한다. 보스가 보이면 보스부터 (보스 방에서 유용)',
+    passive: '리더가 공격한 적만 상대하고, 그 밖에는 따라오기만 한다',
+  };
+  // 동료 창: 동료의 HP·상태·지닌 물건·기술 PP·능력 변화, 작전
+  function partyMenu() {
+    if (!run || !(run.party || []).length) { log('함께 온 동료가 없다.', now()); return; }
+    const row = a => {
+      const pc = a.fainted ? 0 : a.hp / a.maxhp * 100, st = stageText(a);
+      return `<div class="pm-card${a.fainted ? ' out' : ''}"><div class="row">${portraitImg(looksOf(a), 'portrait sm', a.fainted ? 'Pain' : 'Normal', a.shiny)}<div class="grow">
+        <b>${esc(nm(a))}</b> Lv${a.lv} ${typeBadges(a.types)}${a.fainted ? ' <span class="warn">쓰러짐 (이번 탐험에서 빠짐)</span>' : ''}
+        <div>HP ${a.fainted ? 0 : a.hp}/${a.maxhp} <span class="bar small"><i style="width:${pc}%;background:${pc > 50 ? '#4de36b' : pc > 20 ? '#f5d142' : '#f55'}"></i></span>${a.status ? ` <span class="warn">${STATUS_NAMES[a.status]}</span>` : ''}${D.mons.includes(a) ? ` · 나와의 거리 ${cheb(a, P())}칸` : ''}</div>
+        <div class="dim">특성 ${esc(abilityName(a.ability))}${a.held ? ` · ${ITEMS[a.held].icon} ${esc(ITEMS[a.held].n)}` : ''}${st ? ` · 능력 변화 ${esc(st)}` : ''}</div></div></div>
+        <div class="pm-moves">${a.moves.map(m => { const d = DATA.moves[m.id]; return `<span class="type" style="background:${TYPE_COLORS[d.t - 1]}">${typeName(d.t)}</span> ${esc(d.n)} <span class="dim">PP ${m.pp}/${m.max}</span>`; }).join('<br>')}</div></div>`;
+    };
+    UI.open({ title: '🤝 동료', wide: true,
+      html: `<div class="row"><span class="grow">작전: <b>${TACTIC_NAMES[tactic()]}</b> <span class="dim">${TACTIC_DESC[tactic()]}</span></span></div>
+        ${run.party.map(row).join('')}`,
+      choices: [...Object.entries(TACTIC_NAMES).map(([k, n]) => ({ label: `${k === tactic() ? '✔ ' : ''}작전: ${n}`, sub: TACTIC_DESC[k], fn: () => { run.tactic = k; log(`🤝 작전: ${n}`, now()); partyMenu(); } })),
+        ...(liveAllies().length && run.bag.some(b => ALLY_USES.includes(ITEMS[b.id].use)) ? [{ label: '🎒 동료에게 아이템 쓰기', fn: allyBag }] : []),
+        ...(downAllies().length && run.bag.some(b => b.id === 'reviver') ? [{ label: `🌰 쓰러진 동료 되살리기 (부활씨 ${run.bag.filter(b => b.id === 'reviver').length}개)`, fn: () => pickReviveFor(run.bag.findIndex(b => b.id === 'reviver'), partyMenu) }] : []),
+        { label: '닫기', fn: () => {} }] });
+  }
+  // 동료 창에서: 동료에게 쓸 수 있는 가방 아이템 고르기
+  function allyBag() {
+    const list = run.bag.map((b, i) => ({ b, i })).filter(({ b }) => ALLY_USES.includes(ITEMS[b.id].use));
+    UI.open({ title: '🎒 동료에게 쓸 아이템', choices: [...list.map(({ b, i }) => ({ label: `${ITEMS[b.id].icon} ${esc(ITEMS[b.id].n)}${b.n > 1 ? ' ×' + b.n : ''} <span class="dim">${esc(ITEMS[b.id].d)}</span>`, fn: () => pickAllyFor(i, allyBag) })), { label: '돌아간다', fn: partyMenu }] });
+  }
+  function updateTacticBtn() {
+    const b = document.querySelector('#actions [data-k=tactic]'); if (!b) return;
+    b.hidden = !(run && (run.party || []).length);
+  }
+  function aiTarget(e) {
+    if (e.ally) {
+      const lead = P(), t = tactic();
+      // 따라와: 리더나 동료(자기 포함) 가까이 온 적을 가까운 것부터 처리한 뒤 다시 따라간다
+      const near = m => cheb(m, lead) <= 3 || allies().some(a => cheb(m, a) <= 2);
+      const ok = {
+        follow: m => cheb(m, e) <= ALLY_SIGHT && near(m),
+        free: m => cheb(m, e) <= ALLY_SIGHT,
+        wait: m => cheb(m, e) <= 1,
+        attack: m => cheb(m, e) <= ALLY_SIGHT_FAR,
+        passive: m => m.provoked && cheb(m, e) <= ALLY_SIGHT,
+      }[t] || (() => false);
+      const foes = D.mons.filter(m => !m.npc && !m.ally && m.hp > 0 && (!m.napping || t === 'attack') && ok(m) && los(e.x, e.y, m.x, m.y));
+      if (t === 'attack') { const boss = foes.find(m => m.boss); if (boss) return { p: boss, sees: true }; }
+      foes.sort((a, b) => cheb(a, e) - cheb(b, e));
+      return foes.length ? { p: foes[0], sees: true } : null;
+    }
     const p = P();
+    let best = p.hp > 0 && seen(e) ? p : null;
+    for (const a of allies()) {
+      if (cheb(a, e) > ALLY_SIGHT || !los(e.x, e.y, a.x, a.y)) continue;
+      if (!best || cheb(a, e) < cheb(best, e)) best = a;
+    }
+    return best ? { p: best, sees: true } : { p, sees: false };
+  }
+  const ALLY_SIGHT = 6, ALLY_SIGHT_FAR = 12;
+  // 이번 턴 행동 순서: 동료가 먼저 (리더에게 가까운 동료부터, 줄의 앞사람이 먼저 움직이게), 그다음 적
+  function turnOrder() {
+    const lead = P();
+    D.allyOrder = allies().sort((a, b) => cheb(a, lead) - cheb(b, lead) || run.party.indexOf(a) - run.party.indexOf(b));
+    return [...D.allyOrder, ...D.mons.filter(m => !m.ally)];
+  }
+  // 이번 턴에 움직인 자리 (뒤따르는 동료가 그 자리로 들어간다)
+  function markMoved(c, fx, fy) { c.trail = { x: fx, y: fy, turn: D.turn }; }
+  // 동료가 싸울 상대가 없으면 앞사람을 따라간다: 리더 → 동료1 → 동료2 … 줄지어 (멀리 떨어졌으면 한 턴에 두 칸)
+  function followLeader(a) {
+    if (a.swapped === D.turn) return;   // 방금 리더와 자리를 바꿨다
+    if (tactic() === 'wait') return;   // 여기서 기다려
+    const order = (D.allyOrder || allies()).filter(m => m.hp > 0 && D.mons.includes(m));
+    const k = order.indexOf(a), prev = k > 0 ? order[k - 1] : P();
+    const free = tactic() === 'free' || tactic() === 'attack', fx = a.x, fy = a.y;
+    const d = cheb(a, prev);
+    if (free && d <= 3) return;   // 각자 행동: 너무 멀어지지만 않게
+    // 앞사람이 이번 턴에 비운 칸으로 바로 들어간다
+    const tr = prev.trail;
+    if (!free && tr && tr.turn === D.turn && cheb(a, tr) === 1 && !creatureAt(tr.x, tr.y) && diagOK(a.x, a.y, tr.x - a.x, tr.y - a.y)) {
+      const mx = tr.x - a.x, my = tr.y - a.y;
+      a.x = tr.x; a.y = tr.y; a.dir = dirIndex(mx, my);
+      schedMove(a, fx, fy); markMoved(a, fx, fy); return;
+    }
+    if (d <= 1) return;
+    for (let step = d > 5 ? 2 : 1; step > 0; step--) {
+      if (cheb(a, prev) <= 1) break;
+      const near = (x, y) => Math.max(Math.abs(x - prev.x), Math.abs(y - prev.y)) === 1;
+      const path = bfs(a.x, a.y, near, { blockMons: true, self: a }) || bfs(a.x, a.y, near, { self: a });   // 막혀 있으면 다른 포켓몬을 무시하고 길을 찾는다
+      if (!path) break;
+      const mx = path.fx - a.x, my = path.fy - a.y;
+      const b = creatureAt(a.x + mx, a.y + my);
+      if (b && b.ally && b.swapped !== D.turn && diagOK(a.x, a.y, mx, my)) {   // 길을 막은 동료와 자리를 바꾼다 (막다른 길에서 되돌아갈 때)
+        b.x = a.x; b.y = a.y; schedMove(b, a.x + mx, a.y + my); b.swapped = D.turn;
+        a.x += mx; a.y += my; a.dir = dirIndex(mx, my);
+        continue;
+      }
+      if (!canStep(a, mx, my)) break;
+      a.x += mx; a.y += my; a.dir = dirIndex(mx, my);
+    }
+    if (a.x !== fx || a.y !== fy) { schedMove(a, fx, fy); markMoved(a, fx, fy); }
+  }
+
+  function enemyAct(e) {
+    if (e.skipTurn) { e.skipTurn--; return; }
+    if (e.hp <= 0 || e.npc) return;
+    if (e.napping && [P(), ...allies()].some(m => cheb(m, e) <= 1) && Math.random() < NAP_WAKE) wakeNap(e, Math.max(T.cursor, T.moveEnd), true);
+    if (e.napping) return;
+    if (!canAct(e)) return;
+    const tg = aiTarget(e);
+    if (!tg) { if (e.charging || e.rampage) { if (e.rampage) rampageStep(e); else useMove(e, e.charging.slot, e.dir, { release: true, free: true }); } else followLeader(e); return; }
+    const p = tg.p;
     if (e.charging) {
       const ddx = p.x - e.x, ddy = p.y - e.y;
       const aligned = ddx === 0 || ddy === 0 || Math.abs(ddx) === Math.abs(ddy);
@@ -952,7 +1125,7 @@ const Dungeon = (() => {
     }
     if (e.rampage) { rampageStep(e); return; }
     const nerve = abilityOf(p).unnerve ? 0.5 : 1;
-    const sees = seen(e) && p.hp > 0;
+    const sees = tg.sees && p.hp > 0;
     if (sees) e.target = { x: p.x, y: p.y };
     const dx = p.x - e.x, dy = p.y - e.y, dist = Math.max(Math.abs(dx), Math.abs(dy));
     const usable = e.moves.map((m, i) => ({ m: DATA.moves[m.id], i, pp: m.pp })).filter(o => o.pp > 0);
@@ -962,7 +1135,7 @@ const Dungeon = (() => {
       const self = m.r === 's' || m.ss;
       return m.sc.some(([st, ch]) => self ? ch > 0 && (e.stages[st] || 0) < AI_STAGE_LIMIT : ch < 0 && (p.stages[st] || 0) > -AI_STAGE_LIMIT);
     };
-    if (e.item && enemyUseItem(e, p, sees, dist, dx, dy)) return;
+    if (!e.ally && e.item && enemyUseItem(e, p, sees, dist, dx, dy)) return;
     if (sees && dist === 1 && diagOK(e.x, e.y, Math.sign(dx), Math.sign(dy))) {
       const dir = confuse(e, dirIndex(dx, dy));
       const opts = usable.filter(o => worthUsing(e, p, o.m));
@@ -978,6 +1151,7 @@ const Dungeon = (() => {
       const area = usable.filter(o => o.m.r === 'r' && o.m.c !== 1);
       if (area.length && Math.random() < 0.25 * nerve && los(e.x, e.y, p.x, p.y)) { useMove(e, pick(area).i, dirIndex(dx, dy) || 0); return; }
     }
+    if (e.ally && tactic() === 'wait') return;   // 기다리는 동료는 쫓아가지 않는다
     let goal = e.target;
     if (goal && goal.x === e.x && goal.y === e.y) { e.target = null; goal = null; }
     if (!goal) {
@@ -1002,7 +1176,7 @@ const Dungeon = (() => {
     const fx = e.x, fy = e.y;
     e.x += mx; e.y += my; e.dir = dirIndex(mx, my);
     schedMove(e, fx, fy);
-    enemyPickup(e);
+    if (e.ally) markMoved(e, fx, fy); else enemyPickup(e);
   }
   // 적이 밟은 아이템을 줍는다 (하나까지)
   function enemyPickup(e) {
@@ -1035,7 +1209,8 @@ const Dungeon = (() => {
     let x = c.x, y = c.y;
     for (let i = 1; i < dist; i++) {
       x += DIRS[dir][0]; y += DIRS[dir][1];
-      if (!floorAt(x, y) || creatureAt(x, y)) return false;
+      const b = creatureAt(x, y);
+      if (!floorAt(x, y) || (b && !(party(c) && party(b)))) return false;
     }
     return true;
   }
@@ -1068,7 +1243,7 @@ const Dungeon = (() => {
         useMove(p, action.slot, confuse(p, p.dir)); used = true; break;
       }
       case 'wait': used = true; break;
-      case 'item': used = useItem(action.slot, action.mode, action.move); break;
+      case 'item': used = useItem(action.slot, action.mode, action.move, action.ally); break;
       case 'foot': used = footAction(action.mode, action.slot); break;
     }
     if (!used) return false;
@@ -1100,10 +1275,16 @@ const Dungeon = (() => {
       if (!diagOK(p.x, p.y, dx, dy)) return false;
       useMove(p, -1, dir); return true;
     }
+    if (t && t.ally && diagOK(p.x, p.y, dx, dy)) {   // 동료와 자리를 바꾼다
+      const fx = p.x, fy = p.y;
+      t.x = fx; t.y = fy; schedMove(t, p.x + dx, p.y + dy); t.swapped = D.turn;
+      p.x += dx; p.y += dy; schedMove(p, fx, fy); markMoved(p, fx, fy);
+      onStep(); return true;
+    }
     if (!canStep(p, dx, dy)) return false;
     const fx = p.x, fy = p.y;
     p.x += dx; p.y += dy;
-    schedMove(p, fx, fy);
+    schedMove(p, fx, fy); markMoved(p, fx, fy);
     onStep();
     return true;
   }
@@ -1177,7 +1358,7 @@ const Dungeon = (() => {
     for (let tries = 0; n > 0 && tries < 60; tries++) {
       const t = randomRoomTile({ room });
       if (!t || Math.max(Math.abs(t.x - p.x), Math.abs(t.y - p.y)) < 2) continue;
-      const e = spawnEnemy(t); e.target = { x: p.x, y: p.y }; n--;
+      const e = spawnEnemy(t); e.target = { x: p.x, y: p.y }; e.skipTurn = 1; n--;   // 떨어진 턴에는 행동하지 않는다
     }
     computeVis();
     log('몬스터 하우스다!!', T.base);
@@ -1355,13 +1536,19 @@ const Dungeon = (() => {
     statusTick(p);
     const pSpeedy = (abVal(p, 'speedy') || 0) + (heldOf(p).speedy || 0);
     if (pSpeedy && Math.random() < pSpeedy && hostilesVisible().length) { abLog(p, `${jo(nm(p), '은')} 재빠르게 움직였다!`, T.base); D.mons.forEach(e => { if (!e.npc) abilityTick(e); }); }
-    else for (const e of [...D.mons]) {
+    else for (const e of turnOrder()) {
       if (D.dead) break;
       if (e.dead) continue;
       enemyAct(e); statusTick(e);
       const es = abVal(e, 'speedy');
       if (es && !e.npc && !D.dead && e.hp > 0 && Math.random() < es) enemyAct(e);
     }
+    // 동료: 배가 고프지 않은 동안 조금씩 회복 (플레이어와 같은 속도)
+    for (const a of allies()) {
+      a.regen = (a.regen || 0) + (a.maxhp / 110 + 0.05) * (abVal(a, 'regen') || 1) * (heldOf(a).regen || 1);
+      if (a.regen >= 1) { const n = Math.floor(a.regen); if (p.belly > 0 && a.hp < a.maxhp) a.hp = Math.min(a.maxhp, a.hp + n); a.regen -= n; }
+    }
+    p.partners = allies().length;   // 혼자 탐험 보정은 동료가 없을 때만
     D.turn++; run.turnsOnFloor++; run.turns = (run.turns || 0) + 1;
     const wi = WIND.warn.indexOf(run.turnsOnFloor);
     if (wi >= 0) {
@@ -1399,7 +1586,7 @@ const Dungeon = (() => {
     if (b0 > 20 && p.belly <= 20) { log('배가 고파졌다...', T.base); stopAuto('배가 고프다!'); }
     if (b0 > 10 && p.belly <= 10) log('배가 너무 고프다! 빨리 뭔가 먹어야 한다!', T.base);
     if (b0 > 0 && p.belly <= 0) { log('배가 고파서 기운이 없다! HP가 줄어든다!', T.base); stopAuto(); }
-    if (weatherNow() === 'sand' && D.turn % 5 === 0) {
+    if (weatherNow() === 'sand' && D.turn % SAND_EVERY === 0) {
       const at = Math.max(T.cursor, T.moveEnd);
       for (const c of [p, ...D.mons]) {
         if (c.npc || c.hp <= 0 || c.types.some(t => t === 5 || t === 6 || t === 9) || abilityOf(c).chipImmune) continue;
@@ -1418,7 +1605,7 @@ const Dungeon = (() => {
     // 적 추가 등장
     if (!D.noSpawn && --D.spawnT <= 0) {
       D.spawnT = rint(30, 45);
-      if (D.mons.filter(m => !m.npc).length < 12) { const t = randomRoomTile({ hidden: true, far: 7 }); if (t) spawnEnemy(t); }
+      if (D.mons.filter(m => !m.npc && !m.ally).length < 12) { const t = randomRoomTile({ hidden: true, far: 7 }); if (t) spawnEnemy(t); }
     }
     // 모습 확인 (HP·날씨에 따라 바뀌는 포켓몬, 모르페코는 턴마다)
     for (const c of [p, ...D.mons]) {
@@ -1484,7 +1671,9 @@ const Dungeon = (() => {
     for (let i = 0; i < 10; i++) {   // 직선 기술처럼 벽 모서리는 지나간다
       if (!floorAt(x + dx, y + dy)) break;
       x += dx; y += dy;
-      const c = creatureAt(x, y); if (c) { hit = c; break; }
+      const c = creatureAt(x, y);
+      if (c && party(user) && party(c)) continue;   // 탐험대가 던진 것은 동료를 지나간다
+      if (c) { hit = c; break; }
     }
     user.dir = dir;
     const t0 = schedAction(user, 'Attack', 260 * spd());
@@ -1501,10 +1690,11 @@ const Dungeon = (() => {
     } else landItem(x, y, id, 1, ht);
   }
 
-  function useItem(slot, mode, moveIdx) {
+  function useItem(slot, mode, moveIdx, allyIdx) {
     const p = P(), b = run.bag[slot]; if (!b) return false;
     const it = ITEMS[b.id];
     const at = T.base;
+    if (mode === 'ally' || mode === 'revive') return useOnAlly(slot, mode, (run.party || [])[allyIdx], moveIdx);
     if (mode === 'drop') {
       if (itemAt(p.x, p.y) || (D.stairs.x === p.x && D.stairs.y === p.y)) { log('여기에는 내려놓을 수 없다.', now()); return false; }
       D.items.push({ x: p.x, y: p.y, id: b.id, n: b.n }); run.bag.splice(slot, 1);
@@ -1670,6 +1860,51 @@ const Dungeon = (() => {
     return false;
   }
 
+  // ── 동료에게 아이템 쓰기: 회복·상태이상·PP 아이템, 부활씨는 쓰러진 동료를 되살린다 ──
+  const ALLY_USES = ['heal', 'healPct', 'fullheal', 'cure', 'cureOne', 'pp', 'ppSome', 'ppOne'];
+  const liveAllies = () => (run.party || []).filter(a => !a.fainted && D.mons.includes(a));
+  const downAllies = () => (run.party || []).filter(a => a.fainted);
+  function useOnAlly(slot, mode, a, moveIdx) {
+    const it = ITEMS[run.bag[slot].id], at = T.base;
+    if (!a) return false;
+    if (mode === 'revive') {
+      if (!a.fainted || run.bag[slot].id !== 'reviver') return false;
+      const p = P(), spot = bfs(p.x, p.y, (x, y) => !creatureAt(x, y), { max: 400 });
+      if (!spot) { log('되살릴 자리가 없다.', now()); return false; }
+      takeFromBag(slot);
+      Object.assign(a, { fainted: false, dead: false, deadAt: 0, hp: a.maxhp, status: null, statusT: 0, stages: {}, stageT: {}, x: spot.x, y: spot.y, tween: null, act: null, charging: null, rampage: null, recharge: false, struck: new Set(), target: null });
+      D.corpses = D.corpses.filter(c => c !== a); D.mons.push(a);
+      Sound.play('item', at); log(`부활씨의 힘으로 ${jo(nm(a), '이')} 되살아났다!`, at); popup(a, 'REVIVE', '#ffe066', at + 150);
+      updateTacticBtn(); return true;
+    }
+    if (a.fainted || !D.mons.includes(a) || !ALLY_USES.includes(it.use)) return false;
+    takeFromBag(slot);
+    Sound.play('item', at);
+    log(`${nm(a)}에게 ${jo(it.n, '을')} 주었다.`, at);
+    switch (it.use) {
+      case 'heal': heal(a, it.v, at); break;
+      case 'healPct': heal(a, Math.floor(a.maxhp * it.v / 100), at); break;
+      case 'fullheal': a.status = null; heal(a, a.maxhp, at); break;
+      case 'cure': a.status = null; a.stages = Object.fromEntries(Object.entries(a.stages).filter(([, v]) => v > 0)); log(`${nm(a)}의 몸 상태가 좋아졌다!`, at); break;
+      case 'cureOne': if (a.status === it.st) { a.status = null; log(`${nm(a)}의 ${STATUS_NAMES[it.st]} 상태가 나았다!`, at); } else log('하지만 효과가 없었다...', at); break;
+      case 'pp': a.moves.forEach(m => m.pp = m.max); log(`${nm(a)}의 모든 기술의 PP가 회복되었다!`, at); break;
+      case 'ppSome': a.moves.forEach(m => m.pp = Math.min(m.max, m.pp + it.v)); log(`${nm(a)}의 모든 기술의 PP가 ${it.v}씩 회복되었다!`, at); break;
+      case 'ppOne': { const m = a.moves[moveIdx] || [...a.moves].sort((x, y) => (y.max - y.pp) - (x.max - x.pp))[0]; if (m) { m.pp = Math.min(m.max, m.pp + it.v); log(`${nm(a)}의 ${DATA.moves[m.id].n} PP가 ${it.v} 회복되었다!`, at); } break; }
+    }
+    return true;
+  }
+  // 누구에게 쓸지 고른다 (기술을 고르는 아이템이면 그다음 기술)
+  function pickAllyFor(slot, back) {
+    const it = ITEMS[run.bag[slot].id];
+    const go = (a, k) => act({ t: 'item', slot, mode: 'ally', ally: run.party.indexOf(a), move: k });
+    const pickMove = a => UI.open({ title: `${it.icon} ${esc(it.n)} — ${esc(nm(a))}의 어느 기술?`, choices: [...a.moves.map((m, k) => ({ label: `${esc(DATA.moves[m.id].n)} <span class="dim">PP ${m.pp}/${m.max}</span>`, fn: () => go(a, k) })), { label: '돌아간다', fn: back }] });
+    UI.open({ title: `${it.icon} ${esc(it.n)} — 누구에게?`,
+      choices: [...liveAllies().map(a => ({ label: `${esc(nm(a))} <span class="dim">HP ${a.hp}/${a.maxhp}${a.status ? ' · ' + STATUS_NAMES[a.status] : ''}</span>`, fn: () => (it.use === 'ppOne' ? pickMove(a) : go(a)) })), { label: '돌아간다', fn: back }] });
+  }
+  function pickReviveFor(slot, back) {
+    UI.open({ title: '🌰 부활씨 — 누구를 되살릴까?', choices: [...downAllies().map(a => ({ label: esc(nm(a)), fn: () => act({ t: 'item', slot, mode: 'revive', ally: run.party.indexOf(a) }) })), { label: '돌아간다', fn: back }] });
+  }
+
   // 아이템 사용: 기술 하나를 고르는 아이템(과사열매)은 먼저 기술을 고른다
   function useAct(slot) {
     const it = ITEMS[run.bag[slot].id], p = P();
@@ -1693,6 +1928,8 @@ const Dungeon = (() => {
     const b = run.bag[i], it = ITEMS[b.id];
     const ch = [];
     if (it.use && it.use !== 'none') ch.push({ label: '사용한다', fn: () => useAct(i) });
+    if (ALLY_USES.includes(it.use) && liveAllies().length) ch.push({ label: '🤝 동료에게 쓴다', fn: () => pickAllyFor(i, () => itemMenu(i)) });
+    if (b.id === 'reviver' && downAllies().length) ch.push({ label: '🌰 쓰러진 동료를 되살린다', fn: () => pickReviveFor(i, () => itemMenu(i)) });
     if (it.held) ch.push({ label: '지니게 한다', fn: () => {
       const p = P(), old = p.held;
       run.bag.splice(i, 1); p.held = b.id;
@@ -1714,6 +1951,8 @@ const Dungeon = (() => {
   // ───────────────────────── 자동 행동 (돌죽 스타일) ─────────────────────────
   function startAuto(kind, extra = {}) {
     if (!D || D.dead) return;
+    // O: 적이 보이면 자동 전투 한 턴 (예전 Tab), 아니면 자동 이동 (적을 만나면 멈춘다)
+    if (kind === 'explore' && hostilesVisible().length) { autoFight(); return; }
     if (kind !== 'fight' && hostilesVisible().length) { log('근처에 적이 있어서 할 수 없다!', now()); return; }
     if (kind === 'rest' && P().hp >= P().maxhp && !P().status) { log('휴식할 필요가 없다.', now()); return; }
     D.auto = { kind, hp: P().hp, n: 0, ...extra };
@@ -1735,7 +1974,7 @@ const Dungeon = (() => {
     a.hp = p.hp;
     if (++a.n > 800) { stopAuto(); return; }
     if (a.kind === 'fight') { autoFight(); D.auto = null; return; }
-    if (hostilesVisible().length) { stopAuto('적이 나타났다!'); return; }
+    if (hostilesVisible().length) { stopAuto('적이 나타났다! (O: 자동 전투 한 턴)'); return; }
     if (a.kind === 'rest') {
       if (p.hp >= p.maxhp && !p.status) { stopAuto('HP가 가득 찼다.'); return; }
       if (p.belly <= 0) { stopAuto(); return; }
@@ -1744,19 +1983,19 @@ const Dungeon = (() => {
     let step = null;
     if (a.kind === 'travel') {
       if (p.x === a.x && p.y === a.y) { stopAuto(); return; }
-      step = bfs(p.x, p.y, (x, y) => x === a.x && y === a.y, { known: true, blockMons: true, seenOnly: true, self: p, avoidTraps: true });
+      step = bfs(p.x, p.y, (x, y) => x === a.x && y === a.y, { known: true, blockMons: true, seenOnly: true, self: p, avoidTraps: true, passAllies: true });
       if (!step) { stopAuto('그곳까지 갈 수 없다.'); return; }
     } else {
       step = bfs(p.x, p.y, (x, y) => {
         const it = itemAt(x, y);
         if (it && !it.price && D.explored[idx(x, y)] && !D.ignore.has(idx(x, y))) return true;
         return isFrontier(x, y);
-      }, { known: true, blockMons: true, seenOnly: true, self: p, avoidTraps: true });
+      }, { known: true, blockMons: true, seenOnly: true, self: p, avoidTraps: true, passAllies: true });
       if (!step) {
         const s = D.stairs;
         if (!D.stairsHidden && D.explored[idx(s.x, s.y)]) {
           if (p.x === s.x && p.y === s.y) { stopAuto(); D.prompts.push(Game.save.settings.autoDescend ? descend : stairsPrompt); return; }
-          step = bfs(p.x, p.y, (x, y) => x === s.x && y === s.y, { known: true, blockMons: true, seenOnly: true, self: p, avoidTraps: true });
+          step = bfs(p.x, p.y, (x, y) => x === s.x && y === s.y, { known: true, blockMons: true, seenOnly: true, self: p, avoidTraps: true, passAllies: true });
           if (!step) { stopAuto('계단까지 갈 수 없다.'); return; }
           if (!a.toStairs) { a.toStairs = true; log('탐색 완료. 계단으로 향한다.', now()); }
         } else { stopAuto('더 이상 탐색할 곳이 없다.'); return; }
@@ -1765,13 +2004,14 @@ const Dungeon = (() => {
     const r = act({ t: 'move', dir: dirIndex(step.fx - p.x, step.fy - p.y) });
     if (!r) stopAuto();
   }
+  const AUTO_STOP_HP = 0.3;   // 자동 전투는 HP가 이보다 낮으면 멈춘다
   function autoFight() {
     const p = P();
     const foes = hostilesVisible();
     if (!foes.length) { log('주변에 적이 없다.', now()); return; }
-    if (p.hp < p.maxhp * 0.3) { log('HP가 너무 낮다! 직접 조작하세요.', now()); return; }
+    if (p.hp < p.maxhp * AUTO_STOP_HP) { log('HP가 너무 낮다! 직접 조작하세요.', now()); return; }
     // 가장 가까운 적
-    const path = bfs(p.x, p.y, (x, y) => foes.some(f => f.x === x && f.y === y), { blockMons: true, self: p, avoidTraps: true });
+    const path = bfs(p.x, p.y, (x, y) => foes.some(f => f.x === x && f.y === y), { blockMons: true, self: p, avoidTraps: true, passAllies: true });
     const tgt = path ? foes.find(f => f.x === path.x && f.y === path.y) : foes[0];
     const dx = tgt.x - p.x, dy = tgt.y - p.y, dist = Math.max(Math.abs(dx), Math.abs(dy));
     const cands = [{ slot: -1, s: moveScore(p, tgt, NORMAL_ATTACK) }];
@@ -1827,7 +2067,8 @@ const Dungeon = (() => {
     const flash = c.hurtAt && t >= c.hurtAt && t < c.hurtAt + 120;
     Sprites.draw(ctx, looksOf(c), anim, c.dir, at, loop, cx, cy, alpha, flash, c.shiny);
     if (c.shiny && !c.dead && Math.floor(t / 180 + c.id * 10) % 6 === 0) { ctx.fillStyle = '#fff6a0'; ctx.font = '9px sans-serif'; ctx.textAlign = 'center'; ctx.fillText('✦', cx - 10, cy - 12); }
-    if (!c.player && !c.dead && c.hp < c.maxhp) {
+    if (c.ally && !c.dead) { ctx.fillStyle = '#6cf'; ctx.font = 'bold 9px sans-serif'; ctx.textAlign = 'center'; ctx.fillText('▼', cx, cy - 18); }
+    if (!c.player && !c.dead && (c.hp < c.maxhp || c.ally)) {
       ctx.fillStyle = '#000a'; ctx.fillRect(cx - 10, cy + 10, 20, 3);
       ctx.fillStyle = c.hp / c.maxhp > 0.5 ? '#5f5' : c.hp / c.maxhp > 0.2 ? '#fd4' : '#f55';
       ctx.fillRect(cx - 10, cy + 10, 20 * c.hp / c.maxhp, 3);
@@ -2010,14 +2251,15 @@ const Dungeon = (() => {
     if (heldOf(P()).xray || D.radar) { pa.frisk = true; pa.forewarn = true; }
     for (const it of D.items) if (D.explored[idx(it.x, it.y)] || pa.frisk) { mctx.fillStyle = it.id === 'quest' ? '#f0f' : it.money ? '#fc3' : '#3fc'; mctx.fillRect(it.x * S, it.y * S, S, S); }
     for (const tr of D.traps) if (tr.seen) { mctx.fillStyle = '#f80'; mctx.fillRect(tr.x * S, tr.y * S, S, S); }
-    for (const m of D.mons) if (seen(m) || (pa.forewarn && !m.npc)) { mctx.fillStyle = m.npc ? '#ff0' : '#f44'; mctx.fillRect(m.x * S - 0.5, m.y * S - 0.5, S + 1, S + 1); }
+    for (const m of D.mons) if (seen(m) || (pa.forewarn && !m.npc)) { mctx.fillStyle = m.npc ? '#ff0' : m.ally ? '#6cf' : '#f44'; mctx.fillRect(m.x * S - 0.5, m.y * S - 0.5, S + 1, S + 1); }
     const p = P(); mctx.fillStyle = '#ff0'; mctx.fillRect(p.x * S - 1, p.y * S - 1, S + 2, S + 2);
     if (bigMap) { mctx.strokeStyle = '#000'; mctx.lineWidth = 2; mctx.strokeRect(p.x * S - 1, p.y * S - 1, S + 2, S + 2); }
   }
 
   function updateHud(t) {
     const p = P(), dg = D.dg;
-    const hud = `${p.held}|${weatherNow()}|${dg.n}|${run.floor}|${p.lv}|${p.hp}|${p.maxhp}|${Math.ceil(p.belly)}|${Game.save.money}|${p.status}|${p.exp}|${JSON.stringify(p.stages)}|${JSON.stringify(p.stageT || {})}`;
+    const pt = (run.party || []).map(a => `${a.sp}:${a.lv}:${a.hp}:${a.maxhp}:${a.fainted ? 1 : 0}:${a.status}`).join(',');
+    const hud = `${pt}|${p.held}|${weatherNow()}|${dg.n}|${run.floor}|${p.lv}|${p.hp}|${p.maxhp}|${Math.ceil(p.belly)}|${Game.save.money}|${p.status}|${p.exp}|${JSON.stringify(p.stages)}|${JSON.stringify(p.stageT || {})}`;
     if (hud !== hudCache) {
       hudCache = hud;
       const hpPct = p.hp / p.maxhp * 100;
@@ -2031,7 +2273,8 @@ const Dungeon = (() => {
         <span class="exp">EXP<span class="bar small"><i style="width:${p.lv >= MAX_LEVEL ? 100 : clamp(have / need * 100, 0, 100)}%;background:#6cf"></i></span></span>
         <span>₽ <b>${Game.save.money}</b></span>
         ${p.held ? `<span class="held" title="${esc(ITEMS[p.held].d)}">${ITEMS[p.held].icon} ${esc(ITEMS[p.held].n)}</span>` : ''}
-        ${p.status ? `<span class="st">${STATUS_NAMES[p.status]}</span>` : ''} ${stg}`;
+        ${p.status ? `<span class="st">${STATUS_NAMES[p.status]}</span>` : ''} ${stg}
+        ${(run.party || []).length ? `<span class="party">${run.party.map(a => { const pc = a.fainted ? 0 : a.hp / a.maxhp * 100; return `<span class="pm${a.fainted ? ' out' : ''}" title="${esc(spName(a.sp))} Lv${a.lv} HP ${a.fainted ? 0 : a.hp}/${a.maxhp}${a.status ? ' · ' + STATUS_NAMES[a.status] : ''}">${esc(spName(a.sp))} <span class="bar small"><i style="width:${pc}%;background:${pc > 50 ? '#4de36b' : pc > 20 ? '#f5d142' : '#f55'}"></i></span></span>`; }).join('')}</span>` : ''}`;
     }
     const mv = p.moves.map(m => m.id + ':' + m.pp).join(',');
     if (mv !== moveCache) {
@@ -2116,6 +2359,7 @@ const Dungeon = (() => {
         return true;
       }
       case 'KeyO': startAuto('explore'); return true;
+      case 'KeyV': partyMenu(); return true;
       case 'Tab': case 'KeyF': startAuto('fight'); return true;
       case 'KeyR': startAuto('rest'); return true;
       case 'KeyX': case 'Numpad5': case 'Period':
@@ -2189,7 +2433,7 @@ const Dungeon = (() => {
   function creatureInfo(c) {
     const st = stageText(c);
     return `<div class="row">${portraitImg(looksOf(c), 'portrait sm', 'Normal', c.shiny)}<div class="grow"><b>${esc(nm(c))}</b> Lv${c.lv} ${typeBadges(c.types)}
-      <div>HP ${Math.max(0, c.hp)}/${c.maxhp}${c.status ? ` · <span class="warn">${STATUS_NAMES[c.status]}</span>` : ''}${c.boss ? ' · 👑 보스' : ''}</div>
+      <div>HP ${Math.max(0, c.hp)}/${c.maxhp}${c.status ? ` · <span class="warn">${STATUS_NAMES[c.status]}</span>` : ''}${c.boss ? ' · 👑 보스' : ''}${c.ally ? ' · 🤝 동료' : ''}</div>
       <div class="dim">특성 ${esc(abilityName(c.ability))}${c.item ? ` · 가진 아이템 ${ITEMS[c.item].icon}${esc(ITEMS[c.item].n)}` : ''}${c.held ? ` · 지닌 물건 ${esc(ITEMS[c.held].n)}` : ''}${st ? ` · 능력 변화 ${esc(st)}` : ''}</div></div></div>`;
   }
   // ── 2. 메시지 기록 / 내 상태
@@ -2236,8 +2480,8 @@ const Dungeon = (() => {
       <tr><td>공격</td><td>Space / Enter, 적 쪽으로 이동해도 공격</td></tr>
       <tr><td>기술</td><td>1 ~ 4 (가까운 적에게 자동으로 방향을 맞춤)</td></tr>
       <tr><td>기술 정보</td><td>Shift + 1 ~ 4, 기술 버튼의 ? 또는 우클릭</td></tr>
-      <tr><td>자동 탐색</td><td>O: 아이템을 줍고 탐색이 끝나면 계단으로</td></tr>
-      <tr><td>자동 전투</td><td>Tab / F: 가장 가까운 적에게 최적의 기술 (누를 때마다 1턴)</td></tr>
+      <tr><td>자동 (O)</td><td>적이 없으면 자동 이동: 아이템을 줍고 탐색이 끝나면 계단으로. 적을 만나면 멈춘다.<br>적이 보이면 자동 전투: 가장 가까운 적에게 최적의 기술 (누를 때마다 1턴, Tab / F도 같음)</td></tr>
+      <tr><td>동료</td><td>V 또는 🤝 버튼: 동료의 HP·PP·상태 확인, 작전 바꾸기</td></tr>
       <tr><td>휴식</td><td>R: HP가 찰 때까지 쉬기</td></tr>
       <tr><td>대기</td><td>X / 숫자패드 5 / .</td></tr>
       <tr><td>계단</td><td>G: 계단 위라면 내려가고, 아니면 계단까지 이동</td></tr>
@@ -2275,7 +2519,7 @@ const Dungeon = (() => {
       if (D.auto) stopAuto();
       const k = b.dataset.k;
       if (busy() && k !== 'menu') return;
-      ({ attack: () => act({ t: 'attack' }), explore: () => startAuto('explore'), fight: () => startAuto('fight'), rest: () => startAuto('rest'),
+      ({ attack: () => act({ t: 'attack' }), explore: () => startAuto('explore'), fight: () => startAuto('fight'), tactic: partyMenu, rest: () => startAuto('rest'),
         wait: () => act({ t: 'wait' }), stairs: tryStairs, bag: openBag, menu: () => Game.dungeonMenu(), help: showHelp,
         mission: () => Game.showMissions(), map: () => toggleMap(), look: toggleLook, quick: quickUse })[k]?.();
     });
@@ -2331,5 +2575,5 @@ const Dungeon = (() => {
     clearInterval(logicTimer); logicTimer = 0;
     pendingKey = null;
   }
-  return { showLog, showStatus, floorCandidates, init, enter, leave, get run() { return run; }, get floor() { return D; }, stopAuto, showHelp, addToBag, _log: LOG };
+  return { showLog, showStatus, partyMenu, floorCandidates, init, enter, leave, get run() { return run; }, get floor() { return D; }, stopAuto, showHelp, addToBag, _log: LOG };
 })();

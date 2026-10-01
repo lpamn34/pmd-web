@@ -281,7 +281,7 @@ function abilityExact(r) {
   if (r.specialResist) o.push(`특수 기술에 받는 데미지 ${x(r.specialResist)}`);
   if (r.physResist) o.push(`물리 기술에 받는 데미지 ${x(r.physResist)}`);
   if (r.flagResist) o.push(`${AB_FLAG_N[r.flagResist[0]] || '특정'} 기술에 받는 데미지 ${x(r.flagResist[1])}`);
-  if (r.wonderGuard) o.push('효과가 굉장한 기술에만 맞음');
+  if (r.wonderGuard) o.push(`효과가 굉장한 기술에만 맞음 (그냥 공격은 ${WONDER_GUARD_BASIC * 100}% 확률로 맞음)`);
   if (r.noCrit) o.push('급소에 맞지 않음');
   if (r.immuneFlag) o.push(`${AB_FLAG_N[r.immuneFlag] || '특정'} 기술을 받지 않음`);
   if (r.dmgTaken) o.push(`받는 데미지 ${x(r.dmgTaken)}`);
