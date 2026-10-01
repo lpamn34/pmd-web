@@ -9,6 +9,7 @@ const Guide = (() => {
     ['weather', '🌦 날씨'],
     ['dungeon', '🗺 던전 규칙'],
     ['growth', '⭐ 성장과 보상'],
+    ['items', '🎒 아이템 등급'],
     ['controls', '⌨ 조작법'],
   ];
   const short = t => typeName(t).slice(0, 2);
@@ -98,7 +99,7 @@ const Guide = (() => {
   function growth() {
     return `<table class="rules">
       <tr><td>경험치</td><td>쓰러뜨린 적의 레벨이 내 레벨보다 낮을수록 줄어든다 (5세대식). 내 레벨보다 ${LOW_LV_GAP} 이상 낮은 적은 기본 배율 ${EXP_RATE}배 대신 ${LOW_LV_MUL}배. 보스·현상수배범 ${BOSS_EXP_MUL}배, 행복의알 1.5배. 전설·환상은 필요 경험치 ${LEGEND_EXP_DIV}배, 울트라비스트·패러독스 ${STRONG_EXP_DIV}배 (도감에서 포켓몬마다 확인).</td></tr>
-      <tr><td>아이템 등급</td><td>던전 바닥의 아이템은 층의 적 레벨에 따라 나온다: ${Object.entries(TIER_LV).map(([t, lv]) => `${TIER_NAMES[t]} Lv${lv}+`).join(' · ')}. 초반 던전에는 흔한 아이템만, 적 Lv${HIGH_LV}+ 층에는 흔한 아이템 대신 식량·회복(사과·오랭열매 등)만. 한 층에 ${ITEMS_PER_FLOOR[0]}~${ITEMS_PER_FLOOR[1]}개, 쓰러뜨린 적이 ${Math.round(ENEMY_DROP_CHANCE * 100)}% 확률로 떨어뜨린다.</td></tr>
+      <tr><td>아이템 등급</td><td>던전 바닥의 아이템은 층의 적 레벨에 따라 나온다: ${Object.entries(TIER_LV).map(([t, lv]) => `${TIER_NAMES[t]} Lv${lv}+`).join(' · ')}. 초반 던전에는 일반 등급 아이템만, 적 Lv${HIGH_LV}+ 층에는 일반 등급 대신 식량·회복(사과·오랭열매 등)만. 한 층에 ${ITEMS_PER_FLOOR[0]}~${ITEMS_PER_FLOOR[1]}개, 쓰러뜨린 적이 ${Math.round(ENEMY_DROP_CHANCE * 100)}% 확률로 떨어뜨린다.</td></tr>
       <tr><td>전용 도구</td><td>금강옥·전기구슬처럼 정해진 포켓몬만 쓰는 도구. 그 포켓몬이 나오는 던전에서만 드물게 떨어지고(보스가 주인이면 ${Math.round(SIG_DROP.boss * 100)}%), 마을 상점에 가끔 진열된다.</td></tr>
       <tr><td>진화</td><td>마을의 캐릭터 탭에서. 레벨 진화는 레벨만, 아이템 진화는 진화의돌, 통신 진화는 연결의끈이 필요. 그 외 조건(친밀도 등)은 Lv25.</td></tr>
       <tr><td>다른 모습 · 메가진화</td><td>던전에서 모습이 바뀌면 능력치·타입·특성이 그 모습의 것이 된다 (기술은 그대로). 도감에서 포켓몬마다 확인.<br>
@@ -128,10 +129,32 @@ const Guide = (() => {
     </table>`;
   }
 
+  // 아이템 등급표: 던전에서 줍는 아이템이 어느 레벨의 층부터 나오는지 (기술머신은 수만, 아이템은 눌러서 도감으로)
+  function items() {
+    const ids = [...new Set(DROP_TABLE.map(d => d[0]))];
+    const chip = id => `<span class="dg-item" data-dexitem="${id}">${ITEMS[id].icon} ${esc(ITEMS[id].n)}</span>`;
+    const rows = Object.keys(TIER_LV).map(Number).map(t => {
+      const list = ids.filter(id => itemTier(id) === t && !ITEMS[id].tm);
+      const tms = ids.filter(id => itemTier(id) === t && ITEMS[id].tm).length;
+      const held = list.filter(id => ITEMS[id].held), other = list.filter(id => !ITEMS[id].held);
+      return `<tr><td><b>${TIER_NAMES[t]}</b><br><span class="dim">적 Lv${TIER_LV[t]}+ 층부터</span></td><td>
+        ${other.length ? `<div class="dg-items">${other.map(chip).join('')}</div>` : ''}
+        ${held.length ? `<div class="dim">지닌 물건</div><div class="dg-items">${held.map(chip).join('')}</div>` : ''}
+        ${tms ? `<div class="dim">💿 기술머신 ${tms}종 (던전 타입과 같은 타입의 기술만)</div>` : ''}</td></tr>`;
+    }).join('');
+    return `<p>던전 바닥과 적이 떨어뜨리는 아이템은 <b>층의 적 레벨</b>에 따라 등급이 열린다. 적 Lv${HIGH_LV}+ 층에서는 일반 등급 대신 식량·회복(${ALWAYS_DROP.map(id => ITEMS[id].n).join('·')})만 계속 나온다.
+      아이템을 누르면 설명을 볼 수 있다. 던전마다 실제로 나오는 아이템과 확률은 던전 카드의 ℹ 정보에서 확인.</p>
+      <table class="rules">${rows}
+      <tr><td><b>몫이 정해진 것</b></td><td>지닌 물건 전체 ${HELD_DROP_SHARE * 100}% · 열매 최대 ${GROUP_CAP.berry * 100}% · 씨앗·구슬·기타 최대 ${GROUP_CAP.misc * 100}% (넘는 몫은 돈 무더기)${Object.entries(DROP_SHARE).map(([id, v]) => ` · ${ITEMS[id].n} ${v * 100}%`).join('')} (그 층에서 나올 수 있을 때)</td></tr>
+      <tr><td><b>🔮 메가스톤</b></td><td>Lv${MEGA_MIN_LV}+ 층·보스·이로치에서만, 던전 타입에 맞는 것. 보스·이로치 ${MEGA_RATE.boss * 100}%, 바닥·적 드롭·구조 보답 ${MEGA_RATE.floor * 100}%</td></tr>
+      <tr><td><b>🎀 전용 도구</b></td><td>주인 포켓몬이 나오는 던전에서만: 바닥 ${SIG_DROP.floor * 100}% · 쓰러뜨린 주인 ${SIG_DROP.defeat * 100}% · 주인이 보스면 ${SIG_DROP.boss * 100}%</td></tr>
+      </table>`;
+  }
+
   function open(topic) {
     if (topic === 'controls') { Dungeon.showHelp(); return; }
     const t = TOPICS.find(x => x[0] === topic);
-    const body = { types: typeChart, battle, status, weather, dungeon, growth }[topic]();
+    const body = { types: typeChart, battle, status, weather, dungeon, growth, items }[topic]();
     UI.open({
       title: t[1], wide: true, html: `<div class="guide">${body}</div>`,
       choices: [{ label: '다른 항목 보기', fn: menu }, { label: '닫기', fn: () => {} }],

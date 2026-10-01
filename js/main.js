@@ -575,9 +575,10 @@ const Game = (() => {
   }
   // 마을 상점 진열: 하루에 한 번, 또는 돈을 내고 새로고침
   function rollShop() {
-    const stock = new Set(['oran', 'apple', 'escape']);
-    const pool = SHOP_POOL.filter(i => !stock.has(i));
-    while (stock.size < 11) stock.add(pick(pool));
+    // 늘 있는 물건(SHOP_FIXED)은 진열 위에 따로 보여준다. 여기서는 날마다 바뀌는 8칸
+    const stock = new Set();
+    const pool = SHOP_POOL.filter(i => !SHOP_FIXED.includes(i));
+    while (stock.size < 8) stock.add(pick(pool));
     const held = HELD_SHOP_POOL.slice().sort(() => Math.random() - 0.5).slice(0, 3);
     if (Math.random() < SIG_SHOP_CHANCE) held.push(pick(SIG_ITEMS));   // 전용 도구는 가끔 하나
     const tms = TM_IDS.slice().sort(() => Math.random() - 0.5).slice(0, 2);
@@ -737,16 +738,6 @@ const Game = (() => {
   }
 
   // ── 던전 정보: 나오는 적, 보스, 아이템, 특징 ──
-  function itemGroup(id) {
-    const it = ITEMS[id];
-    if (it.tm) return 'tm';
-    if (it.held) return 'held';
-    if (VITAMINS[id] || GUMMIES[id] || ['candy', 'abcapsule', 'abpatch', 'reviver'].includes(id)) return 'rare';
-    if (it.use === 'cureOne' || it.use === 'chesto' || ['lum', 'leppa', 'liechi', 'ganlon', 'petaya', 'apicot', 'salac', 'starf', 'lansat', 'oran', 'sitrus'].includes(id)) return 'berry';
-    if (it.use === 'food' || it.use === 'heal' || it.use === 'healPct' || it.use === 'fullheal' || it.use === 'cure' || it.use === 'pp') return 'heal';
-    if (it.throw) return 'throw';
-    return 'misc';
-  }
   function showDungeonInfo(id) {
     const dg = id === 'daily' ? Progress.setupDaily() : dungeonById(id);
     if (!dg) return;
@@ -785,15 +776,15 @@ const Game = (() => {
     ].filter(Boolean);
     // 아이템: 마지막 층 기준 드롭 확률 (앞쪽 층은 등급이 낮은 아이템만)
     const table = dropTable(dg.lv[1], dg);
-    const total = table.reduce((a, d) => a + d[1], 0);
+    const total = table.reduce((a, d) => a + d[1], 0) / (1 - (table.money || 0));   // 돈 무더기로 바뀌는 몫까지 포함한 전체
     const groups = { heal: ['🍎 회복·음식', []], berry: ['🍒 열매', []], throw: ['📌 던지는 도구', []], misc: ['🔮 씨앗·구슬·기타', []], rare: ['💎 희귀 (영양제·구미·사탕 등)', []], held: ['🎗 지닌 물건', []], tm: ['💿 기술머신', []] };
     const merged = {};
     for (const [iid, w] of table) merged[iid] = (merged[iid] || 0) + w;
     const tiers = Object.entries(TIER_LV).filter(([t, lv]) => +t > 1 && lv <= dg.lv[1]).map(([t, lv]) => [TIER_NAMES[t], firstAt(lv)]);
     const highF = firstAt(HIGH_LV);
-    const tierNote = (!tiers.length ? '흔한 아이템만 나온다' : tiers.every(([, f]) => f <= 1) ? '처음부터 좋은 등급이 나온다'
+    const tierNote = (!tiers.length ? '일반 등급 아이템만 나온다' : tiers.every(([, f]) => f <= 1) ? '처음부터 좋은 등급이 나온다'
       : `좋은 아이템은 깊은 층부터: ${tiers.map(([n, f]) => `${n} ${f}층~`).join(', ')}`)
-      + (highF ? ` · ${highF}층부터는 흔한 아이템 대신 식량·회복만` : '');
+      + (highF ? ` · ${highF}층부터는 일반 등급 대신 식량·회복만` : '');
     for (const [iid, w] of Object.entries(merged)) groups[itemGroup(iid)][1].push([iid, w]);
     const pctT = w => { const p = w / total * 100; return p >= 1 ? p.toFixed(1) + '%' : p >= 0.1 ? p.toFixed(2) + '%' : p.toFixed(3) + '%'; };
     const itemHtml = Object.values(groups).filter(g => g[1].length).map(([name, list]) => {
@@ -817,6 +808,7 @@ const Game = (() => {
         ${bands.map((b, i) => `<details${i === 0 ? ' open' : ''}><summary><b>${b.a === b.b ? b.a : `${b.a}~${b.b}`}층</b> <span class="dim">Lv${floorLv(b.a)}~${floorLv(b.b)} · ${b.ids.length}종 (만남 ${seenIn(b.ids)})</span></summary>${mon(b.ids)}</details>`).join('')}
         <h3>나오는 아이템 <span class="dim">마지막 층 기준 확률 · 한 층에 아이템 ${ITEMS_PER_FLOOR[0]}~${ITEMS_PER_FLOOR[1]}개, 돈 2~4무더기 · ${tierNote}</span></h3>
         ${itemHtml}
+        ${table.money ? `<p>💰 <b>돈 무더기</b> <span class="dim">${pctT(total * table.money)} · 열매 ${GROUP_CAP.berry * 100}%, 씨앗·구슬·기타 ${GROUP_CAP.misc * 100}%를 넘는 몫은 아이템 대신 돈이 놓인다</span></p>` : ''}
         ${megaHere.length ? `<p><b>🔮 메가스톤</b> <span class="dim">레벨 ${MEGA_MIN_LV} 이상인 층에서만 · 보스·이로치 ${MEGA_RATE.boss * 100}%, 바닥 아이템·적이 떨어뜨리는 아이템 ${MEGA_RATE.floor * 100}% · 던전 타입에 맞는 ${megaHere.length}종</span>
           <details><summary class="dim">눌러서 펼치기</summary><div class="dg-items">${megaHere.map(iid => `<span class="dg-item" data-dexitem="${iid}">${ITEMS[iid].icon} ${esc(ITEMS[iid].n)}</span>`).join('')}</div></details></p>` : ''}
         ${sigHere.length ? `<p><b>전용 도구</b> <span class="dim">주인 포켓몬이 나오는 층에서 드물게 떨어진다 (보스가 주인이면 더 자주)</span><br>${sigHere.map(iid => `<span class="dg-item" data-dexitem="${iid}">${ITEMS[iid].icon} ${esc(ITEMS[iid].n)}</span>`).join(' ')}</p>` : ''}
@@ -837,9 +829,11 @@ const Game = (() => {
   }
 
   function tabShop() {
-    return `<h3>켈리몬 상점 <button class="btn sm ghost" data-act="shop-reroll" ${save.money < SHOP_REROLL_COST ? 'disabled' : ''} title="오늘 진열을 새로 뽑는다">🔄 새로고침 ₽${SHOP_REROLL_COST}</button></h3><div class="grid2">
-      ${save.shop.map(id => `<div class="row">${itemLabel(id)}<span class="grow dim">${esc(ITEMS[id].d)}</span>
-        <button class="btn sm" data-act="buy" data-arg="${id}" ${save.money < ITEMS[id].price ? 'disabled' : ''}>₽${ITEMS[id].price}${ITEMS[id].stack ? ' (5개)' : ''}</button></div>`).join('')}</div>
+    const row = id => `<div class="row">${itemLabel(id)}<span class="grow dim">${esc(ITEMS[id].d)}</span>
+        <button class="btn sm" data-act="buy" data-arg="${id}" ${save.money < ITEMS[id].price ? 'disabled' : ''}>₽${ITEMS[id].price}${ITEMS[id].stack ? ' (5개)' : ''}</button></div>`;
+    return `<h3>켈리몬 상점 <span class="dim">· 항상 판매</span></h3><div class="grid2">${SHOP_FIXED.map(row).join('')}</div>
+      <h3>오늘의 진열 <button class="btn sm ghost" data-act="shop-reroll" ${save.money < SHOP_REROLL_COST ? 'disabled' : ''} title="오늘 진열을 새로 뽑는다">🔄 새로고침 ₽${SHOP_REROLL_COST}</button></h3><div class="grid2">
+      ${save.shop.filter(id => !SHOP_FIXED.includes(id) && ITEMS[id]).map(row).join('')}</div>
       <h3>팔기 <span class="dim">(가방의 아이템)</span></h3>
       ${save.bag.length ? save.bag.map((b, i) => `<div class="row">${itemLabel(b.id)}${b.n > 1 ? ' ×' + b.n : ''}<span class="grow"></span>
         <button class="btn sm ghost" data-act="sell" data-arg="${i}">₽${sellPrice(b)}에 팔기</button></div>`).join('') : '<p class="dim">가방이 비어 있습니다.</p>'}`;
@@ -858,18 +852,23 @@ const Game = (() => {
     else if (mode === 'count') ids.sort((a, b) => save.storage[b] - save.storage[a] || byKind(a, b));
     return ids;
   }
+  // 창고 필터 (도감 아이템 필터와 같은 분류): 1 도구 · 2 지닌 물건 · 3 기술머신 · 4 전용 도구 · 5 메가스톤
+  const itemKindNo = id => { const it = ITEMS[id]; return it.tm ? 3 : it.mega ? 5 : it.sig ? 4 : it.held ? 2 : 1; };
+  const STORE_FILTERS = [['', '전체'], ['1', '도구'], ['2,4,5', '지닌 물건'], ['4', '전용 도구'], ['5', '메가스톤'], ['3', '기술머신']];
   function tabStorage() {
-    const ids = storageIds();
+    const all = storageIds(), f = save.storageFilter || '';
+    const ids = f ? all.filter(id => f.split(',').includes(String(itemKindNo(id)))) : all;
+    const filter = all.length > 1 ? `<select class="store-filter" title="종류별로 보기">${STORE_FILTERS.map(([v, n]) => `<option value="${v}" ${v === f ? 'selected' : ''}>${n}</option>`).join('')}</select>` : '';
     const sorts = Object.entries(STORE_SORTS).map(([k, n]) => `<button class="btn sm${(save.storageSort || 'kind') === k ? '' : ' ghost'}" data-act="store-sort" data-arg="${k}">${n}</button>`).join('');
     return `${upgradeBox()}<div class="split"><div><h3>창고 (${storageUsed()}/${save.storageMax})</h3>${storageUsed() > save.storageMax ? '<p class="warn">창고가 넘쳤습니다. 정리하기 전까지는 맡길 수 없습니다.</p>' : ''}
-      ${ids.length > 1 ? `<div class="row sort-row">↕ ${sorts}</div>` : ''}
+      ${all.length > 1 ? `<div class="row sort-row">↕ ${sorts} ${filter}</div>` : ''}
       ${ids.length ? ids.map(id => `<div class="row">${itemLabel(id)} ×${save.storage[id]}<span class="grow"></span>
         <button class="btn sm ghost" data-dexitem="${id}" title="아이템 정보">ℹ</button>${id === 'candy' ? ' <button class="btn sm" data-act="use-candy">사용</button>' : ''}
-        <button class="btn sm" data-act="withdraw" data-arg="${id}" ${bagSlots() >= bagMax() && !ITEMS[id].stack ? 'disabled' : ''}>꺼내기</button></div>`).join('') : '<p class="dim">창고가 비어 있습니다.</p>'}
+        <button class="btn sm" data-act="withdraw" data-arg="${id}" ${bagSlots() >= bagMax() && !ITEMS[id].stack ? 'disabled' : ''}>꺼내기</button></div>`).join('') : `<p class="dim">${all.length ? '이 종류의 아이템이 없습니다.' : '창고가 비어 있습니다.'}</p>`}
       </div><div><h3>가방 (${bagSlots()}/${bagMax()})</h3>
+      ${save.bag.length ? `<div class="row sort-row"><button class="btn sm" data-act="deposit-all">모두 맡기기</button>${save.bag.length > 1 ? ' <button class="btn sm ghost" data-act="sort-bag">↕ 가방 정리</button>' : ''}</div>` : ''}
       ${save.bag.map((b, i) => `<div class="row">${itemLabel(b.id)}${b.n > 1 ? ' ×' + b.n : ''}<span class="grow"></span>
-        <button class="btn sm ghost" data-act="deposit" data-arg="${i}">맡기기</button></div>`).join('') || '<p class="dim">가방이 비어 있습니다.</p>'}
-      ${save.bag.length ? '<button class="btn ghost" data-act="deposit-all">모두 맡기기</button>' : ''}${save.bag.length > 1 ? ' <button class="btn ghost" data-act="sort-bag">↕ 가방 정리</button>' : ''}</div></div>`;
+        <button class="btn sm ghost" data-act="deposit" data-arg="${i}">맡기기</button></div>`).join('') || '<p class="dim">가방이 비어 있습니다.</p>'}</div></div>`;
   }
 
   function upgradeBox() {
@@ -1947,6 +1946,7 @@ window.addEventListener('DOMContentLoaded', () => {
     if (e.target.dataset.set) Game.setSetting(e.target.dataset.set, e.target.checked);
     if (e.target.dataset.setnum) { Game.setSetting(e.target.dataset.setnum, +e.target.value); Sound.play('menu'); }
     if (e.target.classList.contains('tm-only')) filterTMs();
+    if (e.target.classList.contains('store-filter')) { Game.save.storageFilter = e.target.value; Game.renderTown(); }
     if (e.target.id === 'save-file' && e.target.files[0]) { Game.importSave(e.target.files[0]); e.target.value = ''; }
     if (e.target.dataset.music && e.target.files[0]) {
       const ok = await Sound.importMusic(e.target.dataset.music, e.target.files[0]);

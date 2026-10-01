@@ -284,7 +284,7 @@ const Dungeon = (() => {
     if (lvl >= FEATURE_LV.house && Math.random() < HOUSE_CHANCE && freeRooms.length) {
       const room = freeRooms.splice(rand(freeRooms.length), 1)[0];
       D.house = { room, triggered: false };
-      for (let i = rint(3, 6); i > 0; i--) { const t = randomRoomTile({ room, noItem: true }); if (t) D.items.push({ ...t, id: rollMega('floor', lvl, D.dg) || weighted(dropTable(lvl, D.dg)), n: 1 }); }
+      for (let i = rint(3, 6); i > 0; i--) { const t = randomRoomTile({ room, noItem: true }); if (t) { const id = rollMega('floor', lvl, D.dg) || pickDrop(lvl, D.dg); D.items.push(id ? { ...t, id, n: 1 } : { ...t, money: moneyPile(lvl) }); } }
     }
     if (lvl >= FEATURE_LV.trap) {
       const kinds = Object.keys(TRAPS);
@@ -296,13 +296,13 @@ const Dungeon = (() => {
     }
     // 아이템 / 돈
     const nItems = rint(ITEMS_PER_FLOOR[0], ITEMS_PER_FLOOR[1]);
-    for (let i = 0; i < nItems; i++) { const t = randomRoomTile({ noItem: true }); if (t) D.items.push({ ...t, id: rollMega('floor', lvl, D.dg) || weighted(dropTable(lvl, D.dg)), n: 1 }); }
+    for (let i = 0; i < nItems; i++) { const t = randomRoomTile({ noItem: true }); if (t) { const id = rollMega('floor', lvl, D.dg) || pickDrop(lvl, D.dg); D.items.push(id ? { ...t, id, n: 1 } : { ...t, money: moneyPile(lvl) }); } }
     // 전용 도구: 그 주인이 이 층에 나오면 드물게 바닥에 하나
     const sig = sigItemsFor(pool);
     if (sig.length && Math.random() < SIG_DROP.floor) { const t = randomRoomTile({ noItem: true }); if (t) D.items.push({ ...t, id: pick(sig), n: 1 }); }
-    D.items.forEach(it => { if (ITEMS[it.id].stack) it.n = rint(3, 9); });
+    D.items.forEach(it => { if (it.id && ITEMS[it.id].stack) it.n = rint(3, 9); });
     const nMoney = rint(2, 4);
-    for (let i = 0; i < nMoney; i++) { const t = randomRoomTile({ noItem: true }); if (t) D.items.push({ ...t, money: Math.round(rint(4, 12) * (1 + lvl / 6)) }); }
+    for (let i = 0; i < nMoney; i++) { const t = randomRoomTile({ noItem: true }); if (t) D.items.push({ ...t, money: moneyPile(lvl) }); }
     // 적
     computeVis();
     const nEn = Math.min(10, rint(4, 6) + Math.floor(run.floor / 3));
@@ -759,7 +759,7 @@ const Dungeon = (() => {
     if (ch < 0 && byFoe) {
       const nd = A.noDrop;
       if (nd && (nd === 'all' || nd.includes(st))) { abLog(c, `${nm(c)}의 ${jo(STAT_NAMES[st], '은')} 떨어지지 않는다!`, at); return; }
-      if (heldOf(c).noDrop) { log(`${jo(ITEMS[c.held].n, '의')} 힘으로 ${nm(c)}의 ${jo(STAT_NAMES[st], '은')} 떨어지지 않았다!`, at); return; }
+      if (heldOf(c).noDrop) { log(`${ITEMS[c.held].n}의 힘으로 ${nm(c)}의 ${jo(STAT_NAMES[st], '은')} 떨어지지 않았다!`, at); return; }
     }
     const cur = c.stages[st] || 0, nv = clamp(cur + ch, -6, 6);
     if (nv === cur) { log(`${nm(c)}의 ${jo(STAT_NAMES[st], '은')} 더 이상 변하지 않는다!`, at); return; }
@@ -774,7 +774,7 @@ const Dungeon = (() => {
     if (c.types.some(t => imm.includes(t)) && !(kind === 'psn' && src && abilityOf(src).corrosion)) { if (verbose) log(`${nm(c)}에게는 효과가 없었다.`, at); return; }
     const A = src && src !== c ? defAbility(src, c) : abilityOf(c);
     if (kind === 'slp' && c.noSleep) { log(`${jo(nm(c), '은')} 유루열매 덕분에 잠들지 않았다!`, at); return; }
-    if (heldOf(c).noStatus && heldOf(c).noStatus.includes(kind)) { log(`${jo(nm(c), '은')} ${jo(ITEMS[c.held].n, '의')} 힘으로 ${STATUS_NAMES[kind]} 상태를 막았다!`, at); return; }
+    if (heldOf(c).noStatus && heldOf(c).noStatus.includes(kind)) { log(`${jo(nm(c), '은')} ${ITEMS[c.held].n}의 힘으로 ${STATUS_NAMES[kind]} 상태를 막았다!`, at); return; }
     if (A.noStatus && A.noStatus.includes(kind)) { abLog(c, `${jo(nm(c), '은')} ${STATUS_NAMES[kind]} 상태가 되지 않는다!`, at); return; }
     const sr = Object.keys(A).length ? abVal(c, 'statusResist') : 0;
     if (kind === 'frz' && weatherNow() === 'sun') { if (verbose) log(`${nm(c)}에게는 효과가 없었다.`, at); return; }
@@ -849,7 +849,7 @@ const Dungeon = (() => {
       const sig = sigItemsFor([c.sp]);
       if (c.shiny && free) D.items.push({ x: c.x, y: c.y, id: rollMega('shiny', c.lv, D.dg) || weighted(rewardPool(D.lvl + 10, D.dg)), n: 1 });   // 이로치: 보스 보상과 같은 등급
       else if (sig.length && !c.boss && free && Math.random() < SIG_DROP.defeat) D.items.push({ x: c.x, y: c.y, id: pick(sig), n: 1 });
-      else if (Math.random() < ENEMY_DROP_CHANCE && free) D.items.push({ x: c.x, y: c.y, id: rollMega('floor', c.lv, D.dg) || weighted(dropTable(D.lvl, D.dg)), n: 1 });
+      else if (Math.random() < ENEMY_DROP_CHANCE && free) { const id = rollMega('floor', c.lv, D.dg) || pickDrop(D.lvl, D.dg); D.items.push(id ? { x: c.x, y: c.y, id, n: 1 } : { x: c.x, y: c.y, money: moneyPile(D.lvl) }); }
       if (c.shiny && Game.unlockShiny(c.sp)) log(`✨ 이제 캐릭터 탭에서 ${spName(c.sp)}의 이로치 모습을 고를 수 있다!`, at + 300);
       if (run.mode === 'normal' && !c.outlaw && !NO_RECRUIT.includes(c.sp) && !Game.save.roster[c.sp]) {
         const rate = recruitRate(P().lv) * (DATA.species[c.sp].lg ? 0.5 : 1) * (c.boss ? 0.5 : 1) * (heldOf(P()).recruitMul || 1);
@@ -909,6 +909,7 @@ const Dungeon = (() => {
       if (c.hp > 0 && (c.player || seen(c))) log(`${nm(c)}의 ${jo(STAT_NAMES[k], '이')} 원래대로 돌아왔다.`, Math.max(T.cursor, T.moveEnd));
     }
   }
+  const AI_STAGE_LIMIT = 2;   // 적은 능력 변화를 ±2단계까지만 노린다
   function statusTick(c) {
     stageTick(c);
     abilityTick(c);
@@ -955,10 +956,16 @@ const Dungeon = (() => {
     if (sees) e.target = { x: p.x, y: p.y };
     const dx = p.x - e.x, dy = p.y - e.y, dist = Math.max(Math.abs(dx), Math.abs(dy));
     const usable = e.moves.map((m, i) => ({ m: DATA.moves[m.id], i, pp: m.pp })).filter(o => o.pp > 0);
+    // 능력 변화 기술은 이미 충분히 바뀌었으면 쓰지 않는다 (작아지기·칼춤을 끝없이 쌓거나 상대 능력을 계속 깎지 않게)
+    const worthUsing = (e, p, m) => {
+      if (m.c !== 1 || !m.sc) return true;
+      const self = m.r === 's' || m.ss;
+      return m.sc.some(([st, ch]) => self ? ch > 0 && (e.stages[st] || 0) < AI_STAGE_LIMIT : ch < 0 && (p.stages[st] || 0) > -AI_STAGE_LIMIT);
+    };
     if (e.item && enemyUseItem(e, p, sees, dist, dx, dy)) return;
     if (sees && dist === 1 && diagOK(e.x, e.y, Math.sign(dx), Math.sign(dy))) {
       const dir = confuse(e, dirIndex(dx, dy));
-      const opts = usable.filter(o => (o.m.r !== 's' || !(e.stages[2] > 1)));
+      const opts = usable.filter(o => worthUsing(e, p, o.m));
       if (opts.length && Math.random() < 0.4 * nerve) useMove(e, pick(opts).i, dir);
       else useMove(e, -1, dir);
       return;
@@ -1061,7 +1068,7 @@ const Dungeon = (() => {
         useMove(p, action.slot, confuse(p, p.dir)); used = true; break;
       }
       case 'wait': used = true; break;
-      case 'item': used = useItem(action.slot, action.mode); break;
+      case 'item': used = useItem(action.slot, action.mode, action.move); break;
       case 'foot': used = footAction(action.mode, action.slot); break;
     }
     if (!used) return false;
@@ -1494,7 +1501,7 @@ const Dungeon = (() => {
     } else landItem(x, y, id, 1, ht);
   }
 
-  function useItem(slot, mode) {
+  function useItem(slot, mode, moveIdx) {
     const p = P(), b = run.bag[slot]; if (!b) return false;
     const it = ITEMS[b.id];
     const at = T.base;
@@ -1543,6 +1550,11 @@ const Dungeon = (() => {
         break;
       case 'chesto': if (p.status === 'slp') p.status = null; p.noSleep = true; log('눈이 번쩍 뜨였다! 이 층에서는 잠들지 않는다.', at); break;
       case 'ppSome': p.moves.forEach(m => m.pp = Math.min(m.max, m.pp + it.v)); log(`모든 기술의 PP가 ${it.v}씩 회복되었다!`, at); break;
+      case 'ppOne': {   // 고른 기술 하나 (고르지 않았으면 PP가 가장 많이 빈 기술)
+        const m = p.moves[moveIdx] || [...p.moves].sort((a, b) => (b.max - b.pp) - (a.max - a.pp))[0];
+        if (m) { m.pp = Math.min(m.max, m.pp + it.v); log(`${DATA.moves[m.id].n}의 PP가 ${it.v} 회복되었다!`, at); }
+        break;
+      }
       case 'statRandom': statChange(p, pick([2, 3, 4, 5, 6]), 2, at, p); break;
       case 'critUp': p.critBoost = 2; log('급소에 맞히기 쉬워졌다!', at); break;
       case 'gummy': {
@@ -1658,6 +1670,14 @@ const Dungeon = (() => {
     return false;
   }
 
+  // 아이템 사용: 기술 하나를 고르는 아이템(과사열매)은 먼저 기술을 고른다
+  function useAct(slot) {
+    const it = ITEMS[run.bag[slot].id], p = P();
+    if (it.use !== 'ppOne') { act({ t: 'item', slot, mode: 'use' }); return; }
+    UI.open({ title: `${it.icon} ${esc(it.n)} — PP를 회복할 기술`, html: `<p>${esc(it.d)}</p>`,
+      choices: [...p.moves.map((m, k) => ({ label: `${esc(DATA.moves[m.id].n)} <span class="dim">PP ${m.pp}/${m.max}</span>`, fn: () => act({ t: 'item', slot, mode: 'use', move: k }) })),
+        { label: '그만둔다', fn: () => {} }] });
+  }
   function quickUse() {
     if (!D || busy()) return;
     const id = Game.save.settings.quickItem;
@@ -1666,13 +1686,13 @@ const Dungeon = (() => {
     if (slot < 0) { log(`가방에 ${jo(ITEMS[id].n, '이')} 없다.`, now()); return; }
     const it = ITEMS[id];
     if (it.throw || !it.use || it.use === 'none') { autoFace(P(), { r: 'p' }); act({ t: 'item', slot, mode: 'throw' }); }
-    else act({ t: 'item', slot, mode: 'use' });
+    else useAct(slot);
   }
 
   function itemMenu(i) {
     const b = run.bag[i], it = ITEMS[b.id];
     const ch = [];
-    if (it.use && it.use !== 'none') ch.push({ label: '사용한다', fn: () => act({ t: 'item', slot: i, mode: 'use' }) });
+    if (it.use && it.use !== 'none') ch.push({ label: '사용한다', fn: () => useAct(i) });
     if (it.held) ch.push({ label: '지니게 한다', fn: () => {
       const p = P(), old = p.held;
       run.bag.splice(i, 1); p.held = b.id;

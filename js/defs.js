@@ -3,7 +3,7 @@
 
 // 게임 버전: 업데이트할 때 올리고, index.html의 ?v= 숫자도 같이 올린다
 // (친구와 구조 코드·오늘의 도전을 주고받으려면 버전이 같아야 한다)
-const GAME_VERSION = '0.38';
+const GAME_VERSION = '0.39';
 // 버전 비교: '0.25' > '0.9' 처럼 숫자로 비교한다
 function cmpVer(a, b) {
   const x = String(a).split('.').map(Number), y = String(b).split('.').map(Number);
@@ -12,6 +12,7 @@ function cmpVer(a, b) {
 }
 const GAME_DATE = '2026-10-01';
 const VERSION_NOTES = [
+  ['0.39', ['창고: 종류별 필터 (도구·지닌 물건·전용 도구·메가스톤·기술머신), 모두 맡기기·가방 정리 버튼을 가방 목록 위로', '오랭열매 HP 50 회복, 좋은상처약 150 회복', '과사열매: 고른 기술 하나의 PP 10 회복', '아이템 등급을 5단계로: 일반(처음부터)·고급(적 Lv10+)·희귀(Lv20+)·유니크(Lv28+)·전설(Lv35+). 유니크는 영양제·구미·이상한사탕·특성캡슐', '자뭉열매·큰사과는 고급, 맥스엘릭서·부활씨는 희귀', '바닥·적 드롭에서 열매는 30%, 씨앗·구슬·기타는 10%까지 (넘는 몫은 돈 무더기)', '적이 작아지기·칼춤 같은 능력 변화 기술을 끝없이 쌓던 문제 수정 (자기 능력은 +2단계, 상대 능력은 −2단계까지만 노림)', '상점: 오랭열매·사과·과사열매·진화의돌·연결의끈은 항상 판매 (맨 위), 오랭열매·사과·과사열매 값 2배, 탈출구슬 ₽3000 (매일 바뀌는 진열로)', '플러스파워·치리열매 등 능력을 올리는 아이템도 100턴 유지 (설명 수정)', '가이드에 아이템 등급표', '방어·상태이상을 막는 지닌 물건이 발동할 때 게임이 멈추던 문제 수정']],
   ['0.38', ['휴대폰에서 방향 버튼이 안 보이던 기기 대응 (펜·마우스를 함께 지원하는 폰·태블릿, 데스크톱 모드 등)', '정보 탭 설정에 "던전에서 방향 버튼 항상 표시"']],
   ['0.37', ['메가스톤: Lv35 이상인 층·보스·이로치에서만, 확률 절반 (보스·이로치 0.5%, 바닥·적 드롭·구조 보답 0.05%), 던전 정보에 표시', '기술머신과 메가스톤은 던전 타입에 맞는 것만 나옴 (예: 불꽃 화산은 불꽃·바위·땅)', '황혼의 미궁: 모든 타입의 적', '일반 던전의 적 최소 레벨 = 바로 이전 던전의 최대 레벨 - 1', '보스는 최대 HP 비례 데미지(독·화상·모래바람·까칠한피부·울퉁불퉁멧·함정 등)를 절반만 받음', '던전 순서: 번개 초원은 수정 동굴, 불꽃 화산은 독안개 늪, 얼음 산은 유사 사막, 어둠의 숲은 폭풍의 바다를 클리어하면 열림 (이미 가 본 던전은 그대로 열림)', '내 레벨보다 6 이상 낮은 적은 경험치 배율 0.3배 대신 0.1배', '테마 던전의 적 최소 레벨을 최고 레벨 - 8 이상으로', '이상한사탕을 마을에서도 사용', '창고 아이템 정보 보기 (ℹ)', '도감에서 메달 확인 (목록에 받은 메달 아이콘, 포켓몬 정보에 메달별 진행도)', '던전 바닥·적 드롭에서 지닌 물건은 3%', '능력 변화(랭크 업·다운)는 100턴 동안 유지 (층을 넘어가도 이어짐)', '보스·현상수배범이 싸우는 도중 모습이 바뀌어도 HP·능력치 배율 유지', '던전 순서: 어둠의 숲 → 강철 광산 → 용의 협곡 → 하늘의 탑 → 별의 정상 (용의 협곡·하늘의 탑 적 레벨 맞바꿈, 강철 광산 최고 Lv53, 용의 협곡 최소 Lv54)', '고대 유적 적 레벨 56-64 (재앙의 사당과 같게), 재앙의 사당은 강철 광산을 클리어하면 열림', '테마 던전: 모두 30층, 중간 보스는 20층에서 한 번', '해저 동굴은 하늘의 탑을 클리어하면 열림 (적 레벨 용의 나선탑과 같게), 불탄 탑은 폭풍의 바다를 클리어하면 열림 (적 레벨 소용돌이 섬과 같게)', '별의 정상: 전설 포켓몬은 일반 층에 섞이지 않고, 최종 보스로 26종 중 하나가 무작위로 나옴 (전용 도구는 보스가 떨어뜨림)']],
   ['0.36', ['진화 후 기술 설정에 진화 전 모습의 기술도 나오고, 쓰고 있던 기술을 바꿀 수 있음 (도구 진화 후 기술을 못 바꾸던 문제)', '메가스톤 드롭 확률 조정: 보스 보상·이로치 1%, 구조 보답·바닥 아이템·적이 떨어뜨리는 아이템 0.1% (던전 레벨과 상관없이)', '이로치·구조 보답은 던전 레벨에 맞는 아이템으로', '클라우드 저장 중에 바뀐 내용이 빠져서 다음 접속 때 옛 세이브로 덮이던 문제 수정 (구조 요청이 게시판과 끊겨 구조돼도 알림이 안 오던 원인)', '끊긴 구조 요청은 자동으로 다시 이어서, 이미 구조됐으면 바로 부활', '구조한 사람의 포켓몬이 내 버전에 없어도 구조되면 부활']],
@@ -74,7 +75,7 @@ const TYPE_COLORS = ['#A8A77A', '#C22E28', '#A98FF3', '#A33EA1', '#E2BF65', '#B6
 
 // use: 사용 효과 / throw: 던지기 효과 / stack: 여러 개를 한 칸에
 const ITEMS = {
-  oran:     { n: '오랭열매',     d: 'HP를 100 회복한다.', price: 60, use: 'heal', v: 100, icon: '🫐' },
+  oran:     { n: '오랭열매',     d: 'HP를 50 회복한다.', price: 60, use: 'heal', v: 50, icon: '🫐' },
   sitrus:   { n: '자뭉열매',     d: 'HP를 최대 HP의 절반만큼 회복한다.', price: 180, use: 'healPct', v: 50, icon: '🍋' },
   apple:    { n: '사과',         d: '배고픔을 50 채운다.', price: 50, use: 'food', v: 50, icon: '🍎' },
   bigapple: { n: '큰사과',       d: '배고픔을 가득 채운다.', price: 150, use: 'food', v: 200, icon: '🍏' },
@@ -98,13 +99,13 @@ const ITEMS = {
 
 // ── 추가 소모품 ──
 Object.assign(ITEMS, {
-  superpotion: { n: '좋은상처약', d: 'HP를 200 회복한다.', price: 300, use: 'heal', v: 200, icon: '💊' },
+  superpotion: { n: '좋은상처약', d: 'HP를 150 회복한다.', price: 300, use: 'heal', v: 150, icon: '💊' },
   fullrestore: { n: '회복약',     d: 'HP를 전부 회복하고 상태이상도 낫는다.', price: 1200, use: 'fullheal', icon: '🩹' },
-  xattack:  { n: '플러스파워',   d: '이 층에서 공격이 2단계 오른다.', price: 150, use: 'stat', st: 2, v: 2, icon: '🔺' },
-  xdefense: { n: '디펜드업',     d: '이 층에서 방어가 2단계 오른다.', price: 150, use: 'stat', st: 3, v: 2, icon: '🛡' },
-  xspatk:   { n: '스페셜업',     d: '이 층에서 특수공격이 2단계 오른다.', price: 150, use: 'stat', st: 4, v: 2, icon: '🔷' },
-  xspeed:   { n: '스피드업',     d: '이 층에서 스피드가 2단계 오른다. (명중·회피에 영향)', price: 150, use: 'stat', st: 6, v: 2, icon: '💨' },
-  xaccuracy:{ n: '잘-맞히기',    d: '이 층에서 명중률이 2단계 오른다.', price: 150, use: 'stat', st: 7, v: 2, icon: '🎯' },
+  xattack:  { n: '플러스파워',   d: '100턴 동안 공격이 2단계 오른다.', price: 150, use: 'stat', st: 2, v: 2, icon: '🔺' },
+  xdefense: { n: '디펜드업',     d: '100턴 동안 방어가 2단계 오른다.', price: 150, use: 'stat', st: 3, v: 2, icon: '🛡' },
+  xspatk:   { n: '스페셜업',     d: '100턴 동안 특수공격이 2단계 오른다.', price: 150, use: 'stat', st: 4, v: 2, icon: '🔷' },
+  xspeed:   { n: '스피드업',     d: '100턴 동안 스피드가 2단계 오른다. (명중·회피에 영향)', price: 150, use: 'stat', st: 6, v: 2, icon: '💨' },
+  xaccuracy:{ n: '잘-맞히기',    d: '100턴 동안 명중률이 2단계 오른다.', price: 150, use: 'stat', st: 7, v: 2, icon: '🎯' },
   poisonseed: { n: '독씨',       d: '던지면 맞은 적이 독 상태가 된다.', price: 80, throw: 'psn', icon: '🟣' },
   confuseseed:{ n: '혼란씨',     d: '던지면 맞은 적이 혼란에 빠진다.', price: 80, throw: 'cnf', icon: '💫' },
   goldthorn: { n: '금바늘',      d: '던지면 적에게 고정 50 피해.', price: 30, throw: 'dmg', v: 50, stack: true, icon: '📍' },
@@ -122,13 +123,13 @@ Object.assign(ITEMS, {
   rawst:   { n: '복분열매', d: '화상을 고친다.', price: 40, use: 'cureOne', st: 'brn', icon: '🍓' },
   persim:  { n: '시마열매', d: '혼란을 고친다.', price: 40, use: 'cureOne', st: 'cnf', icon: '🍊' },
   lum:     { n: '리샘열매', d: '모든 상태이상과 떨어진 능력을 고친다.', price: 150, use: 'cure', icon: '🍈' },
-  leppa:   { n: '과사열매', d: '모든 기술의 PP를 10씩 회복한다.', price: 120, use: 'ppSome', v: 10, icon: '🍐' },
-  liechi:  { n: '치리열매', d: '이 층에서 공격이 1단계 오른다.', price: 100, use: 'stat', st: 2, v: 1, icon: '🔴' },
-  ganlon:  { n: '용아열매', d: '이 층에서 방어가 1단계 오른다.', price: 100, use: 'stat', st: 3, v: 1, icon: '🟠' },
-  petaya:  { n: '야타비열매', d: '이 층에서 특수공격이 1단계 오른다.', price: 100, use: 'stat', st: 4, v: 1, icon: '🟣' },
-  apicot:  { n: '규살열매', d: '이 층에서 특수방어가 1단계 오른다.', price: 100, use: 'stat', st: 5, v: 1, icon: '🔵' },
-  salac:   { n: '캄라열매', d: '이 층에서 스피드가 1단계 오른다.', price: 100, use: 'stat', st: 6, v: 1, icon: '🟢' },
-  starf:   { n: '스타열매', d: '이 층에서 무작위 능력 하나가 2단계 오른다.', price: 250, use: 'statRandom', icon: '⭐' },
+  leppa:   { n: '과사열매', d: '고른 기술 하나의 PP를 10 회복한다.', price: 120, use: 'ppOne', v: 10, icon: '🍐' },
+  liechi:  { n: '치리열매', d: '100턴 동안 공격이 1단계 오른다.', price: 100, use: 'stat', st: 2, v: 1, icon: '🔴' },
+  ganlon:  { n: '용아열매', d: '100턴 동안 방어가 1단계 오른다.', price: 100, use: 'stat', st: 3, v: 1, icon: '🟠' },
+  petaya:  { n: '야타비열매', d: '100턴 동안 특수공격이 1단계 오른다.', price: 100, use: 'stat', st: 4, v: 1, icon: '🟣' },
+  apicot:  { n: '규살열매', d: '100턴 동안 특수방어가 1단계 오른다.', price: 100, use: 'stat', st: 5, v: 1, icon: '🔵' },
+  salac:   { n: '캄라열매', d: '100턴 동안 스피드가 1단계 오른다.', price: 100, use: 'stat', st: 6, v: 1, icon: '🟢' },
+  starf:   { n: '스타열매', d: '100턴 동안 무작위 능력 하나가 2단계 오른다.', price: 250, use: 'statRandom', icon: '⭐' },
   lansat:  { n: '랑사열매', d: '이 층에서 급소에 맞히기 아주 쉬워진다 (급소율 2단계).', price: 250, use: 'critUp', icon: '🎯' },
 });
 
@@ -495,19 +496,27 @@ DATA.tms.forEach((mid, i) => {
 // (지닌 물건 배율을 곱한 뒤 기준, 파는 값도 따라 오른다)
 const CHEAP_LIMIT = 3000, CHEAP_MUL = 2, PRICEY_MUL = 1.5;
 for (const it of Object.values(ITEMS)) if (it.price > 0) it.price = Math.round(it.price * (it.price <= CHEAP_LIMIT ? CHEAP_MUL : PRICEY_MUL) / 10) * 10;
+// 상점에 늘 있는 기본 물건은 값을 따로 더 올린다 (오랭열매·사과·과사열매 2배), 탈출구슬은 비싸게
+for (const id of ['oran', 'apple', 'leppa']) ITEMS[id].price *= 2;
+ITEMS.escape.price = 3000;
+// 상점에 늘 있는 물건 (맨 위에 고정). 나머지 진열은 날마다 바뀐다
+const SHOP_FIXED = ['oran', 'apple', 'leppa', 'stone', 'link'];
 
 // ── 아이템 등급: 층의 적 레벨이 낮으면 좋은 아이템은 떨어지지 않는다 ──
 // 1 흔함 (처음부터) · 2 조금 드묾 · 3 드묾 · 4 아주 드묾
-const TIER_LV = { 1: 0, 2: 10, 3: 20, 4: 35 };
-const TIER_NAMES = { 1: '흔함', 2: '조금 드묾', 3: '드묾', 4: '아주 드묾' };
+const TIER_LV = { 1: 0, 2: 10, 3: 20, 4: 28, 5: 35 };
+const TIER_NAMES = { 1: '일반', 2: '고급', 3: '희귀', 4: '유니크', 5: '전설' };
+// 유니크: 능력치를 영구히 올리거나 레벨·특성을 바꾸는 소모품
+const TIER_EPIC = ['candy', 'abcapsule'];
 const TIER4 = ['lifeorb', 'luckyegg', 'amuletcoin', 'goldribbon', 'focussash', 'choicescarf', 'assaultvest', 'leftovers', 'expertbelt', 'friendbow', 'abpatch', 'rainbowgummy', 'starf', 'lansat'];
-const TIER2 = ['reviver', 'escape', 'foesleep', 'superpotion', 'xattack', 'xdefense', 'xspatk', 'xspeed', 'xaccuracy', 'goldthorn', 'radar', 'trapbust', 'paraorb', 'sloworb',
+const TIER2 = ['sitrus', 'bigapple', 'escape', 'foesleep', 'superpotion', 'xattack', 'xdefense', 'xspatk', 'xspeed', 'xaccuracy', 'goldthorn', 'radar', 'trapbust', 'paraorb', 'sloworb',
   'lumi', 'lum', 'leppa', 'liechi', 'ganlon', 'petaya', 'apicot', 'salac'];
 function itemTier(id) {
   const it = ITEMS[id];
   if (!it) return 1;
-  if (TIER4.includes(id) || it.mega) return 4;   // 메가스톤은 js/forms.js에서 추가
-  if (it.held || it.tm || VITAMINS[id] || GUMMIES[id] || ['candy', 'fullrestore', 'abcapsule'].includes(id)) return 3;
+  if (TIER4.includes(id) || it.mega) return 5;   // 메가스톤은 js/forms.js에서 추가
+  if (VITAMINS[id] || GUMMIES[id] || TIER_EPIC.includes(id)) return 4;
+  if (it.held || it.tm || ['fullrestore', 'elixir', 'reviver'].includes(id)) return 3;
   if (TIER2.includes(id)) return 2;
   return 1;
 }
@@ -523,16 +532,52 @@ function typeFits(dg, id) {
   if (it.mega) return DATA.species[it.formTo].t.some(t => ts.includes(t));
   return true;
 }
+// 아이템 분류 (던전 정보의 묶음과 드롭 상한에 쓴다)
+function itemGroup(id) {
+  const it = ITEMS[id];
+  if (it.tm) return 'tm';
+  if (it.held) return 'held';
+  if (VITAMINS[id] || GUMMIES[id] || ['candy', 'abcapsule', 'abpatch', 'reviver'].includes(id)) return 'rare';
+  if (it.use === 'cureOne' || it.use === 'chesto' || ['lum', 'leppa', 'liechi', 'ganlon', 'petaya', 'apicot', 'salac', 'starf', 'lansat', 'oran', 'sitrus'].includes(id)) return 'berry';
+  if (it.use === 'food' || it.use === 'heal' || it.use === 'healPct' || it.use === 'fullheal' || it.use === 'cure' || it.use === 'pp') return 'heal';
+  if (it.throw) return 'throw';
+  return 'misc';
+}
 const dropCache = {}, baseCache = {};
-// 던전 바닥·적 드롭에서 지닌 물건이 나오는 몫 (지닌 물건끼리의 비율은 그대로)
+// 던전 바닥·적 드롭에서 몫을 정해 둔 아이템: 지닌 물건 전체 3% (지닌 물건끼리의 비율은 그대로). DROP_SHARE에 아이템별 몫을 더할 수 있다
+// (그 층에서 나올 수 있을 때만. 나머지 아이템은 서로의 비율을 그대로 두고 남은 몫을 나눈다)
 const HELD_DROP_SHARE = 0.03;
+const DROP_SHARE = {};
 function dropTable(lvl, dg) {
   const base = baseTable(lvl, dg), key = base.key;
   if (dropCache[key]) return dropCache[key];
-  const held = base.filter(d => ITEMS[d[0]].held), hw = held.reduce((a, d) => a + d[1], 0), rest = base.reduce((a, d) => a + d[1], 0) - hw;
-  const k = hw && rest ? HELD_DROP_SHARE / (1 - HELD_DROP_SHARE) * rest / hw : 1;
-  return (dropCache[key] = base.map(d => (ITEMS[d[0]].held ? [d[0], d[1] * k] : d)));
+  const group = id => (DROP_SHARE[id] ? id : ITEMS[id].held ? 'held' : null);
+  const share = { ...DROP_SHARE, held: HELD_DROP_SHARE }, sum = {};
+  let rest = 0;
+  for (const [id, w] of base) { const g = group(id); if (g) sum[g] = (sum[g] || 0) + w; else rest += w; }
+  const fixed = Object.keys(sum).reduce((a, g) => a + share[g], 0);
+  const total = rest / (1 - fixed);
+  const out = base.map(([id, w]) => { const g = group(id); return g ? [id, w / sum[g] * share[g] * total] : [id, w]; });
+  // 분류별 상한: 넘치는 만큼은 아이템 대신 돈 무더기가 된다 (out.money: 아이템 한 자리가 돈이 될 확률)
+  const gw = {};
+  for (const [id, w] of out) gw[itemGroup(id)] = (gw[itemGroup(id)] || 0) + w;
+  let moneyW = 0;
+  for (const [g, cap] of Object.entries(GROUP_CAP)) if (gw[g] > cap * total) {
+    const k = cap * total / gw[g];
+    moneyW += gw[g] - cap * total;
+    for (const d of out) if (itemGroup(d[0]) === g) d[1] *= k;
+  }
+  out.money = moneyW / total;
+  return (dropCache[key] = out);
 }
+// 바닥·적 드롭에서 분류별로 차지할 수 있는 최대 몫 (열매 30%, 씨앗·구슬·기타 10%)
+const GROUP_CAP = { berry: 0.30, misc: 0.10 };
+// 바닥에 놓일 아이템 하나: 아이템 id, 또는 돈 무더기면 null
+function pickDrop(lvl, dg) {
+  const t = dropTable(lvl, dg);
+  return Math.random() < t.money ? null : weighted(t);
+}
+const moneyPile = lvl => Math.round(rint(4, 12) * (1 + lvl / 6));
 // 레벨·던전 타입으로 거른 원래 가중치 (보스·이로치 보상은 이걸 쓴다)
 function baseTable(lvl, dg) {
   const key = Object.values(TIER_LV).filter(v => lvl >= v).length + (lvl >= HIGH_LV ? 'h' : '') + '|' + (dg && dg.types ? dg.types.join(',') : '*');

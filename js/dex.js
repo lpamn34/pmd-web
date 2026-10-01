@@ -6,7 +6,7 @@ const Dex = (() => {
   const RANGE_SHORT = { f: '앞', p: '원거리', r: '주변', s: '자신' };
   const CLS = ['', '변화', '물리', '특수'];
   const bst = id => DATA.species[id].b.reduce((a, b) => a + b, 0);
-  const shopSet = new Set([...SHOP_POOL, ...HELD_SHOP_POOL, ...TM_IDS, ...Object.keys(VITAMINS), ...Object.keys(GUMMIES), 'abcapsule', 'abpatch']), dropSet = new Set([...DROP_TABLE.map(d => d[0]), ...MEGA_STONES]);
+  const shopSet = new Set([...SHOP_POOL, ...SHOP_FIXED, ...HELD_SHOP_POOL, ...TM_IDS, ...Object.keys(VITAMINS), ...Object.keys(GUMMIES), 'abcapsule', 'abpatch']), dropSet = new Set([...DROP_TABLE.map(d => d[0]), ...MEGA_STONES]);
 
   function render() {
     const tabs = [['pokemon', '포켓몬'], ['move', '기술'], ['ability', '특성'], ['item', '아이템']]
