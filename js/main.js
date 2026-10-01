@@ -130,10 +130,10 @@ const Game = (() => {
   const syncMeta = () => { try { return JSON.parse(localStorage.getItem(SYNC_KEY) || 'null'); } catch (e) { return null; } };
   const setSyncMeta = m => { try { if (m) localStorage.setItem(SYNC_KEY, JSON.stringify(m)); else localStorage.removeItem(SYNC_KEY); } catch (e) { /* 무시 */ } };
   // 클라우드 저장 (다른 기기에서 이어하기용. 브라우저 세이브는 매번 바로 저장된다)
-  //  마을: 바뀐 게 있으면 10분에 한 번까지 / 던전 안: 올리지 않는다 (층마다 바뀌어서)
+  //  마을: 바뀐 게 있으면 20분에 한 번까지 / 던전 안: 올리지 않는다 (층마다 바뀌어서)
   //  던전을 마치고 마을에 돌아올 때, 창을 닫거나 다른 탭으로 갈 때는 바로 올린다 (던전 도중이어도)
   //  서버 규칙은 20초에 한 번까지만 받아 준다. 탭을 자주 오가도 FLUSH_GAP 안에는 다시 올리지 않는다
-  const UPLOAD_GAP = 10 * 60 * 1000, FLUSH_GAP = 30 * 1000;
+  const UPLOAD_GAP = 20 * 60 * 1000, FLUSH_GAP = 2 * 60 * 1000;   // v0.47: 무료 한도(쓰기)를 아끼려고 10분 → 20분, 창을 숨길 때 30초 → 2분
   let bound = false, upTimer = null, lastUp = 0, upPending = false, syncing = null, cloudErr = null, onlineBoot = null;
   const inDungeon = () => typeof Dungeon !== 'undefined' && !!Dungeon.run;
   function scheduleUpload() {
@@ -166,7 +166,7 @@ const Game = (() => {
   window.addEventListener('pagehide', flushUpload);
 
   // ── 접속자 수 (로그인한 탐험대 기준) ──
-  //  "접속 중" 표시는 10분마다 남기고 (던전 안에서도), 수는 마을 화면을 보고 있을 때만 10분마다 센다. 창을 숨기면 쉰다
+  //  "접속 중" 표시는 15분마다 남기고 (던전 안에서도), 수는 마을 화면을 보고 있을 때만 15분마다 센다. 창을 숨기면 쉰다
   let onlineN = null, presenceAt = 0, countAt = 0, presenceTimer = null;
   const PRESENCE_MS = () => Online.PRESENCE_MIN * 60 * 1000 - 5000;
   const inTown = () => document.getElementById('town-screen')?.classList.contains('active');
@@ -336,7 +336,7 @@ const Game = (() => {
         <p>클라우드 세이브: ${m && m.uid === Online.uid() ? `${esc(new Date(m.at).toLocaleString())}에 저장한 세이브와 맞춰져 있어요.` : '아직 올리지 않았어요.'}</p>
         ${Online.nameTaken() ? '<p class="warn">이 닉네임은 다른 사람이 먼저 쓰고 있어요. 구조 게시판을 쓰려면 닉네임을 바꿔 주세요.</p>' : ''}
         ${cloudErr ? `<p class="warn">마지막 오류: ${esc(cloudErr)}</p>` : ''}
-        <p class="dim">진행 상황은 이 브라우저에는 바로 저장됩니다. 클라우드에는 던전을 마치고 돌아올 때, 창을 닫거나 다른 탭으로 갈 때, 마을에서는 10분마다 자동으로 올라갑니다.</p>`,
+        <p class="dim">진행 상황은 이 브라우저에는 바로 저장됩니다. 클라우드에는 던전을 마치고 돌아올 때, 창을 닫거나 다른 탭으로 갈 때, 마을에서는 20분마다 자동으로 올라갑니다.</p>`,
       choices: [
         { label: '☁ 지금 클라우드에 저장', fn: async () => {
           if (Date.now() - lastUp < FLUSH_GAP) { UI.toast('방금 저장했어요. 잠시 뒤에 다시 눌러 주세요.'); return; }
@@ -760,7 +760,7 @@ const Game = (() => {
         ${dg.wx && dg.wx.length ? `<div class="note">날씨: ${dg.wx.map(([w, p]) => `${WEATHERS[w].icon}${WEATHERS[w].n} ${Math.round(p * 100)}%`).join(' · ')}</div>` : ''}
         ${!dg.theme && bossPool(dg).length ? `<div class="note theme">👑 최종 보스 ${bossPool(dg).map(spName).join(' / ')}${bossPool(dg).length > 1 ? ' 중 하나' : ''}${midPool(dg).length ? ` · 중간 보스 ${dg.mid.floors.join(', ')}층` : ''}</div>` : ''}
         ${dg.theme ? `<div class="note theme">👑 ${esc(dg.theme)} — 최종 보스 ${bossPool(dg).map(spName).join(' / ') || '?'}${bossPool(dg).length > 1 ? ' 중 하나' : ''}${midPool(dg).length ? ` · 중간 보스 ${dg.mid.floors.join(', ')}층` : ''}</div>` : ''}
-        ${dg.mode === 'rogue' ? `<div class="note">입장 시 Lv${ROGUE_LEVEL}, 가방 초기화. 나오면 원래대로 돌아갑니다.</div>` : ''}
+        ${dg.mode === 'rogue' ? `<div class="note">입장 시 Lv${ROGUE_LEVEL}, 가방 초기화 (지닌 물건은 그대로). 나오면 원래대로 돌아갑니다.</div>` : ''}
         ${ms ? `<div class="note ms">📜 진행 중인 임무 ${ms}개</div>` : ''}
         <div class="dg-btns">${sosLocked(dg.id) ? '<button class="btn" disabled title="구조를 받거나 포기하면 다시 들어갈 수 있어요">🆘 구조 대기 중</button>'
           : `<button class="btn" data-act="go" data-arg="${dg.id}" ${ok ? '' : 'disabled'}>${ok ? '출발' : `🔒 ${esc(dungeonById(dg.req).n)} 클리어 필요`}</button>`}
@@ -803,7 +803,7 @@ const Game = (() => {
       dg.hidden ? '숨은 던전 (메달 진행도에는 들어가지 않는다)' : '',
       dg.extra ? `${dg.theme} 시리즈가 일반 적으로도 섞여 나온다` : '',
       `한 층에 머물 수 있는 시간: ${WIND.limit}턴 (넘으면 바람에 날려감)`,
-      dg.mode === 'rogue' ? `로그라이크: Lv${ROGUE_LEVEL}, 기본 가방으로 입장` : '',
+      dg.mode === 'rogue' ? `로그라이크: Lv${ROGUE_LEVEL}, 기본 가방으로 입장 (지닌 물건은 그대로)` : '',
     ].filter(Boolean);
     // 아이템: 마지막 층 기준 드롭 확률 (앞쪽 층은 등급이 낮은 아이템만)
     const table = dropTable(dg.lv[1], dg);
@@ -1547,6 +1547,7 @@ const Game = (() => {
     if (dg.mode === 'rogue') {
       const ok = await UI.confirm(esc(dg.n), `<p><b>로그라이크 던전</b>입니다.</p><ul>
         <li>레벨이 <b>${jo(ROGUE_LEVEL, '으로')}</b>, 가방이 초기화된 상태로 들어갑니다. (오랭열매 2개, 사과 1개 지급)</li>
+        <li>지닌 물건은 그대로 지니고 들어갑니다${ch.held ? ` (${ITEMS[ch.held].icon}${esc(ITEMS[ch.held].n)})` : ''}. 쓰러져도 잃지 않아요.</li>
         <li>던전에서 나오면 레벨과 가방이 원래대로 돌아옵니다.</li>
         <li>클리어하거나 탈출하면 주운 돈과 아이템(창고로)을 가져올 수 있습니다. 쓰러지면 아무것도 가져오지 못합니다.</li></ul>`, '들어간다', '그만둔다');
       if (!ok) return;
@@ -1568,6 +1569,7 @@ const Game = (() => {
     if (dg.mode === 'rogue') {
       p = makeCreature(sp, ROGUE_LEVEL, { player: true, ability: entryAbility(sp, ch) });
       p.shiny = !!ch.shiny;
+      p.held = ch.held || null;   // 지닌 물건 하나는 들고 간다 (메가스톤·전용 도구·모습 바꾸는 도구). 캐릭터 기록에서는 빠지지 않는다
       bag = [{ id: 'oran', n: 1 }, { id: 'oran', n: 1 }, { id: 'apple', n: 1 }];
     } else {
       p = makeCreature(sp, ch.lv, { player: true, exp: ch.exp, moves: ch.moves.length ? ch.moves : undefined, ability: entryAbility(sp, ch), boost: ch.boost });
@@ -1578,7 +1580,7 @@ const Game = (() => {
     }
     p.selForm = ch.form || undefined;   // 캐릭터 탭에서 골라 둔 모습 (로토무 등)
     p.belly = 100;
-    const run = { dungeon: dg.id, floor: 1, mode: dg.mode, p, bag, money: 0, done: [], party: dg.mode === 'normal' ? partyList().map(makePartner) : [] };
+    const run = { dungeon: dg.id, floor: 1, mode: dg.mode, p, bag, money: 0, done: [], party: dg.mode === 'normal' ? partyList().map(makePartner) : [], carried: dg.mode === 'rogue' ? ch.held || null : null };
     show('dungeon-screen');
     Dungeon.enter(run);
   }
@@ -1606,7 +1608,7 @@ const Game = (() => {
 
   function saveRunSnapshot(r) {
     const p = r.p;
-    save.run = { dungeon: r.dungeon, floor: r.floor, mode: r.mode, bag: r.bag, money: r.money, done: r.done, daily: r.daily || null, turns: r.turns || 0, kills: r.kills || 0,
+    save.run = { dungeon: r.dungeon, floor: r.floor, mode: r.mode, bag: r.bag, money: r.money, done: r.done, daily: r.daily || null, turns: r.turns || 0, kills: r.kills || 0, carried: r.carried || null,
       p: { sp: p.sp, lv: p.lv, exp: p.exp, hp: p.hp, belly: p.belly, status: p.status, statusT: p.statusT, moves: p.moves.map(m => m.id), pp: p.moves.map(m => m.pp), ability: p.baseAbility ?? p.ability, held: p.held || null, tms: p.tms || [], shiny: !!p.shiny, boost: p.boost || null, form: p.selForm || null } };
     save.run.party = (r.party || []).map(a => ({ sp: a.sp, lv: a.lv, exp: a.exp, hp: a.hp, moves: a.moves.map(m => m.id), pp: a.moves.map(m => m.pp), ability: a.baseAbility ?? a.ability, fainted: !!a.fainted, status: a.status, statusT: a.statusT }));
     saveParty(r);
@@ -1626,7 +1628,7 @@ const Game = (() => {
       a.hp = clamp(x.hp, 1, a.maxhp); a.fainted = !!x.fainted; a.status = x.status; a.statusT = x.statusT;
       return a;
     });
-    const run = { dungeon: s.dungeon, floor: s.floor, mode: s.mode, p, bag: s.bag, money: s.money, done: s.done, daily: s.daily || null, turns: s.turns || 0, kills: s.kills || 0, party };
+    const run = { dungeon: s.dungeon, floor: s.floor, mode: s.mode, p, bag: s.bag, money: s.money, done: s.done, daily: s.daily || null, turns: s.turns || 0, kills: s.kills || 0, party, carried: s.carried || null };
     show('dungeon-screen');
     Dungeon.enter(run);
   }
@@ -1951,6 +1953,8 @@ const Game = (() => {
     } else {
       if (success) {
         const items = r.bag.filter(b => ITEMS[b.id]).concat(p.held ? [{ id: p.held, n: 1 }] : []);
+        // 들고 들어간 지닌 물건은 캐릭터가 계속 지니고 있으므로 하나 빼고 가져온다 (복사되지 않게)
+        if (r.carried) { const k = items.findIndex(b => b.id === r.carried); if (k >= 0) { if (items[k].n > 1) items[k] = { ...items[k], n: items[k].n - 1 }; else items.splice(k, 1); } }
         items.forEach(b => storeAdd(b.id, b.n));
         if (items.length) lines.push(`가져온 아이템 ${items.length}종을 창고에 넣었다.`);
         if (r.money) lines.push(`주운 돈 ₽${r.money}`);

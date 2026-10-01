@@ -279,7 +279,7 @@ const Online = (() => {
 
   // ── 접속자 수: 로그인한 사람만 presence/{uid}에 "지금 있음" 시각을 남긴다 ──
   // 무료 한도를 아끼려고 PRESENCE_MIN분마다 한 번씩만 남기고, 최근 ONLINE_WINDOW분 안에 남긴 사람을 센다 (문서를 읽지 않는 count 집계)
-  const PRESENCE_MIN = 10, ONLINE_WINDOW = 21;
+  const PRESENCE_MIN = 15, ONLINE_WINDOW = 31;   // v0.47: 10분 → 15분 (창은 표시 간격의 두 배 + 1분)
   async function touchPresence() {
     if (!user) return;
     await db.collection('presence').doc(user.uid).set({ at: firebase.firestore.FieldValue.serverTimestamp() });
