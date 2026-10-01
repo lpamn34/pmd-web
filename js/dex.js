@@ -2,7 +2,7 @@
 'use strict';
 
 const Dex = (() => {
-  let mode = 'pokemon';
+  let mode = 'pokemon', medals = {};   // medals: 도감 목록에 띄울 메달 아이콘 (그릴 때마다 새로)
   const RANGE_SHORT = { f: '앞', p: '원거리', r: '주변', s: '자신' };
   const CLS = ['', '변화', '물리', '특수'];
   const bst = id => DATA.species[id].b.reduce((a, b) => a + b, 0);
@@ -27,9 +27,10 @@ const Dex = (() => {
       <select class="dex-t"><option value="">전체 타입</option>${DATA.types.map((t, i) => `<option value="${i + 1}">${t}</option>`).join('')}</select>
       <select class="dex-c"><option value="">전체</option><option value="1,2">만난 포켓몬</option><option value="2">쓰러뜨린 포켓몬</option><option value="0">아직 못 만난 포켓몬</option></select>
       <span class="dim dex-count"></span></div>
-      <div class="picker dex-grid">${ids.map(id => { const d = DATA.species[id], st = state(id); return `<button class="pk dex-item${st ? '' : ' unseen'}" data-dexpoke="${id}"
+      ${(() => { medals = Game.save ? Game.dexMedals() : {}; return ''; })()}
+      <div class="picker dex-grid">${ids.map(id => { const d = DATA.species[id], st = state(id), md = medals[id] || ''; return `<button class="pk dex-item${st ? '' : ' unseen'}" data-dexpoke="${id}"
         data-s="${esc((d.n + ' ' + d.e + ' ' + dexNo(id) + ' ' + id).toLowerCase())}" data-g="${d.g}" data-t="${d.t.join(',')}" data-c="${st}">
-        ${portraitImg(id, 'portrait sm')}<span>${esc(d.n)}</span><i class="dim">${dexNo(id)}${st === 2 ? ' ⚔' : st === 1 ? ' 👁' : ''}</i></button>`; }).join('')}</div>`;
+        ${portraitImg(id, 'portrait sm')}<span>${esc(d.n)}</span><i class="dim">${dexNo(id)}${st === 2 ? ' ⚔' : st === 1 ? ' 👁' : ''}</i>${md ? `<i class="dex-medals">${md}</i>` : ''}</button>`; }).join('')}</div>`;
   }
 
   function renderMoves() {
@@ -106,6 +107,7 @@ const Dex = (() => {
         <div class="cc-top">${portraitImg(id, 'portrait big')}<div><div class="cc-name">${esc(d.n)}</div><div class="dim">${esc(d.e)} · ${d.g}세대${d.lg ? ' · 전설/환상' : ''}</div>
           <div>${typeBadges(d.t)}</div><div class="dim">📖 ${rec} · 레벨업 ${expDiv(id) > 1.01 ? `느림 (필요 경험치 ${+expDiv(id).toFixed(2)}배)` : expDiv(id) < 0.99 ? `빠름 (필요 경험치 ${+expDiv(id).toFixed(2)}배)` : '보통'}</div>${played ? `<div class="note ms">플레이 기록 Lv${played.lv}</div>` : ''}</div></div>
         ${borrowNote(id) ? `<p class="note">${esc(borrowNote(id))}</p>` : ''}
+        ${Game.save && Game.hasClears(id) ? `<h3>🏅 메달 <span class="dim">(이 포켓몬으로 클리어한 던전)</span></h3>${Game.medalSection(id)}` : ''}
         <table class="dex-stats">${d.b.map((v, i) => `<tr><td>${labels[i]}</td><td class="num">${v}</td><td><span class="sbar"><i style="width:${Math.min(100, v / 1.8)}%;background:${v >= 100 ? '#4de36b' : v >= 70 ? '#f5d142' : '#f58a42'}"></i></span></td></tr>`).join('')}
           <tr><td>합계</td><td class="num"><b>${bst(id)}</b></td><td></td></tr></table>
         <h3>특성</h3>${d.ab.map(([aid, hid]) => `<div class="row clickable" data-dexability="${aid}"><div class="grow"><b>${esc(abilityName(aid))}</b>${hid ? ' <span class="dim">(숨겨진 특성)</span>' : ''}<div class="dim">${esc(abilityDesc(aid).dungeon || abilityDesc(aid).exact || abilityDesc(aid).d)}</div></div></div>`).join('')}

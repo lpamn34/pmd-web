@@ -128,13 +128,17 @@ const Dungeon = (() => {
       const ex = dg.extra.filter(id => hasSprite(id) && !pool.includes(id)).sort((a, b) => Math.abs(DATA.species[a].b.reduce((s, v) => s + v, 0) - target) - Math.abs(DATA.species[b].b.reduce((s, v) => s + v, 0) - target));
       for (const id of ex.slice(0, 6).sort(() => Math.random() - 0.5).slice(0, 3)) pool.push(id);
     }
-    // 전설 던전: 가까운 강함의 전설 포켓몬 하나를 섞음
-    if (dg.legend) {
-      const lg = SPECIES_IDS.filter(id => DATA.species[id].lg).map(id => ({ id: +id, bst: DATA.species[id].b.reduce((a, b) => a + b, 0) }))
-        .sort((a, b) => Math.abs(a.bst - target) - Math.abs(b.bst - target)).slice(0, 25);
-      if (lg.length) pool.push(pick(lg).id);
-    }
     return { pool, lvl };
+  }
+  // 전설 던전(별의 정상): 최종 보스는 전설 포켓몬 중 무작위 하나. 후보는 층마다 강함이 가까운 25종을 모은 것
+  for (const dg of DUNGEONS) if (dg.legend && !dg.bosses) {
+    const lg = SPECIES_IDS.filter(id => DATA.species[id].lg).map(id => ({ id: +id, bst: DATA.species[id].b.reduce((a, b) => a + b, 0) }));
+    const set = new Set();
+    for (let f = 1; f <= dg.floors; f++) {
+      const { target } = floorCandidates(dg, f);
+      lg.slice().sort((a, b) => Math.abs(a.bst - target) - Math.abs(b.bst - target)).slice(0, 25).forEach(o => set.add(o.id));
+    }
+    dg.bosses = [...set].sort((a, b) => a - b);
   }
 
   function spawnEnemy(pos, sp, lv) {
@@ -180,8 +184,7 @@ const Dungeon = (() => {
     const sp = bossSpecies(dg);
     const b = spawnEnemy({ x: cx, y: R.y + 3 }, sp, D.lvl + 3);
     b.lv = D.lvl + 3; recalc(b);
-    b.boss = true; b.maxhp = Math.floor(b.maxhp * 3.5); b.hp = b.maxhp;
-    for (const k of ['atk', 'def', 'spa', 'spd']) b[k] = Math.floor(b[k] * 1.1);
+    b.boss = true; b.hpMul = 3.5; b.statMul = 1.1; recalc(b); b.hp = b.maxhp;
     b.dir = 0; b.target = { x: p.x, y: p.y };
     D.boss = b;
     for (const dx of [-3, 3]) { const m = spawnEnemy({ x: cx + dx, y: R.y + 4 }); m.dir = 0; }
@@ -214,7 +217,7 @@ const Dungeon = (() => {
     // 전용 도구의 주인이 보스면 가끔 그 도구를 떨어뜨린다
     const sig = sigItemsFor([b.sp]);
     // 초반 보스는 조금 드문 아이템, 그 뒤로는 지닌 물건·기술머신·사탕 (층 레벨보다 한 등급 위까지)
-    const id = sig.length && Math.random() < SIG_DROP.boss ? pick(sig) : (rollMega('boss') || weighted(rewardPool(D.lvl + 10)));
+    const id = sig.length && Math.random() < SIG_DROP.boss ? pick(sig) : (rollMega('boss', b.lv, D.dg) || weighted(rewardPool(D.lvl + 10, D.dg)));
     for (const [dx, dy] of [[0, 0], ...DIRS]) {
       const x = b.x + dx, y = b.y + dy;
       if (floorAt(x, y) && !itemAt(x, y) && !(x === D.stairs.x && y === D.stairs.y)) { D.items.push({ x, y, id, n: 1 }); break; }
@@ -263,14 +266,14 @@ const Dungeon = (() => {
     D.player = p;
     p.critBoost = 0; p.noSleep = false;   // 랑사열매·유루열매는 그 층에서만
     if (bossFloor) {
-      p.dir = 4; p.tween = null; p.act = null; p.stages = {};
+      p.dir = 4; p.tween = null; p.act = null; p.stages = p.stages || {}; p.stageT = p.stageT || {};
       p.charging = null; p.rampage = null; p.recharge = false; p.chain = null; p.struck = new Set(); p.lastActSeq = p.lastHurtSeq = 0;
       setupBossFloor(dg, p);
       computeVis();
     } else {
     const startRoom = rand(D.rooms.length);
     const sp = randomRoomTile({ room: startRoom });
-    p.x = sp.x; p.y = sp.y; p.dir = 0; p.tween = null; p.act = null; p.stages = {};
+    p.x = sp.x; p.y = sp.y; p.dir = 0; p.tween = null; p.act = null; p.stages = p.stages || {}; p.stageT = p.stageT || {};
     p.charging = null; p.rampage = null; p.recharge = false; p.chain = null; p.struck = new Set(); p.lastActSeq = p.lastHurtSeq = 0;
     // 계단
     let sroom = rand(D.rooms.length);
@@ -281,7 +284,7 @@ const Dungeon = (() => {
     if (lvl >= FEATURE_LV.house && Math.random() < HOUSE_CHANCE && freeRooms.length) {
       const room = freeRooms.splice(rand(freeRooms.length), 1)[0];
       D.house = { room, triggered: false };
-      for (let i = rint(3, 6); i > 0; i--) { const t = randomRoomTile({ room, noItem: true }); if (t) D.items.push({ ...t, id: rollMega('floor') || weighted(dropTable(lvl)), n: 1 }); }
+      for (let i = rint(3, 6); i > 0; i--) { const t = randomRoomTile({ room, noItem: true }); if (t) D.items.push({ ...t, id: rollMega('floor', lvl, D.dg) || weighted(dropTable(lvl, D.dg)), n: 1 }); }
     }
     if (lvl >= FEATURE_LV.trap) {
       const kinds = Object.keys(TRAPS);
@@ -293,7 +296,7 @@ const Dungeon = (() => {
     }
     // 아이템 / 돈
     const nItems = rint(ITEMS_PER_FLOOR[0], ITEMS_PER_FLOOR[1]);
-    for (let i = 0; i < nItems; i++) { const t = randomRoomTile({ noItem: true }); if (t) D.items.push({ ...t, id: rollMega('floor') || weighted(dropTable(lvl)), n: 1 }); }
+    for (let i = 0; i < nItems; i++) { const t = randomRoomTile({ noItem: true }); if (t) D.items.push({ ...t, id: rollMega('floor', lvl, D.dg) || weighted(dropTable(lvl, D.dg)), n: 1 }); }
     // 전용 도구: 그 주인이 이 층에 나오면 드물게 바닥에 하나
     const sig = sigItemsFor(pool);
     if (sig.length && Math.random() < SIG_DROP.floor) { const t = randomRoomTile({ noItem: true }); if (t) D.items.push({ ...t, id: pick(sig), n: 1 }); }
@@ -316,7 +319,7 @@ const Dungeon = (() => {
           if (ms.kind === 'sos') { c.shiny = !!ms.shiny; c.friend = true; c.status = 'slp'; c.statusT = 99999; }
           Sprites.load(ms.client, c.shiny); D.mons.push(c);
         } else if (ms.kind === 'outlaw') {
-          const c = spawnEnemy(t, ms.target, ms.lv); c.lv = ms.lv; recalc(c); c.maxhp = Math.floor(c.maxhp * 1.6); c.hp = c.maxhp;
+          const c = spawnEnemy(t, ms.target, ms.lv); c.lv = ms.lv; c.hpMul = 1.6; recalc(c); c.hp = c.maxhp;
           c.outlaw = true; c.mission = ms.id;
         } else if (ms.kind === 'find') {
           D.items.push({ ...t, id: 'quest', n: 1, mission: ms.id });
@@ -424,7 +427,7 @@ const Dungeon = (() => {
     if (A.download) statChange(p, p.atk >= p.spa ? 2 : 4, 1, at, p);
     if (A.floorStart) statChange(p, A.floorStart[0], A.floorStart[1], at, p);
     if (A.floorRandom) statChange(p, pick([2, 3, 4, 5, 7, 8]), 1, at, p);
-    if (A.pickup && Math.random() < A.pickup) { const id = weighted(dropTable(D.lvl)); if (addToBag(id)) abLog(p, `${jo(ITEMS[id].n, '을')} 주워 왔다!`, at); }
+    if (A.pickup && Math.random() < A.pickup) { const id = weighted(dropTable(D.lvl, D.dg)); if (addToBag(id)) abLog(p, `${jo(ITEMS[id].n, '을')} 주워 왔다!`, at); }
     if (A.honey && Math.random() < 0.2 && addToBag('apple')) abLog(p, '사과를 발견했다!', at);
   }
   // 위협: 처음 마주쳤을 때
@@ -694,13 +697,13 @@ const Dungeon = (() => {
       }
       if (tgt.hp > 0 && A.stench && Math.random() < 0.1 * serene) setFlinch(tgt, at);
       if (tgt.hp > 0 && A.poisonTouch && Math.random() < 0.3) inflict(tgt, 'psn', at, false, user);
-      if (tgt.hp > 0 && r.crit && abilityOf(tgt).angerPoint) { tgt.stages[2] = 6; abLog(tgt, `${nm(tgt)}의 공격이 최대로 올라갔다!`, at); }
+      if (tgt.hp > 0 && r.crit && abilityOf(tgt).angerPoint) { tgt.stages[2] = 6; stageTimer(tgt, 2); abLog(tgt, `${nm(tgt)}의 공격이 최대로 올라갔다!`, at); }
       if (tgt.hp > 0 && total > 0) onHitAbility(tgt, user, move, mt, at);
       if (isContact(move) && total > 0 && !A.noContact) contactAbility(user, tgt, at);
       const Hu = heldOf(user);
       if (Hu.shellBell && total > 0 && user.hp > 0) heal(user, Math.max(1, Math.floor(total / Hu.shellBell)), at);
-      if (Hu.lifeOrb && total > 0 && user.hp > 0 && !user.lifeOrbHit) { user.lifeOrbHit = true; log(`${jo(nm(user), '은')} 생명이 조금 깎였다!`, at); damage(user, Math.max(1, Math.floor(user.maxhp / 10)), null, at); }
-      if (heldOf(tgt).helmet && isContact(move) && total > 0 && user.hp > 0) { log(`${jo(nm(user), '은')} ${jo(ITEMS[tgt.held].n, '으로')} 데미지를 입었다!`, at); damage(user, Math.max(1, Math.floor(user.maxhp / heldOf(tgt).helmet)), tgt, at); }
+      if (Hu.lifeOrb && total > 0 && user.hp > 0 && !user.lifeOrbHit) { user.lifeOrbHit = true; log(`${jo(nm(user), '은')} 생명이 조금 깎였다!`, at); damage(user, pctDmg(user, 1 / 10), null, at); }
+      if (heldOf(tgt).helmet && isContact(move) && total > 0 && user.hp > 0) { log(`${jo(nm(user), '은')} ${jo(ITEMS[tgt.held].n, '으로')} 데미지를 입었다!`, at); damage(user, pctDmg(user, 1 / heldOf(tgt).helmet), tgt, at); }
       if (tgt.hp > 0 && total > 0 && abilityOf(tgt).colorChange && mt && !(tgt.types.length === 1 && tgt.types[0] === mt)) { tgt.types = [mt]; abLog(tgt, `${jo(nm(tgt), '은')} ${typeName(mt)} 타입이 되었다!`, at); }
     } else if (move.ail) {
       if (Math.random() * 100 < (move.ac || 100)) inflict(tgt, AILMENT_MAP[move.ail], at, true, user);
@@ -732,12 +735,12 @@ const Dungeon = (() => {
     const c = D_.contact;
     if (c && user.hp > 0) {
       if (c.ail && Math.random() * 100 < c.c) inflict(user, c.ail === 'spore' ? pick(['psn', 'par', 'slp']) : c.ail, at, false, tgt);
-      if (c.dmg) { const amt = Math.max(1, Math.floor(user.maxhp / c.dmg)); abLog(tgt, `${jo(nm(user), '은')} 상처를 입었다!`, at); damage(user, amt, tgt, at); }
+      if (c.dmg) { const amt = pctDmg(user, 1 / c.dmg); abLog(tgt, `${jo(nm(user), '은')} 상처를 입었다!`, at); damage(user, amt, tgt, at); }
       if (c.st) statChange(user, c.st, c.ch, at, tgt);
       if (c.flinch && Math.random() * 100 < c.flinch) setFlinch(user, at);
-      if (c.item && tgt.player && Math.random() * 100 < c.item) { const id = weighted(dropTable(D.lvl)); if (addToBag(id)) abLog(tgt, `${jo(ITEMS[id].n, '을')} 빼앗았다!`, at); }
+      if (c.item && tgt.player && Math.random() * 100 < c.item) { const id = weighted(dropTable(D.lvl, D.dg)); if (addToBag(id)) abLog(tgt, `${jo(ITEMS[id].n, '을')} 빼앗았다!`, at); }
     }
-    if (A.magician && user.player && Math.random() < 0.1) { const id = weighted(dropTable(D.lvl)); if (addToBag(id)) abLog(user, `${jo(ITEMS[id].n, '을')} 손에 넣었다!`, at); }
+    if (A.magician && user.player && Math.random() < 0.1) { const id = weighted(dropTable(D.lvl, D.dg)); if (addToBag(id)) abLog(user, `${jo(ITEMS[id].n, '을')} 손에 넣었다!`, at); }
   }
   function applySelf(user, move, at) {
     if (move.h > 0) heal(user, Math.floor(user.maxhp * move.h / 100), at);
@@ -760,7 +763,7 @@ const Dungeon = (() => {
     }
     const cur = c.stages[st] || 0, nv = clamp(cur + ch, -6, 6);
     if (nv === cur) { log(`${nm(c)}의 ${jo(STAT_NAMES[st], '은')} 더 이상 변하지 않는다!`, at); return; }
-    c.stages[st] = nv;
+    c.stages[st] = nv; stageTimer(c, st);
     if (c.player || seen(c)) Sound.play(ch > 0 ? 'up' : 'down2', at);
     log(`${nm(c)}의 ${jo(STAT_NAMES[st], '이')}${Math.abs(ch) > 1 ? ' 크게' : ''} ${ch > 0 ? '올라갔다!' : '떨어졌다!'}`, at);
     if (ch < 0 && byFoe && A.defiant) { abLog(c, '능력이 떨어져서 오기가 생겼다!', at); statChange(c, A.defiant, 2, at, c); }
@@ -790,6 +793,9 @@ const Dungeon = (() => {
     }
   }
   // eff: 타입 상성 배율 (데미지 숫자 색과 크기를 바꾼다)
+  // 최대 HP에 비례하는 데미지 (독·화상·모래바람·까칠한피부·울퉁불퉁멧·함정 등): 보스는 HP가 많아서 절반만
+  const BOSS_PCT_MUL = 0.5;
+  const pctDmg = (c, frac) => Math.max(1, Math.floor(c.maxhp * frac * (c.boss ? BOSS_PCT_MUL : 1)));
   function damage(c, amt, src, at, eff = 1, crit = false) {
     if (c.hp <= 0) return;
     const A = abilityOf(c);
@@ -836,14 +842,14 @@ const Dungeon = (() => {
       const sa = abilityOf(src);
       if (sa.onKO) statChange(src, sa.onKO === 'best' ? (src.atk >= src.spa ? 2 : 4) : 2, 1, at, src);
     }
-    if (src && abilityOf(c).aftermath && src.hp > 0) { abLog(c, `${jo(nm(src), '은')} 폭발에 휘말렸다!`, at); damage(src, Math.max(1, Math.floor(src.maxhp / 4)), c, at); }
+    if (src && abilityOf(c).aftermath && src.hp > 0) { abLog(c, `${jo(nm(src), '은')} 폭발에 휘말렸다!`, at); damage(src, pctDmg(src, 1 / 4), c, at); }
     if (src && src.player) {
       gainExp(Math.floor(expGain(c, P().lv) * (c.outlaw || c.boss ? BOSS_EXP_MUL : 1) * (c.shiny ? 2 : 1) * (heldOf(P()).expMul || 1)), at);
       const free = !itemAt(c.x, c.y) && !(D.stairs.x === c.x && D.stairs.y === c.y);
       const sig = sigItemsFor([c.sp]);
-      if (c.shiny && free) D.items.push({ x: c.x, y: c.y, id: rollMega('shiny') || weighted(rewardPool(D.lvl + 10)), n: 1 });   // 이로치: 보스 보상과 같은 등급
+      if (c.shiny && free) D.items.push({ x: c.x, y: c.y, id: rollMega('shiny', c.lv, D.dg) || weighted(rewardPool(D.lvl + 10, D.dg)), n: 1 });   // 이로치: 보스 보상과 같은 등급
       else if (sig.length && !c.boss && free && Math.random() < SIG_DROP.defeat) D.items.push({ x: c.x, y: c.y, id: pick(sig), n: 1 });
-      else if (Math.random() < ENEMY_DROP_CHANCE && free) D.items.push({ x: c.x, y: c.y, id: rollMega('floor') || weighted(dropTable(D.lvl)), n: 1 });
+      else if (Math.random() < ENEMY_DROP_CHANCE && free) D.items.push({ x: c.x, y: c.y, id: rollMega('floor', c.lv, D.dg) || weighted(dropTable(D.lvl, D.dg)), n: 1 });
       if (c.shiny && Game.unlockShiny(c.sp)) log(`✨ 이제 캐릭터 탭에서 ${spName(c.sp)}의 이로치 모습을 고를 수 있다!`, at + 300);
       if (run.mode === 'normal' && !c.outlaw && !NO_RECRUIT.includes(c.sp) && !Game.save.roster[c.sp]) {
         const rate = recruitRate(P().lv) * (DATA.species[c.sp].lg ? 0.5 : 1) * (c.boss ? 0.5 : 1) * (heldOf(P()).recruitMul || 1);
@@ -888,7 +894,23 @@ const Dungeon = (() => {
     if (c.status === 'par' && Math.random() < 0.25) { if (c.player || seen(c)) log(`${jo(nm(c), '은')} 몸이 저려서 움직일 수 없다!`, undefined, 'st-par'); return false; }
     return true;
   }
+  // 능력 변화(랭크 업·다운)는 마지막으로 바뀐 뒤 STAGE_TURNS턴 동안 이어진다 (층을 넘어가도 유지)
+  const STAGE_TURNS = 100;
+  function stageTimer(c, st) {
+    c.stageT = c.stageT || {};
+    if (c.stages[st]) c.stageT[st] = STAGE_TURNS; else delete c.stageT[st];
+  }
+  function stageTick(c) {
+    if (!c.stageT) return;
+    for (const k of Object.keys(c.stageT)) {
+      if (!c.stages[k]) { delete c.stageT[k]; continue; }
+      if (--c.stageT[k] > 0) continue;
+      delete c.stageT[k]; c.stages[k] = 0;
+      if (c.hp > 0 && (c.player || seen(c))) log(`${nm(c)}의 ${jo(STAT_NAMES[k], '이')} 원래대로 돌아왔다.`, Math.max(T.cursor, T.moveEnd));
+    }
+  }
   function statusTick(c) {
+    stageTick(c);
     abilityTick(c);
     if (!c.status || c.hp <= 0) return;
     const A = abilityOf(c);
@@ -905,7 +927,7 @@ const Dungeon = (() => {
       if (c.stTick % 2 === 0) {
         const at = Math.max(T.cursor, T.moveEnd);
         if (c.player || seen(c)) log(`${jo(nm(c), '은')} ${c.status === 'psn' ? '독' : '화상'} 데미지를 입었다.`, at, 'st-' + c.status);
-        damage(c, Math.max(1, Math.floor(c.maxhp / 14)), null, at);
+        damage(c, pctDmg(c, 1 / 14), null, at);
       }
     }
     if (--c.statusT <= 0 && c.hp > 0) {
@@ -1115,7 +1137,7 @@ const Dungeon = (() => {
       }
       case 'blast': {
         const hit = [p, ...D.mons.filter(m => !m.npc && Math.max(Math.abs(m.x - tr.x), Math.abs(m.y - tr.y)) <= 1)];
-        for (const c of hit) { const amt = Math.max(1, Math.floor(c.maxhp * 0.2)); log(`${jo(nm(c), '은')} ${amt}의 데미지를 입었다.`, at); damage(c, amt, null, at); }
+        for (const c of hit) { const amt = pctDmg(c, 0.2); log(`${jo(nm(c), '은')} ${amt}의 데미지를 입었다.`, at); damage(c, amt, null, at); }
         break;
       }
       case 'hunger': p.belly = Math.max(0, p.belly - 20); log('배가 급격히 고파졌다!', at); break;
@@ -1375,7 +1397,7 @@ const Dungeon = (() => {
       for (const c of [p, ...D.mons]) {
         if (c.npc || c.hp <= 0 || c.types.some(t => t === 5 || t === 6 || t === 9) || abilityOf(c).chipImmune) continue;
         if (c.player || seen(c)) log(`모래바람이 ${jo(nm(c), '을')} 덮쳤다!`, at);
-        damage(c, Math.max(1, Math.floor(c.maxhp / 16)), null, at);
+        damage(c, pctDmg(c, 1 / 16), null, at);
       }
     }
     const pab = abilityOf(p);
@@ -1975,12 +1997,12 @@ const Dungeon = (() => {
 
   function updateHud(t) {
     const p = P(), dg = D.dg;
-    const hud = `${p.held}|${weatherNow()}|${dg.n}|${run.floor}|${p.lv}|${p.hp}|${p.maxhp}|${Math.ceil(p.belly)}|${Game.save.money}|${p.status}|${p.exp}|${JSON.stringify(p.stages)}`;
+    const hud = `${p.held}|${weatherNow()}|${dg.n}|${run.floor}|${p.lv}|${p.hp}|${p.maxhp}|${Math.ceil(p.belly)}|${Game.save.money}|${p.status}|${p.exp}|${JSON.stringify(p.stages)}|${JSON.stringify(p.stageT || {})}`;
     if (hud !== hudCache) {
       hudCache = hud;
       const hpPct = p.hp / p.maxhp * 100;
       const need = expFor(p.lv + 1) - expFor(p.lv), have = p.exp - expFor(p.lv);
-      const stg = Object.entries(p.stages).filter(([, v]) => v).map(([k, v]) => `<span class="${v > 0 ? 'up' : 'down'}">${STAT_NAMES[k]}${v > 0 ? '+' : ''}${v}</span>`).join(' ');
+      const stg = Object.entries(p.stages).filter(([, v]) => v).map(([k, v]) => `<span class="${v > 0 ? 'up' : 'down'}" title="${p.stageT?.[k] || 0}턴 남음">${STAT_NAMES[k]}${v > 0 ? '+' : ''}${v}</span>`).join(' ');
       document.getElementById('hud').innerHTML = `
         <span class="floor">${esc(dg.n)} <b>${run.floor}F</b>${weatherNow() ? ` <span class="wx" title="${esc(WEATHERS[weatherNow()].d)}">${WEATHERS[weatherNow()].icon} ${WEATHERS[weatherNow()].n}</span>` : ''}${dg.mode === 'rogue' ? ' <i class="rogue">로그라이크</i>' : ''}</span>
         <span>Lv <b>${p.lv}</b></span>

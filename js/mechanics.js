@@ -65,6 +65,8 @@ function makeCreature(sp, lv, opts = {}) {
 function recalc(c) {
   const old = c.maxhp;
   Object.assign(c, applyBoost(calcStats(looksOf(c), c.lv, c.iv), c.boost));   // 모습이 바뀌면 그 모습의 능력치
+  if (c.hpMul) c.maxhp = Math.floor(c.maxhp * c.hpMul);   // 보스·현상수배범의 HP 배율 (모습이 바뀌어도 유지)
+  if (c.statMul) for (const k of ['atk', 'def', 'spa', 'spd']) c[k] = Math.floor(c[k] * c.statMul);
   c.hp = clamp(c.hp + (c.maxhp - old), 1, c.maxhp);
 }
 
@@ -235,7 +237,9 @@ function effText(eff) {
 }
 
 // 5세대식: 상대보다 레벨이 높을수록 경험치 감소
+// 내 레벨보다 LOW_LV_GAP 이상 낮은 적은 전체 배율 EXP_RATE 대신 LOW_LV_MUL배
+const LOW_LV_GAP = 6, LOW_LV_MUL = 0.1;
 function expGain(enemy, plv) {
   const e = enemy.lv, scale = Math.pow((2 * e + 10) / (e + plv + 10), 2.5);
-  return Math.max(1, Math.floor(DATA.species[enemy.sp].x * e / 7 * scale * EXP_RATE));
+  return Math.max(1, Math.floor(DATA.species[enemy.sp].x * e / 7 * scale * (plv - e >= LOW_LV_GAP ? LOW_LV_MUL : EXP_RATE)));
 }

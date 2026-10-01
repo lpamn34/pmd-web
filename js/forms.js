@@ -28,9 +28,16 @@ for (const [item, fi] of Object.entries(FORM_ITEMS)) if (ITEMS[item] && FORM_ID[
 
 // ── 메가스톤: 메가진화 모습마다 하나 (던전에서만, 드롭 확률은 MEGA_RATE) ──
 const MEGA_STONE_PRICE = 30000;
-// 메가스톤 드롭 확률: 일반 드롭 테이블과 따로 굴린다 (보스·이로치 1%, 구조 보답·층 아이템·적이 떨어뜨리는 아이템 0.1%)
-const MEGA_RATE = { boss: 0.01, shiny: 0.01, rescue: 0.001, floor: 0.001 };
-const rollMega = kind => (MEGA_STONES.length && Math.random() < MEGA_RATE[kind] ? pick(MEGA_STONES) : null);
+// 메가스톤 드롭: 일반 드롭 테이블과 따로 굴린다. 레벨 MEGA_MIN_LV 이상인 보스·이로치·층에서만, 던전 타입에 맞는 메가스톤만
+// (보스·이로치 0.5%, 구조 보답·바닥 아이템·적이 떨어뜨리는 아이템 0.05%)
+const MEGA_RATE = { boss: 0.005, shiny: 0.005, rescue: 0.0005, floor: 0.0005 };
+const MEGA_MIN_LV = 35;
+const megaPool = dg => MEGA_STONES.filter(id => typeFits(dg, id));
+function rollMega(kind, lvl, dg) {
+  if (lvl < MEGA_MIN_LV || Math.random() >= MEGA_RATE[kind]) return null;
+  const pool = megaPool(dg);
+  return pool.length ? pick(pool) : null;
+}
 const MEGA_NO_STONE = { 384: 620 };   // 레쿠쟈: 메가스톤 대신 화룡점정을 알고 있으면
 const MEGA_STONES = [];
 for (const [fi, fid] of Object.entries(FORM_ID)) {

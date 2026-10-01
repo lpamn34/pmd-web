@@ -3,7 +3,7 @@
 
 // 게임 버전: 업데이트할 때 올리고, index.html의 ?v= 숫자도 같이 올린다
 // (친구와 구조 코드·오늘의 도전을 주고받으려면 버전이 같아야 한다)
-const GAME_VERSION = '0.36';
+const GAME_VERSION = '0.37';
 // 버전 비교: '0.25' > '0.9' 처럼 숫자로 비교한다
 function cmpVer(a, b) {
   const x = String(a).split('.').map(Number), y = String(b).split('.').map(Number);
@@ -12,6 +12,7 @@ function cmpVer(a, b) {
 }
 const GAME_DATE = '2026-10-01';
 const VERSION_NOTES = [
+  ['0.37', ['메가스톤: Lv35 이상인 층·보스·이로치에서만, 확률 절반 (보스·이로치 0.5%, 바닥·적 드롭·구조 보답 0.05%), 던전 정보에 표시', '기술머신과 메가스톤은 던전 타입에 맞는 것만 나옴 (예: 불꽃 화산은 불꽃·바위·땅)', '황혼의 미궁: 모든 타입의 적', '일반 던전의 적 최소 레벨 = 바로 이전 던전의 최대 레벨 - 1', '보스는 최대 HP 비례 데미지(독·화상·모래바람·까칠한피부·울퉁불퉁멧·함정 등)를 절반만 받음', '던전 순서: 번개 초원은 수정 동굴, 불꽃 화산은 독안개 늪, 얼음 산은 유사 사막, 어둠의 숲은 폭풍의 바다를 클리어하면 열림 (이미 가 본 던전은 그대로 열림)', '내 레벨보다 6 이상 낮은 적은 경험치 배율 0.3배 대신 0.1배', '테마 던전의 적 최소 레벨을 최고 레벨 - 8 이상으로', '이상한사탕을 마을에서도 사용', '창고 아이템 정보 보기 (ℹ)', '도감에서 메달 확인 (목록에 받은 메달 아이콘, 포켓몬 정보에 메달별 진행도)', '던전 바닥·적 드롭에서 지닌 물건은 3%', '능력 변화(랭크 업·다운)는 100턴 동안 유지 (층을 넘어가도 이어짐)', '보스·현상수배범이 싸우는 도중 모습이 바뀌어도 HP·능력치 배율 유지', '던전 순서: 어둠의 숲 → 강철 광산 → 용의 협곡 → 하늘의 탑 → 별의 정상 (용의 협곡·하늘의 탑 적 레벨 맞바꿈, 강철 광산 최고 Lv53, 용의 협곡 최소 Lv54)', '고대 유적 적 레벨 56-64 (재앙의 사당과 같게), 재앙의 사당은 강철 광산을 클리어하면 열림', '테마 던전: 모두 30층, 중간 보스는 20층에서 한 번', '해저 동굴은 하늘의 탑을 클리어하면 열림 (적 레벨 용의 나선탑과 같게), 불탄 탑은 폭풍의 바다를 클리어하면 열림 (적 레벨 소용돌이 섬과 같게)', '별의 정상: 전설 포켓몬은 일반 층에 섞이지 않고, 최종 보스로 26종 중 하나가 무작위로 나옴 (전용 도구는 보스가 떨어뜨림)']],
   ['0.36', ['진화 후 기술 설정에 진화 전 모습의 기술도 나오고, 쓰고 있던 기술을 바꿀 수 있음 (도구 진화 후 기술을 못 바꾸던 문제)', '메가스톤 드롭 확률 조정: 보스 보상·이로치 1%, 구조 보답·바닥 아이템·적이 떨어뜨리는 아이템 0.1% (던전 레벨과 상관없이)', '이로치·구조 보답은 던전 레벨에 맞는 아이템으로', '클라우드 저장 중에 바뀐 내용이 빠져서 다음 접속 때 옛 세이브로 덮이던 문제 수정 (구조 요청이 게시판과 끊겨 구조돼도 알림이 안 오던 원인)', '끊긴 구조 요청은 자동으로 다시 이어서, 이미 구조됐으면 바로 부활', '구조한 사람의 포켓몬이 내 버전에 없어도 구조되면 부활']],
   ['0.35', ['구조 게시판에 다른 버전 플레이어의 구조 요청도 보임 (업데이트해도 기다리던 요청이 사라지지 않음)']],
   ['0.34', ['던전 그림이 없어 빠져 있던 진화형 17종 추가 (형사구스, 바오키, 마셰이드 등): 던전에서는 진화 전 모습의 그림을 빌려 쓰고, 종족값·특성·기술은 원래대로', '마임꽁꽁은 가라르 마임맨에서 진화']],
@@ -88,7 +89,7 @@ const ITEMS = {
   escape:   { n: '탈출구슬',     d: '던전에서 탈출한다. 가방은 유지된다.', price: 250, use: 'escape', icon: '🔮' },
   lumi:     { n: '빛의구슬',     d: '이 층의 지도를 전부 밝힌다.', price: 200, use: 'map', icon: '💡' },
   foesleep: { n: '수면구슬',     d: '보이는 모든 적을 잠재운다.', price: 300, use: 'allsleep', icon: '🌙' },
-  candy:    { n: '이상한사탕',   d: '레벨이 1 오른다.', price: 0, sell: 400, use: 'levelup', icon: '🍬' },
+  candy:    { n: '이상한사탕',   d: '레벨이 1 오른다. 마을의 가방·창고에서도 쓸 수 있다.', price: 0, sell: 400, use: 'levelup', icon: '🍬' },
   stone:    { n: '진화의돌',     d: '아이템으로 진화하는 포켓몬에게 필요하다. (마을에서 사용)', price: 1500, use: 'none', icon: '💎' },
   link:     { n: '연결의끈',     d: '통신교환으로 진화하는 포켓몬에게 필요하다. (마을에서 사용)', price: 1500, use: 'none', icon: '🧵' },
   quest:    { n: '의뢰품',       d: '임무 대상 아이템.', price: 0, use: 'none', icon: '📦' },
@@ -284,24 +285,25 @@ DROP_TABLE.push(['cheri', 3], ['chesto', 2], ['pecha', 3], ['rawst', 3], ['persi
 for (const id of Object.keys(GUMMIES)) DROP_TABLE.push([id, id === 'rainbowgummy' ? 0.01 : 0.05]);
 
 // 타입 ID: 1노말 2격투 3비행 4독 5땅 6바위 7벌레 8고스트 9강철 10불꽃 11물 12풀 13전기 14에스퍼 15얼음 16드래곤 17악 18페어리
-// req: 이 던전을 클리어하면 열림 (없으면 처음부터 열림). legend: 전설 포켓몬이 가끔 등장
+// 목록 순서는 바꾸지 않는다 (SOS 코드가 던전을 목록 번호로 적는다). 화면에는 적 레벨 순으로 보여준다
+// req: 이 던전을 클리어하면 열림 (없으면 처음부터 열림). legend: 최종 보스가 전설 포켓몬 중 무작위 하나 (js/dungeon.js에서 후보를 정한다)
 const DUNGEONS = [
   { id: 'forest',  n: '작은 숲',        floors: 5,  lv: [3, 7],   types: [12, 7, 1],   mode: 'normal', wx: [['rain', 0.1]], pal: ['#2f5d34', '#4f8a3d', '#8fcf6a', '#6aa84f'] },
   { id: 'beach',   n: '해변 동굴',      floors: 8,  lv: [6, 13],  types: [11, 1, 3],   mode: 'normal', req: 'forest', wx: [['rain', 0.3]], pal: ['#3a4f6b', '#5a7fa8', '#e8d9a8', '#d2c08a'] },
   { id: 'crystal', n: '수정 동굴',      floors: 9,  lv: [10, 17], types: [6, 14, 18],  mode: 'normal', req: 'beach', wx: [['fog', 0.15]], pal: ['#2c2a4a', '#5b4f9a', '#c9c1f0', '#b0a6e0'] },
-  { id: 'plains',  n: '번개 초원',      floors: 10, lv: [12, 20], types: [13, 3, 1, 2], mode: 'normal', req: 'beach', wx: [['rain', 0.35], ['sun', 0.15]], pal: ['#5a5a2a', '#8c8a3c', '#d8d27a', '#b9b45e'] },
+  { id: 'plains',  n: '번개 초원',      floors: 10, lv: [12, 20], types: [13, 3, 1, 2], mode: 'normal', req: 'crystal', wx: [['rain', 0.35], ['sun', 0.15]], pal: ['#5a5a2a', '#8c8a3c', '#d8d27a', '#b9b45e'] },
   { id: 'swamp',   n: '독안개 늪',      floors: 11, lv: [15, 24], types: [4, 12, 11, 7], mode: 'normal', req: 'plains', wx: [['rain', 0.3], ['fog', 0.25]], pal: ['#2b3a24', '#4a5e33', '#7d8a52', '#6b7845'] },
-  { id: 'volcano', n: '불꽃 화산',      floors: 12, lv: [18, 28], types: [10, 6, 5],   mode: 'normal', req: 'plains', wx: [['sun', 0.5], ['sand', 0.15]], pal: ['#4a1f1a', '#8c3a24', '#b9876a', '#9c6c52'] },
+  { id: 'volcano', n: '불꽃 화산',      floors: 12, lv: [18, 28], types: [10, 6, 5],   mode: 'normal', req: 'swamp', wx: [['sun', 0.5], ['sand', 0.15]], pal: ['#4a1f1a', '#8c3a24', '#b9876a', '#9c6c52'] },
   { id: 'desert',  n: '유사 사막',      floors: 12, lv: [22, 32], types: [5, 6, 7],    mode: 'normal', req: 'volcano', wx: [['sand', 0.65], ['sun', 0.25]], pal: ['#6b4f2a', '#a67c46', '#e8cf96', '#dcbf82'] },
-  { id: 'frost',   n: '얼음 산',        floors: 14, lv: [26, 36], types: [15, 11, 9],  mode: 'normal', req: 'volcano', wx: [['snow', 0.7], ['fog', 0.1]], pal: ['#3b4f63', '#7a99b8', '#dbe8f2', '#bcd0e0'] },
+  { id: 'frost',   n: '얼음 산',        floors: 14, lv: [26, 36], types: [15, 11, 9],  mode: 'normal', req: 'desert', wx: [['snow', 0.7], ['fog', 0.1]], pal: ['#3b4f63', '#7a99b8', '#dbe8f2', '#bcd0e0'] },
   { id: 'storm',   n: '폭풍의 바다',    floors: 14, lv: [30, 40], types: [11, 13, 3],  mode: 'normal', req: 'frost', wx: [['rain', 0.75]], pal: ['#1f2f45', '#3f5f86', '#8fa8c2', '#7c96b2'] },
-  { id: 'dark',    n: '어둠의 숲',      floors: 16, lv: [34, 46], types: [8, 17, 4, 14], mode: 'normal', req: 'frost', wx: [['fog', 0.5], ['rain', 0.15]], pal: ['#241c33', '#473a63', '#7d6f94', '#655a7c'] },
-  { id: 'mine',    n: '강철 광산',      floors: 16, lv: [38, 50], types: [9, 6, 13, 5], mode: 'normal', req: 'dark', wx: [['sand', 0.2]], pal: ['#2d2f33', '#5a5f66', '#9ca3ab', '#8a9199'] },
-  { id: 'sky',     n: '하늘의 탑',      floors: 20, lv: [44, 62], types: [16, 18, 14, 9, 3], mode: 'normal', req: 'dark', wx: [['sun', 0.2], ['rain', 0.2], ['fog', 0.1]], pal: ['#3a3f5c', '#6c74a8', '#e7e2f4', '#c8c2e0'] },
-  { id: 'canyon',  n: '용의 협곡',      floors: 18, lv: [52, 66], types: [16, 10, 3, 2], mode: 'normal', req: 'sky', wx: [['sun', 0.3], ['sand', 0.2]], pal: ['#4a2323', '#8a3f2f', '#d09a70', '#be8860'] },
-  { id: 'summit',  n: '별의 정상',      floors: 25, lv: [62, 80], types: null, legend: true, mode: 'normal', req: 'canyon', wx: [['snow', 0.2], ['fog', 0.2], ['sun', 0.1]], pal: ['#161a33', '#3c3f7a', '#a9a6d8', '#9491c7'] },
+  { id: 'dark',    n: '어둠의 숲',      floors: 16, lv: [34, 46], types: [8, 17, 4, 14], mode: 'normal', req: 'storm', wx: [['fog', 0.5], ['rain', 0.15]], pal: ['#241c33', '#473a63', '#7d6f94', '#655a7c'] },
+  { id: 'mine',    n: '강철 광산',      floors: 16, lv: [38, 53], types: [9, 6, 13, 5], mode: 'normal', req: 'dark', wx: [['sand', 0.2]], pal: ['#2d2f33', '#5a5f66', '#9ca3ab', '#8a9199'] },
+  { id: 'sky',     n: '하늘의 탑',      floors: 20, lv: [52, 66], types: [16, 18, 14, 9, 3], mode: 'normal', req: 'canyon', wx: [['sun', 0.2], ['rain', 0.2], ['fog', 0.1]], pal: ['#3a3f5c', '#6c74a8', '#e7e2f4', '#c8c2e0'] },
+  { id: 'canyon',  n: '용의 협곡',      floors: 18, lv: [44, 62], lvMin: 54, types: [16, 10, 3, 2], mode: 'normal', req: 'mine', wx: [['sun', 0.3], ['sand', 0.2]], pal: ['#4a2323', '#8a3f2f', '#d09a70', '#be8860'] },
+  { id: 'summit',  n: '별의 정상',      floors: 25, lv: [62, 80], types: null, legend: true, mode: 'normal', req: 'sky', wx: [['snow', 0.2], ['fog', 0.2], ['sun', 0.1]], pal: ['#161a33', '#3c3f7a', '#a9a6d8', '#9491c7'] },
   { id: 'trial',   n: '시련의 동굴',    floors: 15, lv: [3, 22],  types: null, mode: 'rogue', wx: [['sand', 0.3]], pal: ['#3b3530', '#6b5f55', '#a99a8a', '#8e7f70'] },
-  { id: 'twilight', n: '황혼의 미궁',   floors: 30, lv: [4, 45],  types: [8, 17, 14, 18], mode: 'rogue', wx: [['fog', 0.3], ['rain', 0.1]], pal: ['#3a2438', '#6e4468', '#c79ab8', '#b387a6'] },
+  { id: 'twilight', n: '황혼의 미궁',   floors: 30, lv: [4, 45],  types: null, mode: 'rogue', wx: [['fog', 0.3], ['rain', 0.1]], pal: ['#3a2438', '#6e4468', '#c79ab8', '#b387a6'] },
   { id: 'mystery', n: '불가사의 던전',  floors: 50, lv: [3, 70],  types: null, mode: 'rogue', wx: [['sun', 0.08], ['rain', 0.08], ['sand', 0.08], ['snow', 0.08], ['fog', 0.08]], pal: ['#26324a', '#44597e', '#9fb0cc', '#8395b3'] },
   { id: 'eternal', n: '무한의 회랑',    floors: 100, lv: [3, 100], types: null, mode: 'rogue', wx: [['fog', 0.1], ['sand', 0.05], ['snow', 0.05]], pal: ['#1d0f24', '#4a1f4f', '#d45a8a', '#a8406c'] },
 ];
@@ -312,27 +314,32 @@ const PARADOX_PAST = [984, 985, 986, 987, 988, 989, 1005, 1009, 1020, 1021];
 const PARADOX_FUTURE = [990, 991, 992, 993, 994, 995, 1006, 1010, 1022, 1023];
 const PARADOX_RATE = 0.2;   // 일반 던전에서 패러독스 포켓몬이 뽑혔을 때 실제로 나올 확률 (테마 던전은 그대로)
 DUNGEONS.push(
-  { id: 'burned',   n: '불탄 탑',       floors: 14, lv: [30, 45], types: [10, 13, 11, 8, 1], mode: 'normal', req: 'volcano', theme: '전설의 세 마리 개',
-    bosses: [250], mid: { floors: [5, 10], pool: [243, 244, 245] }, wx: [['sun', 0.2], ['rain', 0.2]], pal: ['#3a2418', '#6e4028', '#c79a70', '#b0845c'] },
-  { id: 'whirl',    n: '소용돌이 섬',   floors: 16, lv: [38, 52], types: [11, 3, 15, 13, 10], mode: 'normal', req: 'storm', theme: '전설의 새',
-    bosses: [249], mid: { floors: [5, 10], pool: [144, 145, 146] }, wx: [['rain', 0.4], ['snow', 0.1]], pal: ['#1c3040', '#355a78', '#9cc2da', '#86aec8'] },
-  { id: 'seafloor', n: '해저 동굴',     floors: 16, lv: [42, 58], types: [11, 5, 16, 6], mode: 'normal', req: 'storm', theme: '대지와 바다',
-    bosses: [382, 383], mid: { floors: [8], pool: [380, 381] }, wx: [['rain', 0.35], ['sun', 0.35]], pal: ['#132436', '#27496b', '#7d9fbf', '#6a8cad'] },
-  { id: 'ruins',    n: '고대 유적',     floors: 15, lv: [40, 55], types: [6, 15, 9, 13, 16], mode: 'normal', req: 'mine', theme: '레지 시리즈',
-    bosses: [486], mid: { floors: [4, 8, 12], pool: [377, 378, 379, 894, 895] }, wx: [['sand', 0.3], ['snow', 0.15]], pal: ['#3a3326', '#6b5d42', '#c2b08a', '#ad9b76'] },
-  { id: 'shrine',   n: '재앙의 사당',   floors: 18, lv: [48, 64], types: [17, 12, 10, 15, 5, 4], mode: 'normal', req: 'dark', theme: '재앙의 보물과 충신',
-    bosses: [1001, 1002, 1003, 1004], mid: { floors: [6, 12], pool: [1014, 1015, 1016, 1017] }, wx: [['fog', 0.3], ['sand', 0.15]], pal: ['#2a1f2a', '#553a4a', '#a88898', '#937485'] },
-  { id: 'altar',    n: '해와 달의 제단', floors: 18, lv: [52, 68], types: [18, 14, 13, 12, 11, 9], mode: 'normal', req: 'sky', theme: '수호신 카푸',
-    bosses: [791, 792], mid: { floors: [4, 8, 12, 16], pool: [785, 786, 787, 788] }, wx: [['sun', 0.3], ['fog', 0.2]], pal: ['#2c2a44', '#56508a', '#d8c98e', '#c4b47a'] },
-  { id: 'coronet',  n: '천관산',        floors: 20, lv: [55, 72], types: [6, 9, 11, 8, 16, 14], mode: 'normal', req: 'sky', theme: '창조의 신',
-    bosses: [483, 484, 487], mid: { floors: [5, 10, 15], pool: [480, 481, 482] }, wx: [['snow', 0.3], ['fog', 0.2]], pal: ['#2a2d3a', '#4f5670', '#b2b8cc', '#9ca3ba'] },
-  { id: 'spiral',   n: '용의 나선탑',   floors: 20, lv: [58, 74], types: [16, 10, 13, 15, 2], mode: 'normal', req: 'canyon', theme: '이상과 진실',
-    bosses: [643, 644, 646], mid: { floors: [5, 10, 15], pool: [638, 639, 640, 647] }, wx: [['sun', 0.2], ['rain', 0.2], ['snow', 0.2]], pal: ['#262a33', '#4a5262', '#a8b0bf', '#929aab'] },
-  { id: 'areazero', n: '에리어 제로',   floors: 24, lv: [65, 85], types: null, mode: 'normal', req: 'summit', theme: '패러독스 포켓몬',
-    bosses: [1007, 1008], mid: { floors: [6, 12, 18], pool: [...PARADOX_PAST, ...PARADOX_FUTURE] }, extra: [...PARADOX_PAST, ...PARADOX_FUTURE],
+  { id: 'burned',   n: '불탄 탑',       floors: 30, lv: [30, 52], types: [10, 13, 11, 8, 1], mode: 'normal', req: 'storm', theme: '전설의 세 마리 개',
+    bosses: [250], mid: { floors: [20], pool: [243, 244, 245] }, wx: [['sun', 0.2], ['rain', 0.2]], pal: ['#3a2418', '#6e4028', '#c79a70', '#b0845c'] },
+  { id: 'whirl',    n: '소용돌이 섬',   floors: 30, lv: [38, 52], types: [11, 3, 15, 13, 10], mode: 'normal', req: 'storm', theme: '전설의 새',
+    bosses: [249], mid: { floors: [20], pool: [144, 145, 146] }, wx: [['rain', 0.4], ['snow', 0.1]], pal: ['#1c3040', '#355a78', '#9cc2da', '#86aec8'] },
+  { id: 'seafloor', n: '해저 동굴',     floors: 30, lv: [42, 74], types: [11, 5, 16, 6], mode: 'normal', req: 'sky', theme: '대지와 바다',
+    bosses: [382, 383], mid: { floors: [20], pool: [380, 381] }, wx: [['rain', 0.35], ['sun', 0.35]], pal: ['#132436', '#27496b', '#7d9fbf', '#6a8cad'] },
+  { id: 'ruins',    n: '고대 유적',     floors: 30, lv: [40, 64], lvMin: 56, types: [6, 15, 9, 13, 16], mode: 'normal', req: 'mine', theme: '레지 시리즈',
+    bosses: [486], mid: { floors: [20], pool: [377, 378, 379, 894, 895] }, wx: [['sand', 0.3], ['snow', 0.15]], pal: ['#3a3326', '#6b5d42', '#c2b08a', '#ad9b76'] },
+  { id: 'shrine',   n: '재앙의 사당',   floors: 30, lv: [48, 64], types: [17, 12, 10, 15, 5, 4], mode: 'normal', req: 'mine', theme: '재앙의 보물과 충신',
+    bosses: [1001, 1002, 1003, 1004], mid: { floors: [20], pool: [1014, 1015, 1016, 1017] }, wx: [['fog', 0.3], ['sand', 0.15]], pal: ['#2a1f2a', '#553a4a', '#a88898', '#937485'] },
+  { id: 'altar',    n: '해와 달의 제단', floors: 30, lv: [52, 68], types: [18, 14, 13, 12, 11, 9], mode: 'normal', req: 'canyon', theme: '수호신 카푸',
+    bosses: [791, 792], mid: { floors: [20], pool: [785, 786, 787, 788] }, wx: [['sun', 0.3], ['fog', 0.2]], pal: ['#2c2a44', '#56508a', '#d8c98e', '#c4b47a'] },
+  { id: 'coronet',  n: '천관산',        floors: 30, lv: [55, 72], types: [6, 9, 11, 8, 16, 14], mode: 'normal', req: 'canyon', theme: '창조의 신',
+    bosses: [483, 484, 487], mid: { floors: [20], pool: [480, 481, 482] }, wx: [['snow', 0.3], ['fog', 0.2]], pal: ['#2a2d3a', '#4f5670', '#b2b8cc', '#9ca3ba'] },
+  { id: 'spiral',   n: '용의 나선탑',   floors: 30, lv: [58, 74], types: [16, 10, 13, 15, 2], mode: 'normal', req: 'sky', theme: '이상과 진실',
+    bosses: [643, 644, 646], mid: { floors: [20], pool: [638, 639, 640, 647] }, wx: [['sun', 0.2], ['rain', 0.2], ['snow', 0.2]], pal: ['#262a33', '#4a5262', '#a8b0bf', '#929aab'] },
+  { id: 'areazero', n: '에리어 제로',   floors: 30, lv: [65, 85], types: null, mode: 'normal', req: 'summit', theme: '패러독스 포켓몬',
+    bosses: [1007, 1008], mid: { floors: [20], pool: [...PARADOX_PAST, ...PARADOX_FUTURE] }, extra: [...PARADOX_PAST, ...PARADOX_FUTURE],
     wx: [['fog', 0.25], ['sun', 0.1]], pal: ['#1a2a2a', '#2f5452', '#8cc7bf', '#76b2aa'] },
 );
 const dungeonById = id => DUNGEONS.find(d => d.id === id);
+// 일반 던전의 적 최소 레벨은 열리게 해 준 바로 이전 던전(req)의 최대 레벨 - 1 (갑자기 약해지지 않게)
+// 테마 던전은 그 범위가 넓으면 최고 레벨 - 8까지 올린다 (첫 층부터 너무 약하지 않게)
+// (lvMin이 있으면 그 값)
+for (const dg of DUNGEONS) if (dg.mode === 'normal' && dg.req) dg.lv[0] = dg.lvMin ?? dungeonById(dg.req).lv[1] - 1;
+for (const dg of DUNGEONS) if (dg.theme) dg.lv[0] = Math.max(dg.lv[0], dg.lv[1] - 8);
 const hasSprite = id => !!DATA.species[id];
 // 최종·중간 보스 후보 (스프라이트가 있는 포켓몬만)
 const bossPool = dg => (dg.bosses || []).filter(hasSprite);
@@ -507,19 +514,40 @@ function itemTier(id) {
 // 높은 층(적 Lv HIGH_LV 이상)에서는 흔한 등급이 나오지 않는다. 단 식량·회복 아이템은 살아남는 데 꼭 필요해서 계속 나온다
 const HIGH_LV = 20;
 const ALWAYS_DROP = ['apple', 'bigapple', 'oran', 'sitrus', 'elixir'];
-const dropCache = {};
-function dropTable(lvl) {
-  const key = Object.values(TIER_LV).filter(v => lvl >= v).length + (lvl >= HIGH_LV ? 'h' : '');
-  return dropCache[key] || (dropCache[key] = DROP_TABLE.filter(([id]) => {
+// 기술머신과 메가스톤은 던전 타입에 맞는 것만 나온다 (기술머신은 기술 타입, 메가스톤은 메가진화한 모습의 타입). 타입이 정해지지 않은 던전은 전부
+function typeFits(dg, id) {
+  const it = ITEMS[id], ts = dg && dg.types;
+  if (!ts || !it) return true;
+  if (it.tm) return ts.includes(DATA.moves[it.mv].t);
+  if (it.mega) return DATA.species[it.formTo].t.some(t => ts.includes(t));
+  return true;
+}
+const dropCache = {}, baseCache = {};
+// 던전 바닥·적 드롭에서 지닌 물건이 나오는 몫 (지닌 물건끼리의 비율은 그대로)
+const HELD_DROP_SHARE = 0.03;
+function dropTable(lvl, dg) {
+  const base = baseTable(lvl, dg), key = base.key;
+  if (dropCache[key]) return dropCache[key];
+  const held = base.filter(d => ITEMS[d[0]].held), hw = held.reduce((a, d) => a + d[1], 0), rest = base.reduce((a, d) => a + d[1], 0) - hw;
+  const k = hw && rest ? HELD_DROP_SHARE / (1 - HELD_DROP_SHARE) * rest / hw : 1;
+  return (dropCache[key] = base.map(d => (ITEMS[d[0]].held ? [d[0], d[1] * k] : d)));
+}
+// 레벨·던전 타입으로 거른 원래 가중치 (보스·이로치 보상은 이걸 쓴다)
+function baseTable(lvl, dg) {
+  const key = Object.values(TIER_LV).filter(v => lvl >= v).length + (lvl >= HIGH_LV ? 'h' : '') + '|' + (dg && dg.types ? dg.types.join(',') : '*');
+  if (baseCache[key]) return baseCache[key];
+  const out = baseCache[key] = DROP_TABLE.filter(([id]) => {
     const t = itemTier(id);
-    if (lvl < TIER_LV[t]) return false;
+    if (lvl < TIER_LV[t] || !typeFits(dg, id)) return false;
     return !(lvl >= HIGH_LV && t === 1 && !ALWAYS_DROP.includes(id));
-  }));
+  });
+  out.key = key;
+  return out;
 }
 // 보상용 좋은 아이템 (보스·이로치·구조 보답): 그 레벨에서 나오는 지닌 물건·기술머신·사탕
 // 메가스톤은 여기에 없고 따로 굴린다 (js/forms.js의 rollMega)
-function rewardPool(lvl) {
-  const table = dropTable(lvl);
+function rewardPool(lvl, dg) {
+  const table = baseTable(lvl, dg);
   const pool = table.filter(d => ITEMS[d[0]].held || ITEMS[d[0]].tm || d[0] === 'candy' || d[0] === 'reviver');
   return pool.length >= 5 ? pool : table.filter(d => itemTier(d[0]) >= 2);
 }

@@ -423,7 +423,8 @@ const Game = (() => {
           if (ok) {
             // 구조 보답: 요청자가 게임을 그만둬도 받을 수 있게 바로 준다 (감사 편지는 따로)
             r.claimed = true;
-            const item = rollMega('rescue') || weighted(rewardPool(dungeonById(r.dungeon)?.lv?.[1] || r.me?.lv || 20)), money = 50 + (r.floor || 5) * 15;
+            const rdg = dungeonById(r.dungeon), rlv = rdg?.lv?.[1] || r.me?.lv || 20;
+            const item = rollMega('rescue', rlv, rdg) || weighted(rewardPool(rlv, rdg)), money = 50 + (r.floor || 5) * 15;
             storeAdd(item); save.money += money;
             UI.alert('✅ 구조 완료', `<div class="center">${portraitImg(r.sp, 'portrait big', 'Joyous', r.shiny)}</div>
               <p class="center">${esc(spName(r.sp))}의 구조 완료를 요청자에게 전했어요!</p>
@@ -562,7 +563,8 @@ const Game = (() => {
       });
     }
   }
-  const unlocked = dg => dg.mode === 'rogue' || !dg.req || !!save.cleared[dg.req];
+  // 이미 들어가 본 던전은 열리는 순서가 바뀌어도 계속 열려 있다
+  const unlocked = dg => dg.mode === 'rogue' || !dg.req || !!save.cleared[dg.req] || !!save.cleared[dg.id] || !!save.best[dg.id];
 
   function refreshDay() {
     rollShop();
@@ -707,12 +709,14 @@ const Game = (() => {
       const list = DUNGEONS.filter(f), open = list.filter(unlocked).length;
       return `<button class="${k === dgTab ? 'on' : ''}" data-act="dgtab" data-arg="${k}">${n}${list.length ? ` <span class="dim">${open}/${list.length}</span>` : ''}</button>`;
     }).join('')}</div>`;
-    const mine = clearsOf(save.current), curList = DUNGEONS.filter(cur[2]);
+    // 일반·테마 던전은 열리는 순서대로 (적 레벨 순). 목록 자체의 순서는 SOS 코드 때문에 그대로 둔다
+    const byLevel = (a, b) => a.mode === 'rogue' || b.mode === 'rogue' ? 0 : a.lv[0] - b.lv[0] || a.lv[1] - b.lv[1];
+    const mine = clearsOf(save.current), curList = DUNGEONS.filter(cur[2]).sort(byLevel);
     const medal = MEDALS.find(m => m.k === dgTab);
     const progress = dgTab === 'daily' ? '' : `<div class="dg-progress">${portraitImg(save.current, 'portrait xs', 'Normal', save.roster[save.current]?.shiny)} <span><b>${esc(spName(save.current))}</b>${jo(spName(save.current), '으로').slice(spName(save.current).length)} 클리어 <b>${curList.filter(d => mine[d.id]).length}</b>/${curList.length}</span>
       ${medal ? (medalsOf(save.current).some(m => m.k === medal.k) ? `<span class="medal-got">${medal.icon} ${esc(medal.n)}!</span>` : `<span class="dim">· 모두 클리어하면 ${medal.icon} ${esc(medal.n)} 메달</span>`) : ''}</div>`;
     if (dgTab === 'daily') return nav + `<div class="cards">${Progress.dailyCard()}</div>`;
-    return nav + progress + `<div class="cards">${DUNGEONS.filter(cur[2]).map(dg => {
+    return nav + progress + `<div class="cards">${curList.map(dg => {
       const ok = unlocked(dg);
       const ms = save.missions.accepted.filter(m => m.dungeon === dg.id).length;
       const types = dg.types ? typeBadges(dg.types) : '<span class="type" style="background:#777">모든 타입</span>';
@@ -721,6 +725,7 @@ const Game = (() => {
         <div class="dim">${dg.floors}층 · 적 Lv ${dg.lv[0]}~${dg.lv[1]}${save.best[dg.id] ? ` · 최고 ${save.best[dg.id]}F` : ''}</div>
         <div>${types}</div>
         ${dg.wx && dg.wx.length ? `<div class="note">날씨: ${dg.wx.map(([w, p]) => `${WEATHERS[w].icon}${WEATHERS[w].n} ${Math.round(p * 100)}%`).join(' · ')}</div>` : ''}
+        ${dg.legend ? `<div class="note theme">👑 최종 보스: 전설 포켓몬 ${bossPool(dg).length}종 중 하나 (무작위)</div>` : ''}
         ${dg.theme ? `<div class="note theme">👑 ${esc(dg.theme)} — 최종 보스 ${bossPool(dg).map(spName).join(' / ') || '?'}${bossPool(dg).length > 1 ? ' 중 하나' : ''}${midPool(dg).length ? ` · 중간 보스 ${dg.mid.floors.join(', ')}층` : ''}</div>` : ''}
         ${dg.mode === 'rogue' ? `<div class="note">입장 시 Lv${ROGUE_LEVEL}, 가방 초기화. 나오면 원래대로 돌아갑니다.</div>` : ''}
         ${ms ? `<div class="note ms">📜 진행 중인 임무 ${ms}개</div>` : ''}
@@ -772,13 +777,13 @@ const Game = (() => {
       trapF ? `함정: ${trapF}층부터` : '함정 없음',
       shopF ? `켈리몬 상점: ${shopF}층부터 층마다 ${Math.round(SHOP_CHANCE * 100)}%` : '켈리몬 상점 없음',
       houseF ? `몬스터하우스: ${houseF}층부터 층마다 ${Math.round(HOUSE_CHANCE * 100)}%` : '몬스터하우스 없음',
-      dg.legend ? '가끔 전설 포켓몬이 일반 적으로 섞여 나온다' : '',
+      dg.legend ? `최종 보스는 전설 포켓몬 ${bossPool(dg).length}종 중 하나가 무작위로 나온다` : '',
       dg.extra ? `${dg.theme} 시리즈가 일반 적으로도 섞여 나온다` : '',
       `한 층에 머물 수 있는 시간: ${WIND.limit}턴 (넘으면 바람에 날려감)`,
       dg.mode === 'rogue' ? `로그라이크: Lv${ROGUE_LEVEL}, 기본 가방으로 입장` : '',
     ].filter(Boolean);
     // 아이템: 마지막 층 기준 드롭 확률 (앞쪽 층은 등급이 낮은 아이템만)
-    const table = dropTable(dg.lv[1]);
+    const table = dropTable(dg.lv[1], dg);
     const total = table.reduce((a, d) => a + d[1], 0);
     const groups = { heal: ['🍎 회복·음식', []], berry: ['🍒 열매', []], throw: ['📌 던지는 도구', []], misc: ['🔮 씨앗·구슬·기타', []], rare: ['💎 희귀 (영양제·구미·사탕 등)', []], held: ['🎗 지닌 물건', []], tm: ['💿 기술머신', []] };
     const merged = {};
@@ -799,6 +804,7 @@ const Game = (() => {
     }).join('');
     const allIds = new Set(bands.flatMap(b => b.ids));
     const sigHere = sigItemsFor([...allIds, ...finals, ...midPool(dg)]);
+    const megaHere = dg.lv[1] >= MEGA_MIN_LV ? megaPool(dg) : [];
     UI.open({
       title: `${esc(dg.n)} 정보`, wide: true,
       html: `<div class="dg-info">
@@ -810,6 +816,8 @@ const Game = (() => {
         ${bands.map((b, i) => `<details${i === 0 ? ' open' : ''}><summary><b>${b.a === b.b ? b.a : `${b.a}~${b.b}`}층</b> <span class="dim">Lv${floorLv(b.a)}~${floorLv(b.b)} · ${b.ids.length}종 (만남 ${seenIn(b.ids)})</span></summary>${mon(b.ids)}</details>`).join('')}
         <h3>나오는 아이템 <span class="dim">마지막 층 기준 확률 · 한 층에 아이템 ${ITEMS_PER_FLOOR[0]}~${ITEMS_PER_FLOOR[1]}개, 돈 2~4무더기 · ${tierNote}</span></h3>
         ${itemHtml}
+        ${megaHere.length ? `<p><b>🔮 메가스톤</b> <span class="dim">레벨 ${MEGA_MIN_LV} 이상인 층에서만 · 보스·이로치 ${MEGA_RATE.boss * 100}%, 바닥 아이템·적이 떨어뜨리는 아이템 ${MEGA_RATE.floor * 100}% · 던전 타입에 맞는 ${megaHere.length}종</span>
+          <details><summary class="dim">눌러서 펼치기</summary><div class="dg-items">${megaHere.map(iid => `<span class="dg-item" data-dexitem="${iid}">${ITEMS[iid].icon} ${esc(ITEMS[iid].n)}</span>`).join('')}</div></details></p>` : ''}
         ${sigHere.length ? `<p><b>전용 도구</b> <span class="dim">주인 포켓몬이 나오는 층에서 드물게 떨어진다 (보스가 주인이면 더 자주)</span><br>${sigHere.map(iid => `<span class="dg-item" data-dexitem="${iid}">${ITEMS[iid].icon} ${esc(ITEMS[iid].n)}</span>`).join(' ')}</p>` : ''}
       </div>`,
       choices: [{ label: '닫기', fn: () => {} }],
@@ -855,6 +863,7 @@ const Game = (() => {
     return `${upgradeBox()}<div class="split"><div><h3>창고 (${storageUsed()}/${save.storageMax})</h3>${storageUsed() > save.storageMax ? '<p class="warn">창고가 넘쳤습니다. 정리하기 전까지는 맡길 수 없습니다.</p>' : ''}
       ${ids.length > 1 ? `<div class="row sort-row">↕ ${sorts}</div>` : ''}
       ${ids.length ? ids.map(id => `<div class="row">${itemLabel(id)} ×${save.storage[id]}<span class="grow"></span>
+        <button class="btn sm ghost" data-dexitem="${id}" title="아이템 정보">ℹ</button>${id === 'candy' ? ' <button class="btn sm" data-act="use-candy">사용</button>' : ''}
         <button class="btn sm" data-act="withdraw" data-arg="${id}" ${bagSlots() >= bagMax() && !ITEMS[id].stack ? 'disabled' : ''}>꺼내기</button></div>`).join('') : '<p class="dim">창고가 비어 있습니다.</p>'}
       </div><div><h3>가방 (${bagSlots()}/${bagMax()})</h3>
       ${save.bag.map((b, i) => `<div class="row">${itemLabel(b.id)}${b.n > 1 ? ' ×' + b.n : ''}<span class="grow"></span>
@@ -877,6 +886,7 @@ const Game = (() => {
       <p class="dim">일반 던전에서 쓰러지면 가방 아이템의 절반을 무작위로 잃습니다. 귀중한 아이템은 창고에 맡기세요.</p>
       ${save.bag.length > 1 ? '<button class="btn sm ghost" data-act="sort-bag">↕ 가방 정리 (종류별로 정렬)</button>' : ''}
       ${save.bag.map((b, i) => `<div class="row">${itemLabel(b.id)}${b.n > 1 ? ' ×' + b.n : ''}<span class="grow dim">${esc(ITEMS[b.id].d)}</span>
+        ${b.id === 'candy' ? '<button class="btn sm" data-act="use-candy">사용</button>' : ''}
         <button class="btn sm ghost" data-act="deposit" data-arg="${i}">창고로</button>
         <button class="btn sm ghost danger" data-act="discard" data-arg="${i}">버리기</button></div>`).join('') || '<p class="dim">가방이 비어 있습니다.</p>'}`;
   }
@@ -972,6 +982,25 @@ const Game = (() => {
     Sound.play('levelup');
     UI.toast(`${jo(spName(save.current), '은')} ${jo(n, '을')} 먹었다! ${jo(sn, '이')} ${v} 올랐다!`);
     Progress.check();
+  }
+
+  // 이상한사탕: 마을에서도 지금 캐릭터의 레벨을 1 올린다 (새로 배우는 기술은 빈 칸에, 나머지는 기술 설정에서)
+  async function useCandy() {
+    const sp = save.current, ch = save.roster[sp];
+    if (!ownedCount('candy')) return;
+    if (ch.lv >= MAX_LEVEL) { UI.toast('이미 최고 레벨입니다.'); return; }
+    if (!(await UI.confirm('이상한사탕', `<p>${esc(spName(sp))}에게 이상한사탕을 먹입니다. (Lv${ch.lv} → Lv${ch.lv + 1})</p>`, '먹인다', '그만둔다'))) return;
+    takeItem('candy');
+    ch.lv++; ch.exp = Math.pow(ch.lv, 3);   // 그 레벨의 시작 경험치 (expFor는 최고 레벨에서 Infinity)
+    const learned = learnedAt(sp, ch.lv).filter(mid => !ch.moves.includes(mid));
+    const added = learned.filter(mid => ch.moves.length < 4 && ch.moves.push(mid));
+    Progress.max('maxLv', ch.lv); Progress.check();
+    Sound.play('levelup'); persist(); renderTown();
+    const rest = learned.filter(mid => !added.includes(mid));
+    UI.alert('레벨 업!', `<div class="center">${portraitImg(sp, 'portrait big', 'Joyous', ch.shiny)}</div><p class="center">${esc(spName(sp))}의 레벨이 올랐다! <b>Lv${ch.lv}</b></p>
+      ${added.length ? `<p class="center">새 기술: ${added.map(mid => esc(DATA.moves[mid].n)).join(', ')}</p>` : ''}
+      ${rest.length ? `<p class="center dim">새로 배울 수 있는 기술: ${rest.map(mid => esc(DATA.moves[mid].n)).join(', ')} (기술 설정에서 고르세요)</p>` : ''}
+      ${evoOptions(sp).some(e => e.ok) ? '<p class="center">✨ 진화할 수 있어요! 캐릭터 탭에서 진화하세요.</p>' : ''}`);
   }
 
   // 특성 바꾸기: 일반 특성은 특성캡슐, 숨겨진 특성은 특성패치를 하나 쓴다
@@ -1181,6 +1210,7 @@ const Game = (() => {
       case 'dg-info': return showDungeonInfo(arg);
       case 'version-notes': UI.alert('변경 내역', VERSION_NOTES.map(([v, list]) => `<h3>v${v}${v === GAME_VERSION ? ' <span class="tag">지금 버전</span>' : ''}</h3><ul>${list.map(x => `<li>${esc(x)}</li>`).join('')}</ul>`).join('')); return;
       case 'vitamin': useVitamin(arg); break;
+      case 'use-candy': return useCandy();
       case 'gummy': useGummy(arg); break;
       case 'daily-go': return prepareDaily();
       case 'daily-share': { const rec = Progress.dailyRecord(); if (rec) codeBox('🗓 오늘의 도전 기록', '<p>친구에게 보내서 기록을 비교해 보세요.</p>', esc(Progress.shareText(rec).replace(/\n/g, ' · ')), '확인'); return; }
@@ -1887,7 +1917,10 @@ const Game = (() => {
 
   function setSetting(k, v) { save.settings[k] = v; persist(); Sound.refresh(); }
 
-  return { askUpdate, recruit, unlockShiny, showMissions, importSave, noteShiny, boot, endRun, saveRunSnapshot, dungeonMenu, setSetting, renderTown, get save() { return save; }, setTab(t) { tab = t; renderTown(); } };
+  // 도감용: 클리어 기록이 있는 포켓몬의 메달 (기록이 없으면 빈 값)
+  const hasClears = sp => Object.keys(clearsOf(sp)).length > 0;
+  const dexMedals = () => { const out = {}; for (const k of new Set([...Object.keys(save?.clears || {}), ...Object.keys(save?.roster || {})])) { const ic = medalIcons(+k); if (ic) out[k] = ic; } return out; };
+  return { hasClears, medalSection, dexMedals, askUpdate, recruit, unlockShiny, showMissions, importSave, noteShiny, boot, endRun, saveRunSnapshot, dungeonMenu, setSetting, renderTown, get save() { return save; }, setTab(t) { tab = t; renderTown(); } };
 })();
 
 window.addEventListener('DOMContentLoaded', () => {
