@@ -3,7 +3,7 @@
 
 // 게임 버전: 업데이트할 때 올리고, index.html의 ?v= 숫자도 같이 올린다
 // (친구와 구조 코드·오늘의 도전을 주고받으려면 버전이 같아야 한다)
-const GAME_VERSION = '0.42';
+const GAME_VERSION = '0.43';
 // 버전 비교: '0.25' > '0.9' 처럼 숫자로 비교한다
 function cmpVer(a, b) {
   const x = String(a).split('.').map(Number), y = String(b).split('.').map(Number);
@@ -12,6 +12,7 @@ function cmpVer(a, b) {
 }
 const GAME_DATE = '2026-10-01';
 const VERSION_NOTES = [
+  ['0.43', ['⭐ 기술 숙련도: 기술을 쓸수록 그 포켓몬의 그 기술이 ★1~★10으로 성장 (★마다 PP 최대치 +10%, PP를 안 쓸 확률 +3%). 기술을 빼도 남고 로그라이크에서도 쌓임. 기술 버튼·기술 정보에 표시', '로그라이크에서 과사열매 4배, 맥스엘릭서 2배 더 잘 나옴', '도감 포켓몬 정보에 🗺 나오는 곳 (던전·층·레벨, 중간·최종 보스)', '영입하면 그 포켓몬 하나만 들어옴 (진화 전 모습이 따로 생기지 않음)', '던전 개편: 별의 정상 최종 보스 아르세우스 (중간 보스 레지기가스), 그 뒤로 일반 던전 운석 낙하지점(지라치) → 울트라 차원의 틈(네크로즈마) → 에리어 제로 → 에리어 제로 최심부(테라파고스)', '새 테마 던전 7곳: 물의 도시(라티오스), 쌍권의 탑(우라오스), 풍요의 하늘길(러브로스), 유전자 연구소(뮤츠), 왕관의 설원(버드렉스), 생명과 파괴의 숲(지가르데), 영웅의 숲(무한다이노)', '숨은 던전 6곳: 꽃의 낙원, 초승달 섬, 수정 동굴 심층, 고대 공장, 바다의 신전, 불꽃 산 심층 (환상의 포켓몬 보스)', '모든 던전에 컨셉 포켓몬: 층마다 6종 중 4종은 던전 컨셉 포켓몬 (진화 계열은 깊을수록 진화한 모습), 울트라비스트는 울트라 차원의 틈에서만. 모든 포켓몬이 어딘가에 나옴', '번개 초원 보스 제라오라, 하늘의 탑 10층 중간 보스', '임무·구조 보상은 던전 레벨로 정함 (테마·숨은 던전은 레벨이 비슷한 메인 던전만큼)', '현상수배범은 그 층에 실제로 나오는 포켓몬 중에서 (별의 정상·에리어 제로에서 현상수배 임무를 만들 때 나던 오류 수정)', '새 던전 16곳 배경음 (Star Cave, Spacial Cliffs, Temporal Pinnacle 등)', '아직 찾지 못한 숨은 던전은 구조 게시판·배경음 목록에서 이름을 가림', '상점 오늘의 진열은 물건마다 한 번만 살 수 있음 (금바늘·쇠가시 같은 겹치는 물건은 5개 한 묶음, 진열이 바뀌면 다시)', '상점 값을 원작 켈리몬 상점 기준으로 올림 (부활씨 ₽3200, 맥스엘릭서·치료씨 ₽1000, 구슬 ₽600, 금바늘 5개 ₽200, 지닌 물건 약 ₽1만~2만, 기술머신 ₽24000~36000). 파는 값은 그대로', '던전 위쪽에 이번 탐험에서 주운 돈 표시 (쓰러지면 잃는 돈)', '던전에서 던지는 가시: 적 Lv30 전까지는 쇠가시, Lv30부터 금바늘', '던전 안 켈리몬 상점에서 산 값은 이번 탐험에서 주운 돈에서 먼저 빠짐 (쓰러졌을 때 원래 가진 돈이 줄던 문제)']],
   ['0.42', ['다른 앱이나 홈 화면으로 가면 배경음·효과음을 멈추고, 돌아오면 다시 재생 (휴대폰 브라우저)', '쓰러져서 구조를 요청한 뒤 마을에서 던전 음악이 계속 나오던 문제 수정']],
   ['0.41', ['계단을 밟는 턴에 쓰러지면 탐험이 끝나지 않고 HP 0으로 계속 움직이던 문제 수정', '동료도 시야가 있음 (동료가 있는 방과 주변이 보이고 지도에 기록됨)']],
   ['0.40', ['🤝 동료: 캐릭터 탭에서 영입한 포켓몬 최대 3마리를 골라 일반·테마 던전에 함께 (스스로 싸우고 따라옴, 경험치도 받음, 자리 바꾸기)', '동료 작전 (던전의 🤝 동료 버튼 V, 탐험마다 나를 따라와로 시작): 나를 따라와 / 각자 행동 / 여기서 기다려 / 적을 공격해 / 먼저 공격하지마', '마을 왼쪽 캐릭터 카드 아래에서 동료의 능력·특성·기술·지닌 물건 확인과 변경', '자동 탐색이 동료와 자리를 바꾸며 지나간다', '자동(O): 적이 없으면 자동 이동(적을 만나면 멈춤), 적이 보이면 자동 전투 한 턴. 자동전투 버튼은 하나로 합침', '던전의 🤝 동료 버튼(V): 동료의 HP·PP·상태·능력 변화 확인과 작전 바꾸기', '층에 있던 적 중 일부(20%)는 잠들어 있다 (공격받거나 옆에 다가가면 가끔 깬다. 동료는 적을 공격해 작전이 아니면 깨우지 않는다)', '불가사의부적(껍질몬): 그냥 공격은 30% 확률로 맞음', '구조받아 이어서 탐험할 때 동료도 함께', '동료에게 아이템 쓰기 (가방의 아이템 → 동료에게 쓴다, 또는 동료 창): 회복·상태이상·PP 아이템', '부활씨로 쓰러진 동료 되살리기', '모래바람 데미지는 8턴마다 (전 5턴)', '혼자 탐험 보정(받는 데미지 0.85배)을 동료 칸과 출발 창에 표시', '막다른 길에서 되돌아갈 때 동료가 따라오지 않던 문제 수정', '혼자 탐험 보정 다시: 적에게 받는 데미지 0.85배 (동료가 있으면 없음)', '몬스터 하우스의 적은 나타난 턴에는 행동하지 않음']],
@@ -304,9 +305,9 @@ const DUNGEONS = [
   { id: 'storm',   n: '폭풍의 바다',    floors: 14, lv: [30, 40], types: [11, 13, 3],  mode: 'normal', req: 'frost', wx: [['rain', 0.75]], pal: ['#1f2f45', '#3f5f86', '#8fa8c2', '#7c96b2'] },
   { id: 'dark',    n: '어둠의 숲',      floors: 16, lv: [34, 46], types: [8, 17, 4, 14], mode: 'normal', req: 'storm', wx: [['fog', 0.5], ['rain', 0.15]], pal: ['#241c33', '#473a63', '#7d6f94', '#655a7c'] },
   { id: 'mine',    n: '강철 광산',      floors: 16, lv: [38, 53], types: [9, 6, 13, 5], mode: 'normal', req: 'dark', wx: [['sand', 0.2]], pal: ['#2d2f33', '#5a5f66', '#9ca3ab', '#8a9199'] },
-  { id: 'sky',     n: '하늘의 탑',      floors: 20, lv: [52, 66], types: [16, 18, 14, 9, 3], mode: 'normal', req: 'canyon', wx: [['sun', 0.2], ['rain', 0.2], ['fog', 0.1]], pal: ['#3a3f5c', '#6c74a8', '#e7e2f4', '#c8c2e0'] },
+  { id: 'sky',     n: '하늘의 탑',      floors: 20, lv: [52, 66], types: [16, 18, 14, 9, 3], mode: 'normal', req: 'canyon', mid: { floors: [10], pool: [149, 373] }, wx: [['sun', 0.2], ['rain', 0.2], ['fog', 0.1]], pal: ['#3a3f5c', '#6c74a8', '#e7e2f4', '#c8c2e0'] },
   { id: 'canyon',  n: '용의 협곡',      floors: 18, lv: [44, 62], lvMin: 54, types: [16, 10, 3, 2], mode: 'normal', req: 'mine', wx: [['sun', 0.3], ['sand', 0.2]], pal: ['#4a2323', '#8a3f2f', '#d09a70', '#be8860'] },
-  { id: 'summit',  n: '별의 정상',      floors: 25, lv: [62, 80], types: null, legend: true, mode: 'normal', req: 'sky', wx: [['snow', 0.2], ['fog', 0.2], ['sun', 0.1]], pal: ['#161a33', '#3c3f7a', '#a9a6d8', '#9491c7'] },
+  { id: 'summit',  n: '별의 정상',      floors: 25, lv: [62, 80], types: null, mode: 'normal', req: 'sky', bosses: [493], mid: { floors: [13], pool: [486] }, wx: [['snow', 0.2], ['fog', 0.2], ['sun', 0.1]], pal: ['#161a33', '#3c3f7a', '#a9a6d8', '#9491c7'] },
   { id: 'trial',   n: '시련의 동굴',    floors: 15, lv: [3, 22],  types: null, mode: 'rogue', wx: [['sand', 0.3]], pal: ['#3b3530', '#6b5f55', '#a99a8a', '#8e7f70'] },
   { id: 'twilight', n: '황혼의 미궁',   floors: 30, lv: [4, 45],  types: null, mode: 'rogue', wx: [['fog', 0.3], ['rain', 0.1]], pal: ['#3a2438', '#6e4468', '#c79ab8', '#b387a6'] },
   { id: 'mystery', n: '불가사의 던전',  floors: 50, lv: [3, 70],  types: null, mode: 'rogue', wx: [['sun', 0.08], ['rain', 0.08], ['sand', 0.08], ['snow', 0.08], ['fog', 0.08]], pal: ['#26324a', '#44597e', '#9fb0cc', '#8395b3'] },
@@ -328,16 +329,54 @@ DUNGEONS.push(
   { id: 'ruins',    n: '고대 유적',     floors: 30, lv: [40, 64], lvMin: 56, types: [6, 15, 9, 13, 16], mode: 'normal', req: 'mine', theme: '레지 시리즈',
     bosses: [486], mid: { floors: [20], pool: [377, 378, 379, 894, 895] }, wx: [['sand', 0.3], ['snow', 0.15]], pal: ['#3a3326', '#6b5d42', '#c2b08a', '#ad9b76'] },
   { id: 'shrine',   n: '재앙의 사당',   floors: 30, lv: [48, 64], types: [17, 12, 10, 15, 5, 4], mode: 'normal', req: 'mine', theme: '재앙의 보물과 충신',
-    bosses: [1001, 1002, 1003, 1004], mid: { floors: [20], pool: [1014, 1015, 1016, 1017] }, wx: [['fog', 0.3], ['sand', 0.15]], pal: ['#2a1f2a', '#553a4a', '#a88898', '#937485'] },
+    bosses: [1001, 1002, 1003, 1004], mid: { floors: [20], pool: [1014, 1015, 1016, 1017, 1025] }, wx: [['fog', 0.3], ['sand', 0.15]], pal: ['#2a1f2a', '#553a4a', '#a88898', '#937485'] },
   { id: 'altar',    n: '해와 달의 제단', floors: 30, lv: [52, 68], types: [18, 14, 13, 12, 11, 9], mode: 'normal', req: 'canyon', theme: '수호신 카푸',
     bosses: [791, 792], mid: { floors: [20], pool: [785, 786, 787, 788] }, wx: [['sun', 0.3], ['fog', 0.2]], pal: ['#2c2a44', '#56508a', '#d8c98e', '#c4b47a'] },
   { id: 'coronet',  n: '천관산',        floors: 30, lv: [55, 72], types: [6, 9, 11, 8, 16, 14], mode: 'normal', req: 'canyon', theme: '창조의 신',
     bosses: [483, 484, 487], mid: { floors: [20], pool: [480, 481, 482] }, wx: [['snow', 0.3], ['fog', 0.2]], pal: ['#2a2d3a', '#4f5670', '#b2b8cc', '#9ca3ba'] },
   { id: 'spiral',   n: '용의 나선탑',   floors: 30, lv: [58, 74], types: [16, 10, 13, 15, 2], mode: 'normal', req: 'sky', theme: '이상과 진실',
     bosses: [643, 644, 646], mid: { floors: [20], pool: [638, 639, 640, 647] }, wx: [['sun', 0.2], ['rain', 0.2], ['snow', 0.2]], pal: ['#262a33', '#4a5262', '#a8b0bf', '#929aab'] },
-  { id: 'areazero', n: '에리어 제로',   floors: 30, lv: [65, 85], types: null, mode: 'normal', req: 'summit', theme: '패러독스 포켓몬',
+  { id: 'areazero', n: '에리어 제로',   floors: 30, lv: [65, 95], types: null, mode: 'normal', req: 'ultra',
     bosses: [1007, 1008], mid: { floors: [20], pool: [...PARADOX_PAST, ...PARADOX_FUTURE] }, extra: [...PARADOX_PAST, ...PARADOX_FUTURE],
     wx: [['fog', 0.25], ['sun', 0.1]], pal: ['#1a2a2a', '#2f5452', '#8cc7bf', '#76b2aa'] },
+);
+// ── 2부 테마 던전: 어디에도 나오지 않던 전설·환상 포켓몬 (목록 끝에 추가: SOS 코드가 목록 번호를 쓴다) ──
+DUNGEONS.push(
+  { id: 'skyplain', n: '풍요의 하늘길', floors: 30, lv: [54, 70], types: [3, 13, 5, 18], mode: 'normal', req: 'canyon', theme: '풍요의 신',
+    bosses: [905], mid: { floors: [20], pool: [641, 642, 645] }, extra: [641, 642, 645], wx: [['rain', 0.3], ['sand', 0.15], ['sun', 0.15]], pal: ['#24364a', '#4b6f95', '#d8e6c0', '#c2d4a8'] },
+  { id: 'twofist', n: '쌍권의 탑',     floors: 30, lv: [45, 60], types: [2, 17, 11, 8], mode: 'normal', req: 'mine', theme: '무도의 길',
+    bosses: [892], mid: { floors: [20], pool: [891, 802, 494] }, extra: [891], wx: [['rain', 0.2], ['fog', 0.15]], pal: ['#2e2622', '#5e4a3e', '#d6b98c', '#c2a477'] },
+  { id: 'crown',    n: '왕관의 설원',   floors: 30, lv: [58, 74], types: [15, 14, 8, 3, 17], mode: 'normal', req: 'sky', theme: '풍요의 왕',
+    bosses: [898], mid: { floors: [20], pool: [896, 897, 1134, 1135, 1136] }, extra: [896, 897, 1134, 1135, 1136], wx: [['snow', 0.6], ['fog', 0.15]], pal: ['#26303f', '#56688a', '#e6eef7', '#cfdbea'] },
+  { id: 'ultra',    n: '울트라 차원의 틈', floors: 30, lv: [60, 90], types: [14, 9, 1, 17, 8], mode: 'normal', req: 'meteor',
+    bosses: [800], mid: { floors: [20], pool: [773, 790] }, extra: [789, 790, 772, 773, 803], wx: [['fog', 0.3]], pal: ['#1b1530', '#3d2f6b', '#f2d77a', '#e0c35e'] },
+);
+// ── 2부·3부 메인 줄기 (일반), 새 테마, 숨은 던전 (hidden: 열리기 전에는 던전 목록에 보이지 않고, 테마 메달에 들어가지 않는다) ──
+DUNGEONS.push(
+  { id: 'meteor',   n: '운석 낙하지점', floors: 25, lv: [70, 86], types: [6, 14, 18, 9], mode: 'normal', req: 'summit',
+    bosses: [385], mid: { floors: [13], pool: [386] }, wx: [['fog', 0.2], ['sun', 0.1]], pal: ['#1d1a2e', '#3f3a66', '#c9b9f0', '#b3a2e0'] },
+  { id: 'zerodeep', n: '에리어 제로 최심부', floors: 30, lv: [90, 100], types: null, mode: 'normal', req: 'areazero',
+    bosses: [1024], mid: { floors: [20], pool: [1005, 1006, 1009, 1010] }, wx: [['fog', 0.2]], pal: ['#10201f', '#25453f', '#9fe0d0', '#86cbbb'] },
+  { id: 'watercity', n: '물의 도시',    floors: 30, lv: [40, 52], types: [11, 16, 14, 3], mode: 'normal', req: 'storm', theme: '물의 도시의 수호신',
+    bosses: [381], mid: { floors: [20], pool: [380, 648] }, extra: [380, 381], wx: [['rain', 0.35]], pal: ['#1a3346', '#2f6087', '#cfe3ef', '#b6d0e0'] },
+  { id: 'genelab',  n: '유전자 연구소', floors: 30, lv: [55, 70], types: [14, 1, 13, 9, 6], mode: 'normal', req: 'canyon', theme: '만들어진 포켓몬',
+    bosses: [150], mid: { floors: [20], pool: [151] }, wx: [['fog', 0.1]], pal: ['#202a33', '#47596b', '#c7d3dd', '#b2bfcb'] },
+  { id: 'kalos',    n: '생명과 파괴의 숲', floors: 30, lv: [60, 74], types: [18, 17, 16, 5, 12], mode: 'normal', req: 'sky', theme: '칼로스의 질서',
+    bosses: [718], mid: { floors: [20], pool: [716, 717] }, wx: [['fog', 0.2], ['rain', 0.15]], pal: ['#1f2a20', '#3f5c3e', '#cfe0b8', '#b8cca0'] },
+  { id: 'hero',     n: '영웅의 숲',     floors: 30, lv: [72, 88], types: [18, 2, 9, 16, 17], mode: 'normal', req: 'summit', theme: '가라르의 영웅',
+    bosses: [890], mid: { floors: [20], pool: [888, 889] }, wx: [['fog', 0.3]], pal: ['#1c2230', '#3b4766', '#d6c8a0', '#c2b48a'] },
+  { id: 'flower',   n: '꽃의 낙원',     floors: 15, lv: [15, 28], types: [12, 18, 7], mode: 'normal', req: 'plains', theme: '숨은 던전', hidden: true,
+    bosses: [492], mid: { floors: [10], pool: [251] }, wx: [['sun', 0.3]], pal: ['#2a3d24', '#5c8a45', '#f2dce8', '#e6c4d6'] },
+  { id: 'crescent', n: '초승달 섬',     floors: 20, lv: [40, 54], types: [14, 17, 8, 18], mode: 'normal', req: 'dark', theme: '숨은 던전', hidden: true,
+    bosses: [488], mid: { floors: [12], pool: [491] }, wx: [['fog', 0.35]], pal: ['#1b1d33', '#3c3f6e', '#e6e1b0', '#d0ca95'] },
+  { id: 'crystaldeep', n: '수정 동굴 심층', floors: 20, lv: [56, 72], types: [6, 18, 14, 8], mode: 'normal', req: 'ruins', theme: '숨은 던전', hidden: true,
+    bosses: [719], mid: { floors: [12], pool: [720] }, wx: [['fog', 0.2]], pal: ['#24203a', '#4f4785', '#e3dcf7', '#ccc2ef'] },
+  { id: 'factory',  n: '고대 공장',     floors: 20, lv: [56, 72], types: [9, 13, 7, 1], mode: 'normal', req: 'ruins', theme: '숨은 던전', hidden: true,
+    bosses: [801, 809], mid: { floors: [12], pool: [808, 649] }, wx: [], pal: ['#2a2622', '#5a5148', '#d2c4ae', '#bfb098'] },
+  { id: 'seatemple', n: '바다의 신전',  floors: 20, lv: [66, 82], types: [11, 6, 16], mode: 'normal', req: 'seafloor', theme: '숨은 던전', hidden: true,
+    bosses: [490], mid: { floors: [12], pool: [489] }, wx: [['rain', 0.4]], pal: ['#0f2433', '#1f4f6e', '#9fd0e6', '#86bcd4'] },
+  { id: 'magma',    n: '불꽃 산 심층',  floors: 20, lv: [64, 80], types: [10, 9, 6, 5], mode: 'normal', req: 'coronet', theme: '숨은 던전', hidden: true,
+    bosses: [485], mid: { floors: [12], pool: [721] }, wx: [['sun', 0.5], ['sand', 0.15]], pal: ['#3a1612', '#7a2e1c', '#e0a070', '#cc8a5a'] },
 );
 const dungeonById = id => DUNGEONS.find(d => d.id === id);
 // 일반 던전의 적 최소 레벨은 열리게 해 준 바로 이전 던전(req)의 최대 레벨 - 1 (갑자기 약해지지 않게)
@@ -345,6 +384,12 @@ const dungeonById = id => DUNGEONS.find(d => d.id === id);
 // (lvMin이 있으면 그 값)
 for (const dg of DUNGEONS) if (dg.mode === 'normal' && dg.req) dg.lv[0] = dg.lvMin ?? dungeonById(dg.req).lv[1] - 1;
 for (const dg of DUNGEONS) if (dg.theme) dg.lv[0] = Math.max(dg.lv[0], dg.lv[1] - 8);
+// 던전 등급 (의뢰·구조 보상에 쓴다): 메인 스토리 던전을 레벨 순으로 0, 1, 2… 테마·숨은 던전은 최고 레벨이 같거나 바로 위인 메인 던전의 등급
+const MAIN_LINE = DUNGEONS.filter(d => d.mode === 'normal' && !d.theme).sort((a, b) => a.lv[1] - b.lv[1]);
+function dungeonTier(dg) {
+  const i = MAIN_LINE.findIndex(d => d.lv[1] >= dg.lv[1]);
+  return i < 0 ? MAIN_LINE.length - 1 : i;
+}
 const hasSprite = id => !!DATA.species[id];
 // 최종·중간 보스 후보 (스프라이트가 있는 포켓몬만)
 const bossPool = dg => (dg.bosses || []).filter(hasSprite);
@@ -408,7 +453,7 @@ const SHINY_CHANCE = 1 / 80;
 // 바람: 한 층에 오래 머물면 경고 후 던전 밖으로 날려간다 (쓰러진 것과 같은 패널티)
 const WIND = { warn: [500, 650, 750], limit: 800 };
 // 보스: 일반 던전은 마지막 층, 로그라이크는 10층마다와 마지막 층
-const BOSSES = { forest: 12, beach: 99, crystal: 302, plains: 243, swamp: 89, volcano: 244, desert: 330, frost: 144, storm: 245,
+const BOSSES = { forest: 12, beach: 99, crystal: 302, plains: 807, swamp: 89, volcano: 244, desert: 330, frost: 144, storm: 245,
   dark: 491, mine: 379, sky: 384, canyon: 445, summit: 483, trial: 68, twilight: 487, mystery: 493, eternal: 1157 };
 // 영입할 수 없는 포켓몬 (특별한 보스 모습)
 const NO_RECRUIT = [1157];
@@ -426,7 +471,7 @@ const milestoneGiftPool = () => [...Object.keys(VITAMINS), ...Object.keys(GUMMIE
 const SHOP_REROLL_COST = 3000;
 // 파는 값: 사는 값의 1/4 (상점에 없는 물건은 정해진 값). 겹치는 물건은 5개 기준 값
 const SELL_RATE = 0.25;
-const sellOf = id => { const it = ITEMS[id]; return it.price ? it.price * SELL_RATE : (it.sell || 0); };
+const sellOf = id => { const it = ITEMS[id]; return it.sellAt ?? (it.price ? it.price * SELL_RATE : (it.sell || 0)); };
 const sellValue = b => Math.floor(sellOf(b.id) * (ITEMS[b.id].stack ? b.n / 5 : 1)) || 1;
 
 const STAT_NAMES = { 2: '공격', 3: '방어', 4: '특수공격', 5: '특수방어', 6: '스피드', 7: '명중률', 8: '회피율' };
@@ -503,6 +548,25 @@ for (const it of Object.values(ITEMS)) if (it.price > 0) it.price = Math.round(i
 // 상점에 늘 있는 기본 물건은 값을 따로 더 올린다 (오랭열매·사과·과사열매 2배), 탈출구슬은 비싸게
 for (const id of ['oran', 'apple', 'leppa']) ITEMS[id].price *= 2;
 ITEMS.escape.price = 3000;
+// 켈리몬 상점(하늘의 탐험대) 값을 기준으로 다시 맞춘다: 원작 값 × KECLEON_MUL, 지금 값보다 싸지면 지금 값 그대로 (올리기만)
+// 겹치는 물건은 원작의 1개 값 (상점은 5개씩 판다). 원작에 없는 물건은 비슷한 물건의 값
+// 파는 값은 올리기 전 값 기준 그대로 (던전에서 주운 물건을 팔아 버는 돈은 변하지 않게)
+const KECLEON_MUL = 4;
+const KECLEON_PRICE = {
+  oran: 50, apple: 25, bigapple: 150, heal: 250, reviver: 800, elixir: 250,
+  blast: 30, sleep: 70, warp: 20, stun: 70, poisonseed: 70, confuseseed: 70,
+  cheri: 80, chesto: 80, pecha: 60, rawst: 90, persim: 80, sitrus: 100, lum: 150,
+  lumi: 150, foesleep: 150, radar: 150, trapbust: 150, paraorb: 150, sloworb: 150,
+  thorn: 4, goldthorn: 10, gravel: 2,
+};
+// 기술머신은 원작 6000~9000 (변화 기술·약한 기술 6000, 위력 120 이상 9000)
+for (const id of TM_IDS) { const m = DATA.moves[ITEMS[id].mv]; KECLEON_PRICE[id] = m.c === 1 ? 6000 : 6000 + Math.min(1, Math.max(0, ((m.p || 0) - 60) / 60)) * 3000; }
+// 지닌 물건은 원작 리본·밴드·스카프 2500~4500 근처 (원래 정한 값이 높을수록 비싸게)
+for (const [id, h] of Object.entries(HELD_ITEMS)) KECLEON_PRICE[id] = 2000 + h.price * 0.7;
+for (const [id, p] of Object.entries(KECLEON_PRICE)) {
+  const it = ITEMS[id], raw = p * KECLEON_MUL * (it.stack ? 5 : 1), unit = raw >= 1000 ? 100 : 10, v = Math.round(raw / unit) * unit;
+  if (v > it.price) { it.sellAt = it.price * SELL_RATE; it.price = v; }
+}
 // 상점에 늘 있는 물건 (맨 위에 고정). 나머지 진열은 날마다 바뀐다
 const SHOP_FIXED = ['oran', 'apple', 'leppa', 'stone', 'link'];
 
@@ -528,6 +592,9 @@ function itemTier(id) {
 // 높은 층(적 Lv HIGH_LV 이상)에서는 흔한 등급이 나오지 않는다. 단 식량·회복 아이템은 살아남는 데 꼭 필요해서 계속 나온다
 const HIGH_LV = 20;
 const ALWAYS_DROP = ['apple', 'bigapple', 'oran', 'sitrus', 'elixir'];
+// 등급과 상관없이 나오는 레벨을 따로 정한 아이템 [최소, 최대) : 던지는 가시는 Lv30 전까지 쇠가시, 그 뒤로 금바늘
+const ITEM_LV_RANGE = { thorn: [0, 30], goldthorn: [30, Infinity] };
+const ITEM_LV_STEPS = [...new Set(Object.values(ITEM_LV_RANGE).flat().filter(v => v > 0 && v < Infinity))];
 // 기술머신과 메가스톤은 던전 타입에 맞는 것만 나온다 (기술머신은 기술 타입, 메가스톤은 메가진화한 모습의 타입). 타입이 정해지지 않은 던전은 전부
 function typeFits(dg, id) {
   const it = ITEMS[id], ts = dg && dg.types;
@@ -552,6 +619,8 @@ const dropCache = {}, baseCache = {};
 // (그 층에서 나올 수 있을 때만. 나머지 아이템은 서로의 비율을 그대로 두고 남은 몫을 나눈다)
 const HELD_DROP_SHARE = 0.03;
 const DROP_SHARE = {};
+// 로그라이크(긴 던전)는 PP가 모자라기 쉬워서 PP 회복 아이템이 더 잘 나온다
+const ROGUE_DROP_MUL = { leppa: 4, elixir: 2 };
 function dropTable(lvl, dg) {
   const base = baseTable(lvl, dg), key = base.key;
   if (dropCache[key]) return dropCache[key];
@@ -584,13 +653,16 @@ function pickDrop(lvl, dg) {
 const moneyPile = lvl => Math.round(rint(4, 12) * (1 + lvl / 6));
 // 레벨·던전 타입으로 거른 원래 가중치 (보스·이로치 보상은 이걸 쓴다)
 function baseTable(lvl, dg) {
-  const key = Object.values(TIER_LV).filter(v => lvl >= v).length + (lvl >= HIGH_LV ? 'h' : '') + '|' + (dg && dg.types ? dg.types.join(',') : '*');
+  const rogue = !!(dg && dg.mode === 'rogue');
+  const key = Object.values(TIER_LV).filter(v => lvl >= v).length + (lvl >= HIGH_LV ? 'h' : '') + ITEM_LV_STEPS.filter(v => lvl >= v).length + '|' + (dg && dg.types ? dg.types.join(',') : '*') + (rogue ? '|r' : '');
   if (baseCache[key]) return baseCache[key];
   const out = baseCache[key] = DROP_TABLE.filter(([id]) => {
-    const t = itemTier(id);
-    if (lvl < TIER_LV[t] || !typeFits(dg, id)) return false;
+    const t = itemTier(id), range = ITEM_LV_RANGE[id];
+    if (!typeFits(dg, id)) return false;
+    if (range) return lvl >= range[0] && lvl < range[1];
+    if (lvl < TIER_LV[t]) return false;
     return !(lvl >= HIGH_LV && t === 1 && !ALWAYS_DROP.includes(id));
-  });
+  }).map(([id, w]) => [id, rogue && ROGUE_DROP_MUL[id] ? w * ROGUE_DROP_MUL[id] : w]);
   out.key = key;
   return out;
 }

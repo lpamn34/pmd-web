@@ -47,11 +47,30 @@ const learnableUpTo = (sp, lv) => [...new Set(DATA.species[sp].l.filter(([l]) =>
 const learnedAt = (sp, lv) => DATA.species[sp].l.filter(([l]) => l === lv).map(x => x[1]);
 
 // 던전 안에서 쓰는 개체
+// ── 기술 숙련도: 포켓몬마다·기술마다 쓴 횟수 (save.mastery[sp][mid], 기술을 빼도 남고 로그라이크에서도 쌓인다) ──
+// ★n까지 필요한 사용 횟수 = 기본 PP의 절반 × (1 + 2 + … + n). ★마다 PP 최대치 +10%, PP를 안 쓸 확률 +3% (★10: +100%, 30%)
+const MASTERY_MAX = 10, MASTERY_PP = 0.1, MASTERY_FREE = 0.03;
+const masteryUses = (sp, mid) => ((typeof Game !== 'undefined' && Game.save && Game.save.mastery && Game.save.mastery[sp]) || {})[mid] || 0;
+const masteryNeed = (mid, n) => Math.ceil(DATA.moves[mid].pp / 2 * n * (n + 1) / 2);   // ★n까지의 누적 횟수
+function masteryLevel(sp, mid) {
+  const u = masteryUses(sp, mid);
+  let n = 0;
+  while (n < MASTERY_MAX && u >= masteryNeed(mid, n + 1)) n++;
+  return n;
+}
+const masteryMaxPP = (sp, mid) => Math.round(DATA.moves[mid].pp * (1 + MASTERY_PP * masteryLevel(sp, mid)));
+const masteryFree = (sp, mid) => MASTERY_FREE * masteryLevel(sp, mid);
+// 기술 하나 (탐험대는 숙련도만큼 PP 최대치가 늘어난다)
+function newMove(c, mid) {
+  const max = c && (c.player || c.ally) ? masteryMaxPP(c.sp, mid) : DATA.moves[mid].pp;
+  return { id: mid, pp: max, max };
+}
+
 function makeCreature(sp, lv, opts = {}) {
   const d = DATA.species[sp];
   const iv = opts.player || opts.ally ? 31 : 8;   // 플레이어와 동료는 개체값 최고
   const c = {
-    sp, lv, exp: opts.exp || expFor(lv), types: d.t.slice(), player: !!opts.player,
+    sp, lv, exp: opts.exp || expFor(lv), types: d.t.slice(), player: !!opts.player, ally: !!opts.ally,
     iv, stages: {}, status: null, statusT: 0, flinch: false, dir: 0, x: 0, y: 0, id: Math.random(),
     ...applyBoost(calcStats(sp, lv, iv), opts.boost),
   };
@@ -59,7 +78,7 @@ function makeCreature(sp, lv, opts = {}) {
   c.ability = opts.ability != null ? opts.ability : (opts.player || opts.ally ? defaultAbility(sp) : randomAbility(sp));
   c.hp = c.maxhp;
   const ml = opts.moves || defaultMoves(sp, lv);
-  c.moves = ml.map(id => ({ id, pp: DATA.moves[id].pp, max: DATA.moves[id].pp }));
+  c.moves = ml.map(id => newMove(c, id));
   if (opts.pp) c.moves.forEach((m, i) => { if (opts.pp[i] != null) m.pp = Math.min(m.max, opts.pp[i]); });
   return c;
 }

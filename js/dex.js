@@ -93,6 +93,39 @@ const Dex = (() => {
     const it = e.target.closest('[data-dexitem]'); if (it) { showItem(it.dataset.dexitem); }
   }
 
+  // 포켓몬이 나오는 곳: 던전마다 일반 적으로 나오는 층, 테마 시리즈, 중간·최종 보스 (처음 열 때 한 번 계산)
+  let whereCache = null;
+  function whereMap() {
+    if (whereCache) return whereCache;
+    const m = {};
+    const add = (sp, dg, text, f0) => (m[sp] = m[sp] || []).push({ dg, text, f0 });
+    for (const dg of DUNGEONS) {
+      if (dg.daily) continue;
+      const fl = {};
+      for (let f = 1; f <= dg.floors; f++) {
+        if (f === dg.floors && isBossFloor(dg, f)) continue;
+        const fc = Dungeon.floorCandidates(dg, f);
+        for (const id of [...fc.concept, ...fc.cand.map(o => o.id)]) (fl[id] = fl[id] || []).push(f);
+      }
+      const lv = f => Math.round(dg.lv[0] + (dg.lv[1] - dg.lv[0]) * (dg.floors > 1 ? (f - 1) / (dg.floors - 1) : 0));
+      for (const [sp, fs] of Object.entries(fl)) add(+sp, dg, `${fs[0] === fs[fs.length - 1] ? fs[0] : `${fs[0]}~${fs[fs.length - 1]}`}층 · Lv${lv(fs[0])}~${lv(fs[fs.length - 1])}${[...PARADOX_PAST, ...PARADOX_FUTURE].includes(+sp) && !dg.extra ? ' · 드물게' : ''}`, fs[0]);
+      for (const sp of (dg.extra || []).filter(hasSprite)) add(sp, dg, '테마 시리즈로 섞여 나옴', 1);
+      for (const sp of midPool(dg)) add(sp, dg, `중간 보스 (${dg.mid.floors.join(', ')}층)`, dg.mid.floors[0]);
+      const finals = bossPool(dg).length ? bossPool(dg) : BOSSES[dg.id] && DATA.species[BOSSES[dg.id]] ? [BOSSES[dg.id]] : [];
+      for (const sp of finals) add(sp, dg, `👑 최종 보스 (${dg.floors}층${finals.length > 1 ? `, ${finals.length}종 중 하나` : ''})`, dg.floors);
+    }
+    return (whereCache = m);
+  }
+  function whereHtml(id) {
+    const d = DATA.species[id];
+    if (d.fc) return '<p class="dim">던전에서 원래 모습이 바뀌어서 나타나는 모습이에요. 원래 모습이 나오는 곳을 확인하세요.</p>';
+    const list = whereMap()[id] || [];
+    if (!list.length) return '<p class="dim">지금은 던전에 나오지 않아요.</p>';
+    const tabOf = dg => (dg.mode === 'rogue' ? '로그라이크' : dg.theme ? '테마' : '일반');
+    const rank = dg => (dg.mode === 'rogue' ? 2000 : dg.theme ? 1000 : 0) + dg.lv[0];   // 일반 → 테마 → 로그라이크, 그 안에서 적 레벨 순
+    list.sort((a, b) => rank(a.dg) - rank(b.dg) || a.f0 - b.f0);
+    return `<div class="dex-where">${list.map(w => `<div class="row"><span class="grow"><b>${esc(w.dg.n)}</b> <span class="tag">${tabOf(w.dg)}</span> <span class="dim">${esc(w.text)}</span></span></div>`).join('')}</div>`;
+  }
   function showPokemon(id) {
     const d = DATA.species[id];
     const labels = ['HP', '공격', '방어', '특공', '특방', '스피드'];
@@ -110,6 +143,7 @@ const Dex = (() => {
         ${Game.save && Game.hasClears(id) ? `<h3>🏅 메달 <span class="dim">(이 포켓몬으로 클리어한 던전)</span></h3>${Game.medalSection(id)}` : ''}
         <table class="dex-stats">${d.b.map((v, i) => `<tr><td>${labels[i]}</td><td class="num">${v}</td><td><span class="sbar"><i style="width:${Math.min(100, v / 1.8)}%;background:${v >= 100 ? '#4de36b' : v >= 70 ? '#f5d142' : '#f58a42'}"></i></span></td></tr>`).join('')}
           <tr><td>합계</td><td class="num"><b>${bst(id)}</b></td><td></td></tr></table>
+        <h3>🗺 나오는 곳</h3>${whereHtml(id)}
         <h3>특성</h3>${d.ab.map(([aid, hid]) => `<div class="row clickable" data-dexability="${aid}"><div class="grow"><b>${esc(abilityName(aid))}</b>${hid ? ' <span class="dim">(숨겨진 특성)</span>' : ''}<div class="dim">${esc(abilityDesc(aid).dungeon || abilityDesc(aid).exact || abilityDesc(aid).d)}</div></div></div>`).join('')}
         ${d.fc ? `<h3>원래 모습</h3><div class="roster">${mini(d.f[0], '')}</div><p class="dim">${esc(formHowText(id))}</p>` : ''}
         ${(FORMS_OF[id] || []).length ? `<h3>다른 모습</h3><div class="roster">${FORMS_OF[id].map(k => mini(k, formKindName(k))).join('')}</div>` : ''}
@@ -156,7 +190,7 @@ const Dex = (() => {
     const it = ITEMS[id];
     const sig = it.sig ? it.hold.only.filter(sp => DATA.species[sp]).map(spName).join('·') : '';
     const where = sig ? [`마을 상점에 가끔 진열 (₽${it.price})`, `${sig}이(가) 나오는 던전에서 드물게 발견`]
-      : [shopSet.has(id) ? `상점에서 ₽${it.price}에 구매` : '', dropSet.has(id) ? `던전 바닥에서 발견 (${TIER_NAMES[itemTier(id)]}${itemTier(id) > 1 ? ` · 적 Lv${TIER_LV[itemTier(id)]} 이상 층` : ''})` : ''].filter(Boolean);
+      : [shopSet.has(id) ? `상점에서 ₽${it.price}에 구매` : '', dropSet.has(id) ? `던전 바닥에서 발견 (${TIER_NAMES[itemTier(id)]}${ITEM_LV_RANGE[id] ? ` · 적 Lv${ITEM_LV_RANGE[id][1] < Infinity ? `${ITEM_LV_RANGE[id][1]} 미만` : `${ITEM_LV_RANGE[id][0]} 이상`} 층` : itemTier(id) > 1 ? ` · 적 Lv${TIER_LV[itemTier(id)]} 이상 층` : ''})` : ''].filter(Boolean);
     const how = it.vit ? '마을의 캐릭터 탭에서 먹인다. 효과는 그 포켓몬에게 영구히 남는다.' : it.tm ? `마을의 캐릭터 탭이나 던전 가방에서 사용한다. 배울 수 있는 포켓몬 ${SPECIES_IDS.filter(s => canLearnTM(+s, it.mv)).length}종.` : it.held ? '마을의 캐릭터 탭이나 던전 가방에서 지니게 하면 효과를 발휘한다. (한 번에 하나)' : it.use && it.use !== 'none' ? '던전에서 사용하거나 던질 수 있다.' : it.throw ? '던전에서 적에게 던져서 사용한다.' : id === 'stone' || id === 'link' ? '마을의 캐릭터 탭에서 진화할 때 소모된다.' : id === 'reviver' ? '가방에 있으면 쓰러질 때 자동으로 사용된다.' : '';
     const sell = Math.floor(sellOf(id));
     UI.open({

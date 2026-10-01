@@ -40,3 +40,19 @@ altar     해와 달의 제단
 coronet   천관산
 spiral    용의 나선탑
 areazero  에리어 제로
+skyplain  풍요의 하늘길
+twofist   쌍권의 탑
+crown     왕관의 설원
+watercity 물의 도시
+genelab   유전자 연구소
+kalos     생명과 파괴의 숲
+hero      영웅의 숲
+meteor    운석 낙하지점
+ultra     울트라 차원의 틈
+zerodeep  에리어 제로 최심부
+flower    꽃의 낙원 (숨은 던전)
+crescent  초승달 섬 (숨은 던전)
+crystaldeep 수정 동굴 심층 (숨은 던전)
+factory   고대 공장 (숨은 던전)
+seatemple 바다의 신전 (숨은 던전)
+magma     불꽃 산 심층 (숨은 던전)

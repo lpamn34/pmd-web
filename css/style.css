@@ -147,6 +147,7 @@ i.clear { font-style: normal; font-size: 11px; background: #3a9d4d; padding: 1px
 #hud b { color: #fff; }
 #hud .st { background: #a33; padding: 1px 6px; border-radius: 4px; }
 #hud .up { color: #8f8; } #hud .down { color: #f99; }
+#hud .run-money { color: #fc3; font-size: 12px; }
 #hud .warn { color: var(--danger); }
 #hud .party { display: inline-flex; gap: 10px; flex-wrap: wrap; font-size: 12px; color: #9cf; }
 #hud .party .pm.out { opacity: .4; text-decoration: line-through; }
@@ -439,3 +440,5 @@ i.clear.me { background: #2b6cb0; margin-left: 4px; }
 .pm-card { padding: 6px 8px; margin: 6px 0; border-radius: 8px; background: #ffffff0a; }
 .pm-card.out { opacity: .55; }
 .pm-moves { font-size: 13px; line-height: 1.7; margin: 4px 0 0 4px; }
+.mastery { color: #ffd966; font-style: normal; font-size: 11px; margin-left: 2px; }
+.md-mastery { margin: 6px 0; padding: 4px 8px; border-radius: 6px; background: #ffd96614; }

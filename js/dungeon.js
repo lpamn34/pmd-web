@@ -104,19 +104,45 @@ const Dungeon = (() => {
 
   // 층 적 구성
   // 그 층에 나올 수 있는 포켓몬 후보 (층마다 이 중 6종이 무작위로 뽑힌다)
+  // ── 던전 컨셉 (js/concepts.js): 이름 → 진화 계열. 계열마다 그 층의 강함에 가장 가까운 모습이 나온다 ──
+  const bstOf = id => DATA.species[id].b.reduce((a, b) => a + b, 0);
+  const UB_IDS = new Set([793, 794, 795, 796, 797, 798, 799, 803, 804, 805, 806]);   // 울트라비스트: 울트라 차원의 틈 컨셉에서만
+  let conceptCache = null;
+  function concepts() {
+    if (conceptCache) return conceptCache;
+    const byName = {}, parent = {};
+    for (const id of SPECIES_IDS) { byName[DATA.species[id].n] = +id; for (const v of DATA.species[id].v) parent[v[0]] = +id; }
+    const family = id => {   // 전설·환상이 아니면 진화 계열 전체, 전설·환상은 그 포켓몬만
+      if (DATA.species[id].lg) return [id];
+      let root = id; while (parent[root]) root = parent[root];
+      const out = [], q = [root];
+      while (q.length) { const c = q.shift(); if (hasSprite(c) && !DATA.species[c].lg) out.push(c); for (const v of DATA.species[c].v) q.push(v[0]); }
+      return out.length ? out : [id];
+    };
+    conceptCache = {};
+    for (const [dg, names] of Object.entries(CONCEPT_NAMES)) conceptCache[dg] = [...new Set(names)].map(n => byName[n]).filter(Boolean).map(family);
+    return conceptCache;
+  }
+  // 그 층에 나올 수 있는 포켓몬: concept(컨셉 계열마다 그 층에 맞는 모습) + cand(던전 타입에 맞는 나머지)
   function floorCandidates(dg, floor) {
     const prog = dg.floors > 1 ? (floor - 1) / (dg.floors - 1) : 0;
     const lvl = Math.round(dg.lv[0] + (dg.lv[1] - dg.lv[0]) * prog);
     const target = 230 + lvl * 6.5;
-    const all = SPECIES_IDS.map(id => ({ id: +id, s: DATA.species[id], bst: DATA.species[id].b.reduce((a, b) => a + b, 0) }))
-      .filter(o => !o.s.lg && (!dg.types || o.s.t.some(t => dg.types.includes(t))));
+    const fams = concepts()[dg.id] || [];
+    const concept = fams.map(f => f.reduce((best, id) => (Math.abs(bstOf(id) - target) < Math.abs(bstOf(best) - target) ? id : best)))
+      .sort((a, b) => Math.abs(bstOf(a) - target) - Math.abs(bstOf(b) - target));
+    const all = SPECIES_IDS.map(id => ({ id: +id, s: DATA.species[id], bst: bstOf(id) }))
+      .filter(o => !o.s.lg && !UB_IDS.has(o.id) && !concept.includes(o.id) && (!dg.types || o.s.t.some(t => dg.types.includes(t))));
     let cand = [];
     for (const w of [70, 110, 170, 260, 999]) { cand = all.filter(o => Math.abs(o.bst - target) <= w); if (cand.length >= 8) break; }
-    return { lvl, target, cand };
+    return { lvl, target, cand, concept };
   }
   function makePool(dg, floor) {
-    const { lvl, target, cand } = floorCandidates(dg, floor);
+    const { lvl, target, cand, concept } = floorCandidates(dg, floor);
     const pool = [];
+    // 컨셉 포켓몬을 먼저 (CONCEPT_SHARE종), 나머지는 던전 타입에서
+    const cc = concept.slice();
+    while (pool.length < CONCEPT_SHARE && cc.length) pool.push(cc.splice(rand(cc.length), 1)[0]);
     // 패러독스 포켓몬은 테마 던전이 아니면 드물게: 뽑혀도 PARADOX_RATE 확률로만 남기고 아니면 다시 뽑는다
     const para = new Set(dg.extra ? [] : [...PARADOX_PAST, ...PARADOX_FUTURE]);
     while (pool.length < 6 && cand.length) {
@@ -545,13 +571,31 @@ const Dungeon = (() => {
   function popup(c, text, color, at, size) { D.popups.push({ x: c.x, y: c.y, text, color, at, size }); }
 
   // ───────────────────────── 전투 ─────────────────────────
+  // 숙련도 올리기: 탐험대가 기술을 쓸 때마다 (PP를 안 써도). 단계가 오르면 PP 최대치도 바로 늘어난다
+  function addMastery(c, m) {
+    const S = Game.save; S.mastery = S.mastery || {};
+    const book = S.mastery[c.sp] = S.mastery[c.sp] || {};
+    const before = masteryLevel(c.sp, m.id);
+    book[m.id] = (book[m.id] || 0) + 1;
+    const after = masteryLevel(c.sp, m.id);
+    if (after > before) {
+      const max = masteryMaxPP(c.sp, m.id);
+      m.pp += max - m.max; m.max = max;
+      log(`✨ ${nm(c)}의 ${DATA.moves[m.id].n} 숙련도가 ★${after}이 되었다! (PP 최대 ${max})`, T.base);
+      Sound.play('up', T.base);
+    }
+  }
   function useMove(user, slot, dir, opts = {}) {
     const mid = slot < 0 ? null : user.moves[slot].id;
     const R = (mid && MOVE_RULES[mid]) || {};
     let move = slot < 0 ? NORMAL_ATTACK : DATA.moves[mid];
     if (R.selfHeal) move = { ...move, r: 's' };
     if (R.weatherBall && weatherNow() && weatherNow() !== 'fog') move = { ...move, t: { sun: 10, rain: 11, sand: 6, snow: 15 }[weatherNow()], p: 100 };
-    if (slot >= 0 && !opts.free) user.moves[slot].pp--;
+    if (slot >= 0 && !opts.free) {
+      if (party(user) && Math.random() < masteryFree(user.sp, mid)) log(`${jo(nm(user), '은')} PP를 쓰지 않았다! (숙련도)`, T.base);
+      else user.moves[slot].pp--;
+      if (party(user)) addMastery(user, user.moves[slot]);
+    }
     user.dir = dir;
     if (user.sp === 681) { user.blade = move.c !== 1; formCheck(user); }   // 킬가르도: 공격이면 블레이드폼, 변화 기술이면 실드폼
     if (user.sp === 648 && mid === 547) { user.pirouette = !user.pirouette; formCheck(user); }   // 메로엣타: 옛노래를 쓸 때마다
@@ -912,7 +956,7 @@ const Dungeon = (() => {
       a.lv++; recalc(a);
       log(`${jo(nm(a), '은')} 레벨 ${jo(a.lv, '으로')} 올랐다!`, at);
       popup(a, 'LEVEL UP', '#ffe066', at + 200);
-      for (const mid of learnedAt(a.sp, a.lv)) if (!a.moves.some(m => m.id === mid) && a.moves.length < 4) { a.moves.push({ id: mid, pp: DATA.moves[mid].pp, max: DATA.moves[mid].pp }); log(`${jo(nm(a), '은')} ${jo(DATA.moves[mid].n, '을')} 배웠다!`, at); }
+      for (const mid of learnedAt(a.sp, a.lv)) if (!a.moves.some(m => m.id === mid) && a.moves.length < 4) { a.moves.push(newMove(a, mid)); log(`${jo(nm(a), '은')} ${jo(DATA.moves[mid].n, '을')} 배웠다!`, at); }
     }
   }
   // raw: 이상한사탕처럼 정해진 만큼 (전설 보정 없이)
@@ -930,7 +974,7 @@ const Dungeon = (() => {
       setFace('Joyous', 2500);
       for (const mid of learnedAt(p.sp, p.lv)) {
         if (p.moves.some(m => m.id === mid)) continue;
-        if (p.moves.length < 4) { p.moves.push({ id: mid, pp: DATA.moves[mid].pp, max: DATA.moves[mid].pp }); log(`${jo(DATA.moves[mid].n, '을')} 배웠다!`, at); }
+        if (p.moves.length < 4) { p.moves.push(newMove(p, mid)); log(`${jo(DATA.moves[mid].n, '을')} 배웠다!`, at); }
         else D.learnQueue.push(mid);
       }
     }
@@ -1023,7 +1067,7 @@ const Dungeon = (() => {
         <b>${esc(nm(a))}</b> Lv${a.lv} ${typeBadges(a.types)}${a.fainted ? ' <span class="warn">쓰러짐 (이번 탐험에서 빠짐)</span>' : ''}
         <div>HP ${a.fainted ? 0 : a.hp}/${a.maxhp} <span class="bar small"><i style="width:${pc}%;background:${pc > 50 ? '#4de36b' : pc > 20 ? '#f5d142' : '#f55'}"></i></span>${a.status ? ` <span class="warn">${STATUS_NAMES[a.status]}</span>` : ''}${D.mons.includes(a) ? ` · 나와의 거리 ${cheb(a, P())}칸` : ''}</div>
         <div class="dim">특성 ${esc(abilityName(a.ability))}${a.held ? ` · ${ITEMS[a.held].icon} ${esc(ITEMS[a.held].n)}` : ''}${st ? ` · 능력 변화 ${esc(st)}` : ''}</div></div></div>
-        <div class="pm-moves">${a.moves.map(m => { const d = DATA.moves[m.id]; return `<span class="type" style="background:${TYPE_COLORS[d.t - 1]}">${typeName(d.t)}</span> ${esc(d.n)} <span class="dim">PP ${m.pp}/${m.max}</span>`; }).join('<br>')}</div></div>`;
+        <div class="pm-moves">${a.moves.map(m => { const d = DATA.moves[m.id]; return `<span class="type" style="background:${TYPE_COLORS[d.t - 1]}">${typeName(d.t)}</span> ${esc(d.n)}${masteryStar(a.sp, m.id)} <span class="dim">PP ${m.pp}/${m.max}</span>`; }).join('<br>')}</div></div>`;
     };
     UI.open({ title: '🤝 동료', wide: true,
       html: `<div class="row"><span class="grow">작전: <b>${TACTIC_NAMES[tactic()]}</b> <span class="dim">${TACTIC_DESC[tactic()]}</span></span></div>
@@ -1410,6 +1454,7 @@ const Dungeon = (() => {
       choices: [
         { label: `산다 (₽${it.price})`, disabled: Game.save.money < it.price || full, sub: full ? '가방이 가득 찼다' : Game.save.money < it.price ? '돈이 부족하다' : '', fn: () => {
           Game.save.money -= it.price;
+          run.money = Math.max(0, run.money - it.price);   // 이번 탐험에서 주운 돈부터 쓴다 (쓰러졌을 때 원래 가진 돈을 잃지 않게)
           D.items = D.items.filter(i => i !== it);
           addToBag(it.id, it.n);
           log(`${jo(info.n, '을')} ₽${it.price}에 샀다. "감사합니다!"`, now());
@@ -1633,7 +1678,7 @@ const Dungeon = (() => {
       html: `${moveDetailHtml(mid)}<p>기술을 4개 알고 있다. 잊을 기술을 고르세요.</p>`,
       choices: [...p.moves.map((m, i) => ({ label: moveLine(m.id, m.pp, m.max), sub: esc(DATA.moves[m.id].d || moveEffects(m.id).join(' ')), fn: () => {
         log(`${jo(DATA.moves[m.id].n, '을')} 잊고 ${jo(mv.n, '을')} 배웠다!`, now());
-        p.moves[i] = { id: mid, pp: mv.pp, max: mv.pp };
+        p.moves[i] = newMove(p, mid);
       } })), { label: `${esc(jo(mv.n, '을'))} 배우지 않는다`, fn: () => {} }],
       cancel: false,
     });
@@ -1722,7 +1767,7 @@ const Dungeon = (() => {
       Progress.add('tms'); checkLater();
       Sound.play('item', at);
       log(`${jo(it.n, '을')} 사용했다!`, at);
-      if (p.moves.length < 4) { p.moves.push({ id: it.mv, pp: mv.pp, max: mv.pp }); log(`${jo(nm(p), '은')} ${jo(mv.n, '을')} 배웠다!`, at); }
+      if (p.moves.length < 4) { p.moves.push(newMove(p, it.mv)); log(`${jo(nm(p), '은')} ${jo(mv.n, '을')} 배웠다!`, at); }
       else { D.learnQueue.push(it.mv); log(`(지금 배우지 않아도 마을의 기술 설정에서 언제든 넣을 수 있다)`, at); }
       return true;
     }
@@ -2264,7 +2309,7 @@ const Dungeon = (() => {
   function updateHud(t) {
     const p = P(), dg = D.dg;
     const pt = (run.party || []).map(a => `${a.sp}:${a.lv}:${a.hp}:${a.maxhp}:${a.fainted ? 1 : 0}:${a.status}`).join(',');
-    const hud = `${pt}|${p.held}|${weatherNow()}|${dg.n}|${run.floor}|${p.lv}|${p.hp}|${p.maxhp}|${Math.ceil(p.belly)}|${Game.save.money}|${p.status}|${p.exp}|${JSON.stringify(p.stages)}|${JSON.stringify(p.stageT || {})}`;
+    const hud = `${pt}|${p.held}|${weatherNow()}|${dg.n}|${run.floor}|${p.lv}|${p.hp}|${p.maxhp}|${Math.ceil(p.belly)}|${Game.save.money}|${run.money}|${p.status}|${p.exp}|${JSON.stringify(p.stages)}|${JSON.stringify(p.stageT || {})}`;
     if (hud !== hudCache) {
       hudCache = hud;
       const hpPct = p.hp / p.maxhp * 100;
@@ -2276,18 +2321,18 @@ const Dungeon = (() => {
         <span class="hpwrap">HP <b>${p.hp}</b>/${p.maxhp}<span class="bar"><i style="width:${hpPct}%;background:${hpPct > 50 ? '#4de36b' : hpPct > 20 ? '#f5d142' : '#f55'}"></i></span></span>
         <span>배 <b class="${p.belly <= 20 ? 'warn' : ''}">${Math.ceil(p.belly)}</b>/100</span>
         <span class="exp">EXP<span class="bar small"><i style="width:${p.lv >= MAX_LEVEL ? 100 : clamp(have / need * 100, 0, 100)}%;background:#6cf"></i></span></span>
-        <span>₽ <b>${Game.save.money}</b></span>
+        <span title="쓰러지면 이번 탐험에서 주운 돈(괄호 안)을 잃습니다">₽ <b>${Game.save.money}</b>${run.money ? ` <span class="run-money">(이번 탐험 +${run.money})</span>` : ''}</span>
         ${p.held ? `<span class="held" title="${esc(ITEMS[p.held].d)}">${ITEMS[p.held].icon} ${esc(ITEMS[p.held].n)}</span>` : ''}
         ${p.status ? `<span class="st">${STATUS_NAMES[p.status]}</span>` : ''} ${stg}
         ${(run.party || []).length ? `<span class="party">${run.party.map(a => { const pc = a.fainted ? 0 : a.hp / a.maxhp * 100; return `<span class="pm${a.fainted ? ' out' : ''}" title="${esc(spName(a.sp))} Lv${a.lv} HP ${a.fainted ? 0 : a.hp}/${a.maxhp}${a.status ? ' · ' + STATUS_NAMES[a.status] : ''}">${esc(spName(a.sp))} <span class="bar small"><i style="width:${pc}%;background:${pc > 50 ? '#4de36b' : pc > 20 ? '#f5d142' : '#f55'}"></i></span></span>`; }).join('')}</span>` : ''}`;
     }
-    const mv = p.moves.map(m => m.id + ':' + m.pp).join(',');
+    const mv = p.moves.map(m => m.id + ':' + m.pp + ':' + m.max).join(',');
     if (mv !== moveCache) {
       moveCache = mv;
       document.getElementById('moves').innerHTML = p.moves.map((m, i) => {
         const d = DATA.moves[m.id];
         return `<button class="mv${m.pp <= 0 ? ' empty' : ''}" data-slot="${i}" style="--tc:${TYPE_COLORS[d.t - 1]}" title="${esc(d.n)} (${typeName(d.t)} · ${['', '변화', '물리', '특수'][d.c]}${d.p ? ' · 위력 ' + d.p : ''})">
-          <span class="k">${i + 1}</span><span class="n">${esc(d.n)}</span><span class="p">${m.pp}/${m.max}</span><span class="info" data-move="${m.id}" data-pp="${m.pp}" data-max="${m.max}" title="기술 정보">?</span></button>`;
+          <span class="k">${i + 1}</span><span class="n">${esc(d.n)}${masteryLevel(p.sp, m.id) ? `<i class="mastery">★${masteryLevel(p.sp, m.id)}</i>` : ''}</span><span class="p">${m.pp}/${m.max}</span><span class="info" data-move="${m.id}" data-pp="${m.pp}" data-max="${m.max}" data-sp="${p.sp}" title="기술 정보">?</span></button>`;
       }).join('');
     }
     const qid = Game.save.settings.quickItem, qn = qid ? run.bag.filter(b => b.id === qid).reduce((s, b) => s + b.n, 0) : 0;
@@ -2359,7 +2404,7 @@ const Dungeon = (() => {
       case 'Space': case 'Enter': case 'NumpadEnter': act({ t: 'attack' }); return true;
       case 'Digit1': case 'Digit2': case 'Digit3': case 'Digit4': {
         const slot = +k.code.slice(5) - 1;
-        if (k.shift) { const m = P().moves[slot]; if (m) showMoveInfo(m.id, m.pp, m.max); }
+        if (k.shift) { const m = P().moves[slot]; if (m) showMoveInfo(m.id, m.pp, m.max, P().sp); }
         else act({ t: 'skill', slot });
         return true;
       }
@@ -2514,7 +2559,7 @@ const Dungeon = (() => {
     document.getElementById('moves').addEventListener('contextmenu', e => {
       const b = e.target.closest('.mv'); if (!b || !D) return;
       e.preventDefault();
-      const m = P().moves[+b.dataset.slot]; if (m) showMoveInfo(m.id, m.pp, m.max);
+      const m = P().moves[+b.dataset.slot]; if (m) showMoveInfo(m.id, m.pp, m.max, P().sp);
     });
     document.getElementById('moves').addEventListener('click', e => {
       const b = e.target.closest('.mv'); if (b && !busy()) { stopAuto(); act({ t: 'skill', slot: +b.dataset.slot }); }

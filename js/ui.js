@@ -136,19 +136,27 @@ function moveEffects(mid) {
   if (m.cr) out.push('급소에 맞기 쉽다.');
   return out;
 }
-function moveDetailHtml(mid, pp, max) {
+// 숙련도 표시: ★n (★0이면 비움) / 상세: 단계·효과·다음 단계까지
+const masteryStar = (sp, mid) => { const n = sp ? masteryLevel(sp, mid) : 0; return n ? ` <span class="mastery" title="숙련도 ★${n}: PP 최대 +${n * MASTERY_PP * 100}%, ${Math.round(n * MASTERY_FREE * 100)}% 확률로 PP를 쓰지 않음">★${n}</span>` : ''; };
+function masteryHtml(sp, mid) {
+  const n = masteryLevel(sp, mid), u = masteryUses(sp, mid);
+  const next = n < MASTERY_MAX ? `다음 ★${n + 1}까지 ${masteryNeed(mid, n + 1) - u}번` : '최고 단계';
+  return `<div class="md-mastery">⭐ ${esc(spName(sp))}의 숙련도 <b>★${n}</b> <span class="dim">(사용 ${u}번 · ${next})</span><br><span class="dim">PP 최대 ${masteryMaxPP(sp, mid)} (+${Math.round(n * MASTERY_PP * 100)}%) · ${Math.round(n * MASTERY_FREE * 100)}% 확률로 PP를 쓰지 않음</span></div>`;
+}
+function moveDetailHtml(mid, pp, max, sp) {
   const m = DATA.moves[mid];
   const cls = ['', '변화', '물리', '특수'][m.c];
   return `<div class="move-detail">
     <div class="md-head"><span class="type" style="background:${TYPE_COLORS[m.t - 1]}">${typeName(m.t)}</span> <b>${esc(m.n)}</b> <span class="dim">${cls}</span></div>
     <table class="md-tbl"><tr><td>위력</td><td>${m.p || '—'}</td><td>명중</td><td>${m.a || '반드시 명중'}</td><td>PP</td><td>${pp != null ? pp + '/' + max : m.pp}</td></tr></table>
     <div><span class="dim">범위</span> ${MOVE_RULES[mid]?.selfHeal ? RANGE_DESC.s : RANGE_DESC[m.r].replace('N', PROJ_RANGE)}</div>
+    ${sp ? masteryHtml(sp, mid) : ''}
     ${moveRuleText(mid) ? `<div class="md-rule">⚑ 던전 규칙: ${esc(moveRuleText(mid))}</div>` : ''}
     ${m.d ? `<p class="md-flavor">${esc(m.d)}</p>` : ''}
     ${moveEffects(mid).map(e => `<div class="md-eff">• ${esc(e)}</div>`).join('')}
   </div>`;
 }
-function showMoveInfo(mid, pp, max) { UI.alert('기술 정보', moveDetailHtml(mid, pp, max)); }
+function showMoveInfo(mid, pp, max, sp) { UI.alert('기술 정보', moveDetailHtml(mid, pp, max, sp)); }
 
 function moveLine(mid, pp, max) {
   const m = DATA.moves[mid];
