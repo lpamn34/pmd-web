@@ -682,7 +682,7 @@ const Dungeon = (() => {
       targets = pool.filter(t => hostileTo(user, t) && Math.max(Math.abs(t.x - user.x), Math.abs(t.y - user.y)) <= 3 && los(user.x, user.y, t.x, t.y));
       D.fx.push({ kind: 'ring', x: user.x, y: user.y, at: t0 + dur * 0.3, dur: 350 * spd(), color });
     }
-    if (move.r === 's') { applySelf(user, move, hitAt); afterUse(); return; }
+    if (move.r === 's') { applySelf(user, move, hitAt, R); afterUse(); return; }
     if (!targets.length) {
       if (slot >= 0 && visible) log('그러나 아무도 맞지 않았다...', hitAt);
       user.lastMissed = true; afterUse(); return;
@@ -852,8 +852,14 @@ const Dungeon = (() => {
     }
     if (A.magician && user.player && Math.random() < 0.1) { const id = weighted(dropTable(D.lvl, D.dg)); if (addToBag(id)) abLog(user, `${jo(ITEMS[id].n, '을')} 손에 넣었다!`, at); }
   }
-  function applySelf(user, move, at) {
-    if (move.h > 0) heal(user, Math.floor(user.maxhp * move.h / 100), at);
+  function applySelf(user, move, at, R = {}) {
+    if (move.h > 0) {
+      // 날씨에 따라 회복량이 바뀌는 기술 (js/moverules.js)
+      const w = weatherNow();
+      const mul = R.sunHeal ? (w === 'sun' ? WEATHER_HEAL_MUL : w ? WEATHER_HEAL_LOW : 1) : R.sandHeal && w === 'sand' ? WEATHER_HEAL_MUL : 1;
+      const h = user.boss ? Math.min(move.h, BOSS_HEAL_MAX) : move.h;   // 보스는 회복량을 줄인다
+      heal(user, Math.floor(user.maxhp * h * mul / 100), at);
+    }
     if (move.sc) for (const [st, ch] of move.sc) if (ch > 0) statChange(user, st, ch, at, user);
     D.fx.push({ kind: 'ring', x: user.x, y: user.y, at, dur: 300 * spd(), color: '#fff6a0' });
   }
@@ -1350,12 +1356,12 @@ const Dungeon = (() => {
     const p = P(); const [dx, dy] = DIRS[dir];
     p.dir = dir;
     const t = creatureAt(p.x + dx, p.y + dy);
-    if (t && t.npc) { if (diagOK(p.x, p.y, dx, dy)) { talkNpc(t); } return false; }
+    if (t && t.npc && !t.letPass) { if (diagOK(p.x, p.y, dx, dy)) { talkNpc(t); } return false; }
     if (t && hostileTo(p, t)) {
       if (!diagOK(p.x, p.y, dx, dy)) return false;
       useMove(p, -1, dir); return true;
     }
-    if (t && t.ally && diagOK(p.x, p.y, dx, dy)) {   // 동료와 자리를 바꾼다
+    if (t && (t.ally || t.letPass) && diagOK(p.x, p.y, dx, dy)) {   // 동료(또는 비켜 주는 켈리몬)와 자리를 바꾼다
       const fx = p.x, fy = p.y;
       t.x = fx; t.y = fy; schedMove(t, p.x + dx, p.y + dy); t.swapped = D.turn;
       p.x += dx; p.y += dy; schedMove(p, fx, fy); markMoved(p, fx, fy);
@@ -1456,10 +1462,12 @@ const Dungeon = (() => {
     const ax = R.x + rint(0, R.w - aw), ay = R.y + rint(0, R.h - ah);
     const tiles = new Set();
     for (let y = ay; y < ay + ah; y++) for (let x = ax; x < ax + aw; x++) tiles.add(idx(x, y));
-    // 상인은 진열대 바로 옆
+    // 상인은 진열대 바로 옆. 방 입구(통로와 맞닿은 칸) 앞은 피한다 (길을 막아 갇히지 않게)
+    const inRoom = (x, y) => x >= R.x && x < R.x + R.w && y >= R.y && y < R.y + R.h;
+    const atDoor = (x, y) => DIRS.some(([dx, dy]) => !inRoom(x + dx, y + dy) && inb(x + dx, y + dy) && floorAt(x + dx, y + dy));
     let keeperPos = null;
     for (let y = ay - 1; y <= ay + ah && !keeperPos; y++) for (let x = ax - 1; x <= ax + aw; x++) {
-      if (x >= R.x && x < R.x + R.w && y >= R.y && y < R.y + R.h && !tiles.has(idx(x, y))) { keeperPos = { x, y }; break; }
+      if (inRoom(x, y) && !tiles.has(idx(x, y)) && !atDoor(x, y)) { keeperPos = { x, y }; break; }
     }
     if (!keeperPos) return;
     D.shop = { tiles, room: ri };
@@ -1503,8 +1511,13 @@ const Dungeon = (() => {
     UI.open({
       title: '켈리몬 상점',
       html: `<p>${portraitImg(KECLEON, 'portrait sm')} 어서 오세요! 켈리몬 상점입니다.</p><p class="dim">진열된 물건 위에 올라서면 살 수 있어요. 물건도 사들이고 있답니다.</p>`,
-      choices: [{ label: '물건을 판다', fn: sellMenu }, { label: '그만둔다', fn: () => {} }],
+      choices: [{ label: '물건을 판다', fn: sellMenu }, { label: '자리를 바꿔 지나간다', fn: swapKeeper }, { label: '그만둔다', fn: () => {} }],
     });
+  }
+  // 켈리몬과 자리를 바꾼다 (좁은 곳에서 길을 막고 있을 때)
+  function swapKeeper() {
+    const k = D.mons.find(m => m.shopkeeper); if (!k) return;
+    k.letPass = true; act({ t: 'move', dir: P().dir }); k.letPass = false;   // 방금 말을 건 방향으로 한 칸 (켈리몬과 자리를 바꾼다)
   }
   function sellMenu() {
     if (!run.bag.length) { UI.alert('켈리몬 상점', '<p>팔 물건이 없다.</p>'); return; }

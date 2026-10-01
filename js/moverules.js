@@ -6,6 +6,13 @@ const PROJ_RANGE = 5;       // 원거리 기술 사거리 (직선 칸 수)
 const MOVE_RULES = {};
 function rule(ids, r) { for (const id of ids) MOVE_RULES[id] = { ...(MOVE_RULES[id] || {}), ...r }; }
 
+// 보스가 회복 기술(날개쉬기·HP회복·알낳기·광합성 등)을 쓰면 최대 HP의 BOSS_HEAL_MAX%까지만 (보스는 HP가 많아서)
+const BOSS_HEAL_MAX = 20;
+// 날씨에 따라 회복량이 바뀌는 기술 (원작): 아침햇살·광합성·달빛은 쾌청 2/3, 다른 날씨(비·모래바람·설경·안개) 1/4 / 모래모으기는 모래바람 2/3
+const WEATHER_HEAL_MUL = 4 / 3, WEATHER_HEAL_LOW = 0.5;
+rule([234, 235, 236], { sunHeal: true, text: '쾌청이면 회복량 4/3배 (최대 HP의 2/3), 다른 날씨(비·모래바람·설경·안개)면 절반 (1/4).' });
+rule([659], { sandHeal: true, text: '모래바람이면 회복량 4/3배 (최대 HP의 2/3).' });
+
 // 첫 공격 전용: 그 적에게 하는 첫 공격일 때만 성공
 rule([252, 660], { first: true, text: '그 적에게 하는 첫 공격일 때만 성공한다.' });
 // 기습: 상대가 잠듦·얼음 상태이거나 나를 알아채지 못했으면 실패

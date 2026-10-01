@@ -207,7 +207,7 @@ const Online = (() => {
   // 문서 이름이 올린 시각으로 시작해서, 이름순으로 읽으면 오래된 요청부터 나온다 (추가 색인 없이)
   const openKey = () => GAME_VERSION + '|open';   // 서버 규칙이 확인하는 값 (게시판은 버전과 상관없이 모든 열린 요청을 보여준다)
   const BOARD_SIZE = 10;               // 게시판에 보이는 요청 수 (가장 오래 기다린 것부터)
-  const HOLD_MS = 2 * 3600 * 1000;     // 누가 구조하러 가면 이 시간 동안 다른 사람에게는 안 보인다
+  const HOLD_MS = SOS_HOLD_MS;     // 누가 구조하러 가면 이 시간 동안 다른 사람에게는 안 보인다 (js/defs.js)
   const stamp = t => String(t).padStart(14, '0');
   const idOf = docId => +String(docId).split('_').pop();   // 문서 이름 → 요청 번호 (SOS 코드의 번호)
   async function postSOS(s) {

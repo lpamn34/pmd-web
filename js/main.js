@@ -427,6 +427,12 @@ const Game = (() => {
         if (d && d.status === 'rescued' && rs) {
           const known = hasKey(DATA.species, rs.sp);
           await receiveAOK({ id: s.id, sp: known ? +rs.sp : s.sp, lv: clamp(Math.floor(+rs.lv) || 1, 1, MAX_LEVEL), sh: known && rs.shiny ? 1 : 0 }, Online.cleanName(rs.name));
+        } else if (d && d.status === 'open') {
+          // 다른 탐험대가 구조하러 갔는지 (맡은 지 2시간이 지나면 다시 게시판으로)
+          const at = d.takenBy && d.takenAt && d.takenAt.toMillis ? d.takenAt.toMillis() : 0;
+          const taken = at && at > Date.now() - SOS_HOLD_MS ? at : null;
+          if (taken && !s.takenAt) UI.toast('🏃 다른 탐험대가 구조하러 출발했어요!');
+          if ((s.takenAt || null) !== taken) { s.takenAt = taken; persist(); }
         } else if (!d) {   // 요청이 서버에서 사라짐: 게시판으로는 더 기다릴 수 없다 (코드로 구조받거나 포기)
           s.online = false; persist();
           UI.alert('🆘 구조 요청', '<p>구조 게시판에서 내 구조 요청을 찾을 수 없어요. 임무 탭에서 SOS 코드를 친구에게 보내거나, 포기하고 돌아갈 수 있어요.</p>');
@@ -1721,7 +1727,9 @@ const Game = (() => {
       h += `<div class="row sos-row">${portraitImg(s.sp, 'portrait sm', s.revived ? 'Happy' : 'Pain', s.shiny)}<div class="grow">
         ${s.revived ? `<b>구조되었습니다!</b> ${esc(dg.n)} ${s.floor}F에서 이어서 탐험할 수 있어요.` : `<b>구조를 기다리는 중</b> — ${esc(dg.n)} ${s.floor}F에서 쓰러진 ${esc(spName(s.sp))} Lv${s.lv}`}
         <div class="dim">가방 ${s.snap.bag.length}칸${s.snap.held ? ` · 지닌 물건 ${esc(ITEMS[s.snap.held].n)}` : ''}이 함께 기다리고 있습니다.</div>
-        ${s.online && !s.revived ? '<div class="dim">📋 구조 게시판에 올라가 있어요. 누군가 구조하면 자동으로 알려 드려요.</div>' : ''}</div>
+        ${s.online && !s.revived ? (s.takenAt && s.takenAt > Date.now() - SOS_HOLD_MS
+          ? `<div class="ok">🏃 다른 탐험대가 구조하러 출발했어요! (${Math.max(1, Math.round((Date.now() - s.takenAt) / 60000))}분 전) <span class="dim">2시간 안에 구조하지 못하면 다시 게시판에 올라가요.</span></div>`
+          : '<div class="dim">📋 구조 게시판에 올라가 있어요. 누군가 구조하러 가면 여기에 표시되고, 구조하면 자동으로 알려 드려요.</div>') : ''}</div>
         ${s.revived ? '<button class="btn sm" data-act="sos-resume">이어서 탐험</button>' : '<button class="btn sm ghost" data-act="sos-show">SOS 코드</button> <button class="btn sm ghost danger" data-act="sos-giveup">포기</button>'}</div>`;
     }
     if (Online.enabled()) h += Online.loggedIn()

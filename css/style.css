@@ -448,3 +448,4 @@ i.clear.me { background: #2b6cb0; margin-left: 4px; }
 .pk .fav:hover { color: #ffe680; }
 .pk-favonly { display: flex; align-items: center; gap: 4px; font-size: 13px; white-space: nowrap; cursor: pointer; }
 .picker-bar .pk-favonly input { flex: none; min-width: 0; width: auto; margin: 0; padding: 0; }
+.sos-row .ok { color: #8fe39b; }
