@@ -547,6 +547,7 @@ const Game = (() => {
 
   // ───────────────────────── 마을 ─────────────────────────
   function enterTown() {
+    applyPad();
     show('town-screen');
     checkUpdate();
     Sound.town();
@@ -1093,6 +1094,7 @@ const Game = (() => {
       <h3>설정</h3>
       <label class="chk"><input type="checkbox" data-set="fast" ${s.fast ? 'checked' : ''}> 빠른 연출</label>
       <label class="chk"><input type="checkbox" data-set="autoDescend" ${s.autoDescend ? 'checked' : ''}> 자동 탐색이 계단에 도착하면 바로 내려가기</label>
+      <label class="chk"><input type="checkbox" data-set="dpad" ${s.dpad ? 'checked' : ''}> 던전에서 방향 버튼 항상 표시 <span class="dim">(휴대폰에서 방향 버튼이 안 보이면 켜세요)</span></label>
       <div class="sound-set">
         <label class="chk"><input type="checkbox" data-set="sfx" ${s.sfx !== false ? 'checked' : ''}> 효과음</label>
         <input type="range" min="0" max="100" step="5" data-setnum="sfxVol" value="${s.sfxVol ?? 60}" title="효과음 음량">
@@ -1915,7 +1917,11 @@ const Game = (() => {
     });
   }
 
-  function setSetting(k, v) { save.settings[k] = v; persist(); Sound.refresh(); }
+  function setSetting(k, v) { save.settings[k] = v; persist(); Sound.refresh(); applyPad(); }
+  // 휴대폰 조작: 터치가 되는 기기면 방향 버튼을 보인다. 펜·마우스가 함께 있는 기기는 브라우저가 터치 기기로 알려주지 않기도 해서 넓게 본다
+  // (설정에서 '방향 버튼 항상 표시'를 켜면 어떤 기기에서든 보인다)
+  const touchDevice = () => (navigator.maxTouchPoints || 0) > 0 || 'ontouchstart' in window || matchMedia('(any-pointer: coarse)').matches;
+  function applyPad() { document.body.classList.toggle('touch', touchDevice() || !!save?.settings?.dpad); }
 
   // 도감용: 클리어 기록이 있는 포켓몬의 메달 (기록이 없으면 빈 값)
   const hasClears = sp => Object.keys(clearsOf(sp)).length > 0;

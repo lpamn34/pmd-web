@@ -381,6 +381,9 @@ button, #view, #minimap { touch-action: manipulation; }
   #actions button { padding: 9px 1px; font-size: 12px; }
   .mv { min-height: 30px; }
 }
+/* 터치가 되는 기기 (펜·마우스가 함께 있어 위 조건에 안 걸리는 폰·태블릿 포함) 또는 설정에서 켠 경우: js/main.js applyPad */
+body.touch #dpad { display: grid; }
+body.touch #actions kbd { display: none; }
 @media (max-width: 800px) {
   #dungeon-screen { height: 100dvh; }
   #town-tabs { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; -webkit-overflow-scrolling: touch; }
