@@ -139,10 +139,10 @@ const Game = (() => {
   const syncMeta = () => { try { return JSON.parse(localStorage.getItem(SYNC_KEY) || 'null'); } catch (e) { return null; } };
   const setSyncMeta = m => { try { if (m) localStorage.setItem(SYNC_KEY, JSON.stringify(m)); else localStorage.removeItem(SYNC_KEY); } catch (e) { /* 무시 */ } };
   // 클라우드 저장 (다른 기기에서 이어하기용. 브라우저 세이브는 매번 바로 저장된다)
-  //  마을: 바뀐 게 있으면 20분에 한 번까지 / 던전 안: 올리지 않는다 (층마다 바뀌어서)
+  //  마을: 바뀐 게 있으면 30분에 한 번까지 / 던전 안: 올리지 않는다 (층마다 바뀌어서)
   //  던전을 마치고 마을에 돌아올 때, 창을 닫거나 다른 탭으로 갈 때는 바로 올린다 (던전 도중이어도)
   //  서버 규칙은 20초에 한 번까지만 받아 준다. 탭을 자주 오가도 FLUSH_GAP 안에는 다시 올리지 않는다
-  const UPLOAD_GAP = 20 * 60 * 1000, FLUSH_GAP = 2 * 60 * 1000;   // v0.47: 무료 한도(쓰기)를 아끼려고 10분 → 20분, 창을 숨길 때 30초 → 2분
+  const UPLOAD_GAP = 30 * 60 * 1000, FLUSH_GAP = 2 * 60 * 1000;   // 무료 한도(쓰기)를 아끼려고 10분 → 20분(v0.47) → 30분(v0.51), 창을 숨길 때 30초 → 2분
   let bound = false, upTimer = null, lastUp = 0, upPending = false, syncing = null, cloudErr = null, onlineBoot = null;
   const inDungeon = () => typeof Dungeon !== 'undefined' && !!Dungeon.run;
   function scheduleUpload() {
@@ -175,7 +175,7 @@ const Game = (() => {
   window.addEventListener('pagehide', flushUpload);
 
   // ── 접속자 수 (로그인한 탐험대 기준) ──
-  //  "접속 중" 표시는 15분마다 남기고 (던전 안에서도), 수는 마을 화면을 보고 있을 때만 15분마다 센다. 창을 숨기면 쉰다
+  //  "접속 중" 표시는 30분마다 남기고 (던전 안에서도), 수는 마을 화면을 보고 있을 때만 30분마다 센다. 창을 숨기면 쉰다
   let onlineN = null, presenceAt = 0, countAt = 0, presenceTimer = null;
   const PRESENCE_MS = () => Online.PRESENCE_MIN * 60 * 1000 - 5000;
   const inTown = () => document.getElementById('town-screen')?.classList.contains('active');
@@ -345,7 +345,7 @@ const Game = (() => {
         <p>클라우드 세이브: ${m && m.uid === Online.uid() ? `${esc(new Date(m.at).toLocaleString())}에 저장한 세이브와 맞춰져 있어요.` : '아직 올리지 않았어요.'}</p>
         ${Online.nameTaken() ? '<p class="warn">이 닉네임은 다른 사람이 먼저 쓰고 있어요. 구조 게시판을 쓰려면 닉네임을 바꿔 주세요.</p>' : ''}
         ${cloudErr ? `<p class="warn">마지막 오류: ${esc(cloudErr)}</p>` : ''}
-        <p class="dim">진행 상황은 이 브라우저에는 바로 저장됩니다. 클라우드에는 던전을 마치고 돌아올 때, 창을 닫거나 다른 탭으로 갈 때, 마을에서는 20분마다 자동으로 올라갑니다.</p>`,
+        <p class="dim">진행 상황은 이 브라우저에는 바로 저장됩니다. 클라우드에는 던전을 마치고 돌아올 때, 창을 닫거나 다른 탭으로 갈 때, 마을에서는 30분마다 자동으로 올라갑니다.</p>`,
       choices: [
         { label: '☁ 지금 클라우드에 저장', fn: async () => {
           if (Date.now() - lastUp < FLUSH_GAP) { UI.toast('방금 저장했어요. 잠시 뒤에 다시 눌러 주세요.'); return; }

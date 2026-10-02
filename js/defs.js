@@ -3,7 +3,7 @@
 
 // 게임 버전: 업데이트할 때 올리고, index.html의 ?v= 숫자도 같이 올린다
 // (친구와 구조 코드·오늘의 도전을 주고받으려면 버전이 같아야 한다)
-const GAME_VERSION = '0.50';
+const GAME_VERSION = '0.51';
 // 버전 비교: '0.25' > '0.9' 처럼 숫자로 비교한다
 function cmpVer(a, b) {
   const x = String(a).split('.').map(Number), y = String(b).split('.').map(Number);
@@ -12,6 +12,7 @@ function cmpVer(a, b) {
 }
 const GAME_DATE = '2026-10-01';
 const VERSION_NOTES = [
+  ['0.51', ['방향만 바꾸기(Shift)를 누른 채로 방향 키 두 개를 누르면 대각선으로 돌아봄', '바람: 한 층에 머물 수 있는 시간 800턴 → 1000턴 (경고는 700·850·950턴)', '서버 무료 한도 아끼기: 마을 자동 클라우드 저장 20분 → 30분, 접속 표시 15분 → 30분 (접속자 수는 최근 약 1시간 기준)']],
   ['0.50', ['동료에게도 효과: 생명의물방울·멀리짖기·아로마미스트·코칭은 주변(3칸 안) 같은 편 모두에게, 치유의마음은 옆 칸 같은 편의 상태이상을 턴마다 30% 확률로 고침',
     '동료의 날씨 특성(잔비·가뭄 등)과 층 시작 특성(다운로드 등)도 층에 들어설 때 발동 (날씨 특성이 여럿이면 리더 → 동료 순서로 앞쪽 우선)',
     '진화하면 숙련도가 사라지던 문제 (진화 전 모습에 쌓인 숙련도를 진화한 모습으로 옮김)',
@@ -519,7 +520,7 @@ function evoFamily(sp) {
 // 이로치: 적이 이 확률로 색이 다른 모습으로 등장 (스프라이트가 있는 경우)
 const SHINY_CHANCE = 1 / 80;
 // 바람: 한 층에 오래 머물면 경고 후 던전 밖으로 날려간다 (쓰러진 것과 같은 패널티)
-const WIND = { warn: [500, 650, 750], limit: 800 };
+const WIND = { warn: [700, 850, 950], limit: 1000 };
 // 보스: 일반 던전은 마지막 층, 로그라이크는 10층마다와 마지막 층
 const BOSSES = { forest: 12, beach: 99, crystal: 302, plains: 807, swamp: 89, volcano: 244, desert: 330, frost: 144, storm: 245,
   dark: 491, mine: 379, sky: 384, canyon: 445, summit: 483, trial: 68, twilight: 487, mystery: 493, eternal: 1157 };

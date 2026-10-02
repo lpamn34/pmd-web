@@ -2567,7 +2567,14 @@ const Dungeon = (() => {
     if (D.auto) { stopAuto(); e.preventDefault(); return; }
     const a = keyAct(e.code);
     if (a === 'turn') { turnHeld.add(e.code); e.preventDefault(); return; }
-    if (['up', 'down', 'left', 'right'].includes(a) && !turnHeld.size) {
+    // 방향만 바꾸기 키를 누른 채로: 눌려 있는 방향 키를 합쳐 바로 돌아본다 (두 키면 대각선, 돌아보기는 턴을 쓰지 않는다)
+    if (['up', 'down', 'left', 'right'].includes(a) && turnHeld.size) {
+      e.preventDefault();
+      heldMove.set(e.code, MOVE_ACTION_DIR[a]);
+      sendKey({ dir: heldDir() ?? MOVE_ACTION_DIR[a], turn: true });
+      return;
+    }
+    if (['up', 'down', 'left', 'right'].includes(a)) {
       e.preventDefault();
       heldMove.set(e.code, MOVE_ACTION_DIR[a]);
       if (heldMove.size >= 2 || e.repeat) { clearTimeout(moveTimer); moveTimer = null; sendKey({ dir: heldDir() ?? MOVE_ACTION_DIR[a] }); return; }
