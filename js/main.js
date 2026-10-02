@@ -413,6 +413,24 @@ const Game = (() => {
     });
   }
 
+  // 게시판에 올린 내 구조 요청을 실시간으로 지켜본다: 구조되거나 누가 구조하러 가면 바로 확인 (던전 안이면 마을에 돌아왔을 때)
+  let sosWatch = null, sosWatchId = null, sosPending = false;
+  function watchMySOS() {
+    const s = save && save.sos, id = s && s.online && !s.revived && Online.loggedIn() ? (s.docId || s.id) : null;
+    if (id === sosWatchId) return;
+    if (sosWatch) { sosWatch(); sosWatch = null; }
+    sosWatchId = id;
+    if (!id) return;
+    let first = true;
+    sosWatch = Online.watchSOS(id, d => {
+      if (first) { first = false; return; }   // 처음 읽은 값은 checkOnline이 이미 본다
+      const s2 = save && save.sos;
+      const changed = !d || d.status !== 'open' || (d.takenBy && !s2?.takenAt) || (!d.takenBy && s2?.takenAt);
+      if (!changed) return;
+      if (inTown()) checkOnline(true); else sosPending = true;
+    });
+  }
+
   // 구조 게시판 확인: 내 요청이 구조됐는지, 내가 구조한 친구가 감사 편지를 보냈는지 (자주 읽지 않게 1분 30초 간격)
   let lastCheck = 0, checking = false;
   let sosRelinked = false;
@@ -663,6 +681,8 @@ const Game = (() => {
   let ccOpen = null;   // 휴대폰에서 캐릭터 카드를 펼쳐 두었는지
   function renderTown() {
     if (onlineBoot) presenceTick();   // 마을에 오면 접속자 수가 오래됐을 때만 다시 센다
+    if (bound) watchMySOS();
+    if (sosPending) { sosPending = false; checkOnline(true); }
     setTimeout(checkSOSExpiry, 0);
     const sp = save.current, ch = save.roster[sp], d = DATA.species[sp];
     const st = applyBoost(calcStats(sp, ch.lv, 31), ch.boost);

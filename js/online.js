@@ -259,6 +259,10 @@ const Online = (() => {
     const d = q.docs.find(x => idOf(x.id) === +id);
     return d ? d.id : null;
   }
+  // 내 구조 요청 지켜보기: 문서가 바뀔 때만 알려 준다 (처음 1번 + 바뀔 때마다 읽기 1번. 1분 30초마다 확인하는 것보다 싸고 바로 알 수 있다)
+  function watchSOS(docId, cb) {
+    return db.collection('sos').doc(String(docId)).onSnapshot(d => cb(d.exists ? d.data() : null), () => {});
+  }
   // SOS 코드의 요청 번호로 게시판 문서 찾기 (v0.57부터 올린 요청만 sid가 있다). 없으면 null
   async function findSOSById(sid) {
     const q = await db.collection('sos').where('sid', '==', +sid).limit(1).get();
@@ -334,6 +338,6 @@ const Online = (() => {
     enabled, init, onChange, loggedIn, name, userId, why, nameTaken: () => !!(profile && profile.nameTaken),
     signUp, signIn, signOut, setName, deleteAccount, cleanName, uid: () => user && user.uid,
     fetchCloud, pushCloud, clearCloud,
-    postSOS, listSOS, takeSOS, releaseSOS, getSOS, findMySOS, findSOSById, claimRescue, thankSOS, deleteSOS, idOf,
+    postSOS, listSOS, takeSOS, releaseSOS, getSOS, findMySOS, findSOSById, watchSOS, claimRescue, thankSOS, deleteSOS, idOf,
   };
 })();
