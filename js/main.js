@@ -1876,6 +1876,16 @@ const Game = (() => {
     // 로그인했으면 서버에서도 확인: 같은 계정이 다른 기기·세이브에서 올린 요청
     if (!docId && Online.loggedIn()) { try { if (await Online.findMySOS(d.id)) { selfMsg(); return; } } catch (e) { /* 확인 실패: 그대로 진행 */ } }
     if ((save.rescued || {})[d.id] || save.missions.accepted.some(m => m.sosId === d.id)) { UI.alert('구조 불가', '<p>이미 받았거나 구조를 마친 요청입니다.</p>'); return; }
+    // 코드로 들어왔어도 게시판에 올라간 요청이면 서버의 상태를 본다: 이미 구조됐거나 끝난 요청은 받지 않고, 기다리는 중이면 게시판 구조로 받는다
+    if (!docId && Online.loggedIn()) {
+      let doc = null;
+      try { doc = await Online.findSOSById(d.id); } catch (e) { /* 확인 실패: 코드 구조로 그대로 진행 */ }
+      if (doc) {
+        if (doc.status !== 'open') { UI.alert('구조 불가', '<p>이미 다른 탐험대가 구조한 요청이에요.</p>'); return; }
+        if (doc.created && doc.created < Date.now() - SOS_EXPIRE_MS) { UI.alert('구조 불가', '<p>48시간이 지나 끝난 구조 요청이에요.</p>'); return; }
+        docId = doc.docId; from = Online.cleanName(doc.name);
+      }
+    }
     if (!unlocked(dg)) { UI.alert('구조 불가', `<p>${esc(jo(dg.n, '은'))} 아직 열리지 않은 던전이라 구조하러 갈 수 없어요.</p><p class="dim">${esc(jo(dungeonById(dg.req).n, '을'))} 클리어하면 열립니다.</p>`); return; }
     if (save.missions.accepted.length >= 4) { UI.alert('구조 불가', '<p>진행 중인 임무가 4개입니다. 하나를 끝내거나 취소한 뒤 받아 주세요.</p>'); return; }
     if (docId && save.missions.accepted.filter(m => m.online).length >= ONLINE_RESCUE_MAX) { UI.alert('구조 불가', `<p>게시판 구조 임무는 한 번에 ${ONLINE_RESCUE_MAX}개까지 받을 수 있어요. 먼저 받은 구조를 끝내 주세요.</p>`); return; }

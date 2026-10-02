@@ -214,7 +214,7 @@ const Online = (() => {
     const created = Date.now(), docId = `${stamp(created)}_${s.id}`;
     await db.collection('sos').doc(docId).set({
       owner: user.uid, name: name(), dungeon: s.dungeon, floor: s.floor, sp: s.sp, lv: s.lv, shiny: !!s.shiny,
-      ver: GAME_VERSION, key: openKey(), status: 'open', created,
+      ver: GAME_VERSION, key: openKey(), status: 'open', created, sid: s.id,
     });
     return docId;
   }
@@ -258,6 +258,11 @@ const Online = (() => {
     const q = await db.collection('sos').where('owner', '==', user.uid).limit(20).get();
     const d = q.docs.find(x => idOf(x.id) === +id);
     return d ? d.id : null;
+  }
+  // SOS 코드의 요청 번호로 게시판 문서 찾기 (v0.57부터 올린 요청만 sid가 있다). 없으면 null
+  async function findSOSById(sid) {
+    const q = await db.collection('sos').where('sid', '==', +sid).limit(1).get();
+    return q.empty ? null : { docId: q.docs[0].id, ...q.docs[0].data() };
   }
   async function getSOS(id) {
     const d = await db.collection('sos').doc(String(id)).get();
@@ -329,6 +334,6 @@ const Online = (() => {
     enabled, init, onChange, loggedIn, name, userId, why, nameTaken: () => !!(profile && profile.nameTaken),
     signUp, signIn, signOut, setName, deleteAccount, cleanName, uid: () => user && user.uid,
     fetchCloud, pushCloud, clearCloud,
-    postSOS, listSOS, takeSOS, releaseSOS, getSOS, findMySOS, claimRescue, thankSOS, deleteSOS, idOf,
+    postSOS, listSOS, takeSOS, releaseSOS, getSOS, findMySOS, findSOSById, claimRescue, thankSOS, deleteSOS, idOf,
   };
 })();

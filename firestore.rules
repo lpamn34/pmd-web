@@ -72,7 +72,9 @@ service cloud.firestore {
       // 요청 올리기: 본인 이름으로, 열린 상태로만
       // 값의 형식도 확인한다: 다른 사람 화면에 그대로 보이는 값이라 조작된 값(HTML 등)을 받지 않는다
       allow create: if signedIn()
-        && request.resource.data.keys().hasOnly(['owner', 'name', 'dungeon', 'floor', 'sp', 'lv', 'shiny', 'ver', 'key', 'status', 'created'])
+        && request.resource.data.keys().hasOnly(['owner', 'name', 'dungeon', 'floor', 'sp', 'lv', 'shiny', 'ver', 'key', 'status', 'created', 'sid'])
+        // sid: 요청 번호 (SOS 코드로 들어온 구조가 이 요청의 상태를 찾을 수 있게). 문서 이름의 번호와 같아야 한다
+        && (!('sid' in request.resource.data) || (request.resource.data.sid is int && request.resource.data.sid == int(id.split('_')[1])))
         && request.resource.data.owner == request.auth.uid
         && request.resource.data.status == 'open'
         && ownsName(request.resource.data.name)
