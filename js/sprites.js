@@ -83,6 +83,9 @@ const Sprites = (() => {
     ctx.globalAlpha = 1;
   }
 
+  // 그 모습의 그림을 다 받았나 (받는 중이면 다른 그림으로 대신 그리려고)
+  const ready = (id, shiny) => !!getAnim(load(id, shiny), 'Idle');
+
   function animLength(id, name, shiny) {
     const s = cache[shiny && DATA.species[id]?.sh ? id + 's' : id]; if (!s) return 300;
     const a = getAnim(s, name); return a ? a.total * 1000 / 60 : 300;
@@ -101,5 +104,5 @@ const Sprites = (() => {
     const e = have.includes(EMOTIONS[emotion]) ? emotion : 'Normal';
     return `${SPRITE_BASE}/portrait/${spritePath(id, useShiny)}${e}.png`;
   }
-  return { load, draw, animLength, portrait };
+  return { load, ready, draw, animLength, portrait };
 })();

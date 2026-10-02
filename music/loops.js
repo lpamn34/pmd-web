@@ -58,4 +58,5 @@ window.MUSIC_VOLUME = {
 // 다른 던전의 곡을 같이 쓰기 (던전 → 곡 이름). 그 던전 이름의 파일이 있으면 그 파일이 우선
 window.MUSIC_ALIAS = {
   eternal: 'spiral',   // 무한의 회랑 → Temporal Spire
+  mega: 'meteor',      // 메가 진화의 탑 (전용 곡을 넣으면 그 곡)
 };

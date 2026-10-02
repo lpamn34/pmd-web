@@ -858,7 +858,7 @@ const Game = (() => {
         <h3>나오는 아이템 <span class="dim">마지막 층 기준 확률 · 한 층에 아이템 ${ITEMS_PER_FLOOR[0]}~${ITEMS_PER_FLOOR[1]}개, 돈 2~4무더기 · ${tierNote}</span></h3>
         ${itemHtml}
         ${table.money ? `<p>💰 <b>돈 무더기</b> <span class="dim">${pctT(total * table.money)} · 열매 ${GROUP_CAP.berry * 100}%, 씨앗·구슬·기타 ${GROUP_CAP.misc * 100}%를 넘는 몫은 아이템 대신 돈이 놓인다</span></p>` : ''}
-        ${megaHere.length ? `<p><b>🔮 메가스톤</b> <span class="dim">레벨 ${MEGA_MIN_LV} 이상인 층에서만 · 보스·이로치 ${MEGA_RATE.boss * 100}%, 바닥 아이템·적이 떨어뜨리는 아이템 ${MEGA_RATE.floor * 100}% · 던전 타입에 맞는 ${megaHere.length}종</span>
+        ${megaHere.length ? `<p><b>🔮 메가스톤</b> <span class="dim">레벨 ${MEGA_MIN_LV} 이상인 층에서만 · 보스·이로치 ${+(MEGA_RATE.boss * (dg.megaMul || 1) * 100).toFixed(2)}%, 바닥 아이템·적이 떨어뜨리는 아이템 ${+(MEGA_RATE.floor * (dg.megaMul || 1) * 100).toFixed(2)}%${dg.megaMul ? ` (이 던전은 ${dg.megaMul}배)` : ''} · 던전 타입에 맞는 ${megaHere.length}종</span>
           <details><summary class="dim">눌러서 펼치기</summary><div class="dg-items">${megaHere.map(iid => `<span class="dg-item" data-dexitem="${iid}">${ITEMS[iid].icon} ${esc(ITEMS[iid].n)}</span>`).join('')}</div></details></p>` : ''}
         ${sigHere.length ? `<p><b>전용 도구</b> <span class="dim">주인 포켓몬이 나오는 층에서 드물게 떨어진다 (보스가 주인이면 더 자주)</span><br>${sigHere.map(iid => `<span class="dg-item" data-dexitem="${iid}">${ITEMS[iid].icon} ${esc(ITEMS[iid].n)}</span>`).join(' ')}</p>` : ''}
       </div>`;
@@ -1719,7 +1719,7 @@ const Game = (() => {
 
   function saveRunSnapshot(r) {
     const p = r.p;
-    save.run = { dungeon: r.dungeon, floor: r.floor, mode: r.mode, bag: r.bag, money: r.money, done: r.done, daily: r.daily || null, turns: r.turns || 0, kills: r.kills || 0, carried: r.carried || null,
+    save.run = { dungeon: r.dungeon, floor: r.floor, mode: r.mode, bag: r.bag, money: r.money, done: r.done, daily: r.daily || null, turns: r.turns || 0, kills: r.kills || 0, carried: r.carried || null, stats: r.stats || null,
       p: { sp: p.sp, lv: p.lv, exp: p.exp, hp: p.hp, belly: p.belly, status: p.status, statusT: p.statusT, moves: p.moves.map(m => m.id), pp: p.moves.map(m => m.pp), ability: p.baseAbility ?? p.ability, held: p.held || null, tms: p.tms || [], shiny: !!p.shiny, boost: p.boost || null, form: p.selForm || null } };
     save.run.party = (r.party || []).map(a => ({ sp: a.sp, lv: a.lv, exp: a.exp, hp: a.hp, moves: a.moves.map(m => m.id), pp: a.moves.map(m => m.pp), ability: a.baseAbility ?? a.ability, fainted: !!a.fainted, status: a.status, statusT: a.statusT }));
     saveParty(r);
@@ -1739,7 +1739,7 @@ const Game = (() => {
       a.hp = clamp(x.hp, 1, a.maxhp); a.fainted = !!x.fainted; a.status = x.status; a.statusT = x.statusT;
       return a;
     });
-    const run = { dungeon: s.dungeon, floor: s.floor, mode: s.mode, p, bag: s.bag, money: s.money, done: s.done, daily: s.daily || null, turns: s.turns || 0, kills: s.kills || 0, party, carried: s.carried || null };
+    const run = { dungeon: s.dungeon, floor: s.floor, mode: s.mode, p, bag: s.bag, money: s.money, done: s.done, daily: s.daily || null, turns: s.turns || 0, kills: s.kills || 0, party, carried: s.carried || null, stats: s.stats || null };
     show('dungeon-screen');
     Dungeon.enter(run);
   }
@@ -1799,7 +1799,7 @@ const Game = (() => {
     const p = r.p;
     const s = {
       id: Codes.newId(), dungeon: r.dungeon, floor: r.floor, sp: p.sp, lv: p.lv, shiny: !!p.shiny, day: save.day, created: Date.now(),
-      snap: { bag: r.bag, money: r.money, done: r.done, held: p.held || null },
+      snap: { bag: r.bag, money: r.money, done: r.done, held: p.held || null, stats: r.stats || null },
     };
     save.sos = s;
     save.mySOS = [...(save.mySOS || []), s.id].slice(-50);   // 내가 보낸 구조 요청 (포기한 뒤에도 내 코드로 구조하러 가지 못하게)
@@ -1958,7 +1958,7 @@ const Game = (() => {
     if (save.bag.length) { save.bag.forEach(b => storeAdd(b.id, b.n)); UI.toast('지금 가방의 아이템은 창고에 넣었습니다.'); save.bag = []; }
     save.current = s.sp;
     // 동료도 다시 함께 (구조되어 모두 기운을 되찾았다)
-    const run = { dungeon: s.dungeon, floor: s.floor, mode: 'normal', p, bag: s.snap.bag, money: s.snap.money, done: s.snap.done || [], party: partyList().map(makePartner) };
+    const run = { dungeon: s.dungeon, floor: s.floor, mode: 'normal', p, bag: s.snap.bag, money: s.snap.money, done: s.snap.done || [], party: partyList().map(makePartner), stats: s.snap.stats || null };
     save.sos = null; persist();
     UI.closeAll();
     show('dungeon-screen');
@@ -2127,10 +2127,25 @@ const Game = (() => {
     renderTown();
     const title = { clear: '던전 클리어!', escape: '무사히 돌아왔다', faint: '눈앞이 캄캄해졌다...', wind: '바람에 날려 쫓겨났다...', quit: '탐험을 포기했다' }[outcome] || '귀환';
     const face = { clear: 'Joyous', escape: 'Happy', faint: 'Crying', wind: 'Sad' }[outcome] || 'Normal';
-    const res = UI.alert(title, `<div class="center">${portraitImg(p.sp, 'portrait big', face, save.roster[p.sp]?.shiny)}</div><p>${esc(dg.n)} ${reached}F${outcome === 'clear' ? ' 완주' : ''}</p><ul>${lines.map(l => `<li>${l}</li>`).join('')}</ul>`);
+    const res = UI.alert(title, `<div class="center">${portraitImg(p.sp, 'portrait big', face, save.roster[p.sp]?.shiny)}</div><p>${esc(dg.n)} ${reached}F${outcome === 'clear' ? ' 완주' : ''}</p><ul>${lines.map(l => `<li>${l}</li>`).join('')}</ul>${runStatsHtml(r)}`);
     if (Object.values(save.rescued || {}).some(x => x.online && !x.claimed && !x.thanked)) res.then(() => checkOnline(true));
     // 친구 구조 완료 → A-OK 코드 보여주기
     aoks.reduce((pr, a) => pr.then(() => new Promise(done => codeBox('✅ A-OK 코드', `<p>친구의 <b>${esc(jo(spName(a.m.client), '을'))}</b> 구조했다! 이 코드를 친구에게 보내면 친구가 되살아납니다.</p>`, a.code, '확인', done))), res);
+  }
+
+  // 탐험대 기록: 포켓몬마다 준 데미지·받은 데미지 막대 그래프 (쓰러뜨린 수·회복량)
+  function runStatsHtml(r) {
+    const st = Object.entries(r.stats || {}).map(([sp, v]) => ({ sp: +sp, ...v })).filter(v => v.dealt || v.taken || v.kills);
+    if (!st.length) return '';
+    st.sort((a, b) => b.leader - a.leader || b.dealt - a.dealt);
+    const max = Math.max(1, ...st.map(v => Math.max(v.dealt, v.taken)));
+    const total = st.reduce((s, v) => s + v.dealt, 0) || 1;
+    const bar = (n, cls) => `<span class="rs-bar"><i class="${cls}" style="width:${(n / max * 100).toFixed(1)}%"></i></span><b>${n.toLocaleString()}</b>`;
+    return `<h3>📊 탐험대 기록</h3><div class="rs">${st.map(v => `<div class="rs-row">
+      ${portraitImg(v.sp, 'portrait sm', 'Normal', save.roster[v.sp]?.shiny)}
+      <div class="rs-main"><div class="rs-name">${v.leader ? '👑 ' : ''}${esc(spName(v.sp))} <span class="dim">· 쓰러뜨림 ${v.kills} · 딜 비중 ${Math.round(v.dealt / total * 100)}%${v.heal ? ` · 회복 ${v.heal.toLocaleString()}` : ''}</span></div>
+        <div class="rs-line"><span class="rs-k">준 피해</span>${bar(v.dealt, 'dealt')}</div>
+        <div class="rs-line"><span class="rs-k">받은 피해</span>${bar(v.taken, 'taken')}</div></div></div>`).join('')}</div>`;
   }
 
   // 던전 안에서 받은 임무 보기

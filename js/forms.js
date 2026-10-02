@@ -34,7 +34,7 @@ const MEGA_RATE = { boss: 0.01, shiny: 0.01, rescue: 0.001, floor: 0.001 };   //
 const MEGA_MIN_LV = 35;
 const megaPool = dg => MEGA_STONES.filter(id => typeFits(dg, id));
 function rollMega(kind, lvl, dg) {
-  if (lvl < MEGA_MIN_LV || Math.random() >= MEGA_RATE[kind]) return null;
+  if (lvl < MEGA_MIN_LV || Math.random() >= MEGA_RATE[kind] * ((dg && dg.megaMul) || 1)) return null;
   const pool = megaPool(dg);
   return pool.length ? pick(pool) : null;
 }
@@ -149,3 +149,7 @@ const BATTLE_FORM_TEXT = {
   718: '지가르데는 HP가 절반 이하가 되면 그 층 동안 퍼펙트폼이 된다.',
   1024: '테라파고스는 던전에서 늘 테라스탈폼이다.',
 };
+
+// 메가진화하는 포켓몬 (원래 모습) / 그 포켓몬의 메가스톤 (리자몽·뮤츠처럼 둘이면 무작위)
+const megaBases = () => [...new Set(MEGA_STONES.map(id => DATA.species[ITEMS[id].formTo].f[0]))];
+const megaStoneOf = sp => { const l = MEGA_STONES.filter(id => DATA.species[ITEMS[id].formTo].f[0] === sp); return l.length ? pick(l) : null; };

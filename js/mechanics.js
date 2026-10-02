@@ -159,7 +159,8 @@ function statMul(c, key) {
     if (A.marvel && c.status) m *= 1.5;
     if (A.defMul) m *= A.defMul;
   }
-  if (A.bestStatMul && key === bestStatKey(c)) m *= A.bestStatMul;
+  const bm = abVal(c, 'bestStatMul');   // 쿼크차지 / 고대활성(쾌청)
+  if (bm && key === bestStatKey(c)) m *= bm;
   const H = heldOf(c);
   if (H[key + 'Mul']) m *= H[key + 'Mul'];
   if (H.eviolite && (key === 'def' || key === 'spd') && DATA.species[c.sp].v.length) m *= 1.5;

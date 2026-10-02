@@ -463,3 +463,16 @@ i.clear.me { background: #2b6cb0; margin-left: 4px; }
 .pk i.dex-own { left: 4px; right: auto; font-size: 11px; }
 /* 던전 메뉴 탭 */
 .dm-tabs { margin-bottom: 8px; }
+
+/* 탐험대 기록 (던전 결과) */
+.rs { display: flex; flex-direction: column; gap: 8px; margin-top: 4px; }
+.rs-row { display: flex; gap: 8px; align-items: center; }
+.rs-main { flex: 1; min-width: 0; }
+.rs-name { font-size: 13px; margin-bottom: 2px; }
+.rs-line { display: flex; align-items: center; gap: 6px; font-size: 12px; }
+.rs-k { width: 60px; color: var(--dim); flex-shrink: 0; white-space: nowrap; }
+.rs-bar { flex: 1; height: 9px; background: #ffffff14; border-radius: 5px; overflow: hidden; }
+.rs-bar i { display: block; height: 100%; border-radius: 5px; }
+.rs-bar i.dealt { background: #f5a442; }
+.rs-bar i.taken { background: #e05a5a; }
+.rs-line b { min-width: 48px; text-align: right; font-variant-numeric: tabular-nums; }

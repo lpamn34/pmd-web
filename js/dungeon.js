@@ -131,6 +131,8 @@ const Dungeon = (() => {
     const fams = concepts()[dg.id] || [];
     const concept = fams.map(f => f.reduce((best, id) => (Math.abs(bstOf(id) - target) < Math.abs(bstOf(best) - target) ? id : best)))
       .sort((a, b) => Math.abs(bstOf(a) - target) - Math.abs(bstOf(b) - target));
+    // 메가 진화의 탑: 메가진화하는 포켓몬(전설 제외)만
+    if (dg.megaAll) return { lvl, target, concept: [], cand: megaBases().filter(id => hasSprite(id) && !DATA.species[id].lg).map(id => ({ id, s: DATA.species[id], bst: bstOf(id) })) };
     const all = SPECIES_IDS.map(id => ({ id: +id, s: DATA.species[id], bst: bstOf(id) }))
       .filter(o => !o.s.lg && !UB_IDS.has(o.id) && !concept.includes(o.id) && (!dg.types || o.s.t.some(t => dg.types.includes(t))));
     let cand = [];
@@ -181,6 +183,7 @@ const Dungeon = (() => {
     c.shiny = !!DATA.species[sp].sh && Math.random() < SHINY_CHANCE;
     Sprites.load(sp, c.shiny);
     rollEnemyForm(c);
+    if (D.dg && D.dg.megaAll) { const st = megaStoneOf(sp); if (st) c.held = st; }   // 메가 진화의 탑: 메가스톤을 지니고 나와서 바로 메가진화
     applyForecast(c);
     D.mons.push(c);
     updateForm(c);
@@ -222,7 +225,7 @@ const Dungeon = (() => {
     // 특별한 모습이 있는 보스는 원래 모습으로 나타났다가, 등장 알림 뒤에 눈앞에서 바뀐다
     bossForm(b, run.floor === dg.floors);
     setForm(b, null); b.hp = b.maxhp;
-    if (wantedForm(b)) b.introForm = true;
+    if (wantedForm(b)) { b.introForm = true; Sprites.load(wantedForm(b), b.shiny); }   // 바뀔 모습의 그림도 미리 받아 둔다
     b.dir = 0; b.target = { x: p.x, y: p.y };
     D.boss = b;
     for (const dx of [-3, 3]) { const m = spawnEnemy({ x: cx + dx, y: R.y + 4 }); m.dir = 0; }
@@ -324,7 +327,9 @@ const Dungeon = (() => {
     const { pool, lvl } = makePool(dg, run.floor);
     D.pool = pool; D.lvl = lvl;
     D.weather = rollWeather(dg); CUR_WEATHER = D.weather;
-    pool.forEach(Sprites.load);
+    pool.forEach(id => Sprites.load(id));
+    // 탐험대가 바뀔 수 있는 모습(메가진화·폼체인지)의 그림도 미리 받아 둔다
+    for (const c of [run.p, ...(run.party || [])]) if (c && FORMS_OF[c.sp]) for (const f of FORMS_OF[c.sp]) if (!formsOfKind(c.sp, 'select').includes(f) || f === c.selForm) Sprites.load(f, c.shiny);
     // 플레이어
     const p = run.p;
     D.player = p;
@@ -896,6 +901,7 @@ const Dungeon = (() => {
   }
   function heal(c, amt, at) {
     const before = c.hp; c.hp = Math.min(c.maxhp, c.hp + amt);
+    if (party(c) && c.hp > before) runStat(c).heal += c.hp - before;
     if (c.hp > before) { if (c.player) Sound.play('heal', at); popup(c, '+' + (c.hp - before), '#7f7', at); log(`${jo(nm(c), '은')} HP를 ${c.hp - before} 회복했다.`, at); }
   }
   // src: 능력 변화를 일으킨 쪽 (상대가 떨어뜨렸는지 판정)
@@ -955,6 +961,10 @@ const Dungeon = (() => {
       amt = c.hp - 1; log(`${jo(nm(c), '은')} ${jo(ITEMS[c.held].n, '으로')} 버텼다!`, at);
     }
     const wasAboveHalf = c.hp > c.maxhp / 2;
+    // 탐험대 기록: 준 데미지·받은 데미지 (쓰러뜨릴 때 넘친 만큼은 빼고)
+    const real = Math.max(0, Math.min(amt, c.hp));
+    if (src && party(src) && !party(c)) runStat(src).dealt += real;
+    if (party(c)) runStat(c).taken += real;
     c.hp -= amt; c.hurtAt = at;
     if (A.berserk && wasAboveHalf && c.hp > 0 && c.hp <= c.maxhp / 2 && !c.berserkUsed) { c.berserkUsed = true; abLog(c, `${jo(nm(c), '은')} 발끈했다!`, at); statChange(c, 4, 1, at, c); }
     if (c.player && amt >= c.maxhp * 0.2) setFace('Pain', 1200);
@@ -964,7 +974,12 @@ const Dungeon = (() => {
     else if (eff < 1) popup(c, String(amt), '#8ea6c8', at, 'small');
     else popup(c, String(amt), c.player ? '#ff8a8a' : '#fff', at);
     if (c.status === 'frz' && src && amt > 0 && Math.random() < 0.3) { c.status = null; log(`${nm(c)}의 얼음이 녹았다!`, at); }
-    if (c.hp <= 0) { c.hp = 0; faint(c, src, at); }
+    if (c.hp <= 0) { if (src && party(src) && !party(c)) runStat(src).kills++; c.hp = 0; faint(c, src, at); }
+  }
+  // 이번 탐험의 탐험대 기록 (포켓몬마다): run.stats[번호] = { dealt, taken, kills, heal }
+  function runStat(c) {
+    run.stats = run.stats || {};
+    return run.stats[c.sp] = run.stats[c.sp] || { dealt: 0, taken: 0, kills: 0, heal: 0, leader: !!c.player };
   }
   function faint(c, src, at) {
     if (c.player) {
@@ -2291,7 +2306,12 @@ const Dungeon = (() => {
     let alpha = 1;
     if (c.dead) alpha = clamp(1 - (t - c.deadAt) / 350, 0, 1);
     const flash = c.hurtAt && t >= c.hurtAt && t < c.hurtAt + 120;
-    Sprites.draw(ctx, looksOf(c), anim, c.dir, at, loop, cx, cy, alpha, flash, c.shiny);
+    // 새 그림(모습 바꾸기·이로치·메가진화)을 받는 동안은 회색 공 대신: 직전에 그리던 그림 → 같은 모습의 보통 색 → 원래 모습
+    let look = looksOf(c), sh = !!c.shiny;
+    if (Sprites.ready(look, sh)) c.drawnLook = [look, sh];
+    else [look, sh] = (c.drawnLook && Sprites.ready(...c.drawnLook) && c.drawnLook) || (sh && Sprites.ready(look, false) && [look, false])
+      || (look !== c.sp && Sprites.ready(c.sp, sh) && [c.sp, sh]) || [look, sh];
+    Sprites.draw(ctx, look, anim, c.dir, at, loop, cx, cy, alpha, flash, sh);
     if (c.shiny && !c.dead && Math.floor(t / 180 + c.id * 10) % 6 === 0) { ctx.fillStyle = '#fff6a0'; ctx.font = '9px sans-serif'; ctx.textAlign = 'center'; ctx.fillText('✦', cx - 10, cy - 12); }
     if (c.ally && !c.dead) { ctx.fillStyle = '#6cf'; ctx.font = 'bold 9px sans-serif'; ctx.textAlign = 'center'; ctx.fillText('▼', cx, cy - 18); }
     if (!c.dead && (c.player || c.ally || c.hp < c.maxhp)) {   // 리더·동료는 늘, 적은 다쳤을 때만
