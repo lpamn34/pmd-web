@@ -19,18 +19,22 @@ const Dex = (() => {
     const gens =[...new Set(ids.map(id => DATA.species[id].g))].sort((a, b) => a - b);
     const cnt = Progress.dexCounts(), pct = n => (n / cnt.total * 100).toFixed(1);
     const state = id => (Progress.beatCount(id) ? 2 : Progress.isSeen(id) ? 1 : 0);
+    // 영입: 캐릭터 목록에 있는 포켓몬과 그 진화 전 모습 (진화시키면 진화 전 모습은 목록에서 빠지지만 도감에는 영입한 것으로)
+    const ownSet = new Set(Game.save ? Object.keys(Game.save.roster).flatMap(k => [+k, ...preEvos(+k)]) : []);
+    const own = id => ownSet.has(+id);
     return `<div class="dex-rate">
         <div>👁 만난 포켓몬 <b>${cnt.seen}</b> / ${cnt.total} <span class="dim">(${pct(cnt.seen)}%)</span><span class="bar"><i style="width:${pct(cnt.seen)}%;background:#6cf"></i></span></div>
-        <div>⚔ 쓰러뜨린 포켓몬 <b>${cnt.beaten}</b> / ${cnt.total} <span class="dim">(${pct(cnt.beaten)}%)</span><span class="bar"><i style="width:${pct(cnt.beaten)}%;background:#f58a42"></i></span></div></div>
+        <div>⚔ 쓰러뜨린 포켓몬 <b>${cnt.beaten}</b> / ${cnt.total} <span class="dim">(${pct(cnt.beaten)}%)</span><span class="bar"><i style="width:${pct(cnt.beaten)}%;background:#f58a42"></i></span></div>
+        ${Game.save ? (() => { const n = ids.filter(own).length; return `<div>🤝 영입한 포켓몬 <b>${n}</b> / ${cnt.total} <span class="dim">(${pct(n)}%)</span><span class="bar"><i style="width:${pct(n)}%;background:#7fd67f"></i></span></div>`; })() : ''}</div>
       <div class="picker-bar"><input class="dex-q" placeholder="이름 / 영어 / 번호 검색" autocomplete="off">
       <select class="dex-g"><option value="">전체 세대</option>${gens.map(g => `<option value="${g}">${g}세대</option>`).join('')}</select>
       <select class="dex-t"><option value="">전체 타입</option>${DATA.types.map((t, i) => `<option value="${i + 1}">${t}</option>`).join('')}</select>
-      <select class="dex-c"><option value="">전체</option><option value="1,2">만난 포켓몬</option><option value="2">쓰러뜨린 포켓몬</option><option value="0">아직 못 만난 포켓몬</option></select>
+      <select class="dex-c"><option value="">전체</option><option value="1,2">만난 포켓몬</option><option value="2">쓰러뜨린 포켓몬</option><option value="0">아직 못 만난 포켓몬</option><option value="r">🤝 영입한 포켓몬</option></select>
       <span class="dim dex-count"></span></div>
       ${(() => { medals = Game.save ? Game.dexMedals() : {}; return ''; })()}
       <div class="picker dex-grid">${ids.map(id => { const d = DATA.species[id], st = state(id), md = medals[id] || ''; return `<button class="pk dex-item${st ? '' : ' unseen'}" data-dexpoke="${id}"
-        data-s="${esc((d.n + ' ' + d.e + ' ' + dexNo(id) + ' ' + id).toLowerCase())}" data-g="${d.g}" data-t="${d.t.join(',')}" data-c="${st}">
-        ${portraitImg(id, 'portrait sm')}<span>${esc(d.n)}</span><i class="dim">${dexNo(id)}${st === 2 ? ' ⚔' : st === 1 ? ' 👁' : ''}</i>${md ? `<i class="dex-medals">${md}</i>` : ''}</button>`; }).join('')}</div>`;
+        data-s="${esc((d.n + ' ' + d.e + ' ' + dexNo(id) + ' ' + id).toLowerCase())}" data-g="${d.g}" data-t="${d.t.join(',')}" data-c="${st}" data-r="${own(id) ? 1 : ''}">
+        ${portraitImg(id, 'portrait sm')}<span>${esc(d.n)}</span><i class="dim">${dexNo(id)}${st === 2 ? ' ⚔' : st === 1 ? ' 👁' : ''}</i>${md ? `<i class="dex-medals">${md}</i>` : ''}${own(id) ? '<i class="dex-own" title="영입한 포켓몬">🤝</i>' : ''}</button>`; }).join('')}</div>`;
   }
 
   function renderMoves() {
@@ -73,7 +77,7 @@ const Dex = (() => {
       let n = 0;
       for (const b of items) {
         const ok = (!s || b.dataset.s.includes(s)) && (!g || !g.value || b.dataset.g === g.value)
-          && (!t || !t.value || b.dataset.t.split(',').includes(t.value)) && (!c || !c.value || c.value.split(',').includes(b.dataset.c));
+          && (!t || !t.value || b.dataset.t.split(',').includes(t.value)) && (!c || !c.value || (c.value === 'r' ? !!b.dataset.r : c.value.split(',').includes(b.dataset.c)));
         b.style.display = ok ? '' : 'none';
         if (ok) n++;
       }

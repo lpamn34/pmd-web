@@ -6,7 +6,6 @@
 const Online = (() => {
   const SDK = 'https://www.gstatic.com/firebasejs/10.12.2/';
   const MAIL = '@pmdweb.invalid';   // 아이디를 Firebase 이메일 로그인에 쓰기 위한 가짜 주소 (메일은 보내지 않는다)
-  const SOS_DAYS = 7;               // 게시판에 보이는 기간
   let ready = null, auth = null, db = null, user = null, profile = null;
   const listeners = [];
 
@@ -221,14 +220,14 @@ const Online = (() => {
   }
   const heldByOther = s => s.takenBy && s.takenBy !== user.uid && s.takenAt && s.takenAt.toMillis() > Date.now() - HOLD_MS;
   // 열린 요청 중 가장 오래 기다린 것부터. 요청에는 던전·층·포켓몬 번호만 있어서 버전이 달라도 구조할 수 있다
-  // (이 버전에 없는 던전·포켓몬이 담긴 요청은 게시판 화면에서 뺀다) (최근 7일, 내 것과 다른 사람이 구조하러 간 것 제외)
+  // (이 버전에 없는 던전·포켓몬이 담긴 요청은 게시판 화면에서 뺀다) (최근 48시간, 내 것과 다른 사람이 구조하러 간 것 제외)
   // 게시판을 다시 열어도 2분 안이면 방금 읽은 목록을 보여준다 (읽기 절약). 내가 요청을 맡거나 올리면 새로 읽는다
   const LIST_CACHE_MS = 2 * 60 * 1000;
   let listCache = null;
   const dropListCache = () => { listCache = null; };
   async function listSOS() {
     if (listCache && listCache.uid === user.uid && Date.now() - listCache.at < LIST_CACHE_MS) return listCache.list;
-    const since = stamp(Date.now() - SOS_DAYS * 864e5);
+    const since = stamp(Date.now() - SOS_EXPIRE_MS);   // 48시간이 지난 요청은 구조 실패라 보이지 않는다
     const q = await db.collection('sos').where('status', '==', 'open')
       .orderBy(firebase.firestore.FieldPath.documentId()).startAt(since).limit(30).get();
     const list = q.docs.map(d => ({ id: d.id, sid: idOf(d.id), ...d.data() }))
@@ -265,14 +264,17 @@ const Online = (() => {
     return d.exists ? d.data() : null;
   }
   // 구조 완료를 알린다. 이미 누가 구조했거나 요청자가 포기했으면 false
-  async function claimRescue(id, me) {
+  // noGift: 감사 선물을 받지 않는 탐험대 (요청자에게 선물 고르는 창을 띄우지 않게). 서버 규칙이 아직 이 값을 모르면 빼고 다시 보낸다
+  async function claimRescue(id, me, noGift) {
     const ref = db.collection('sos').doc(String(id));
-    return db.runTransaction(async t => {
+    const run = ng => db.runTransaction(async t => {
       const d = await t.get(ref);
       if (!d.exists || d.data().status !== 'open') return false;
-      t.update(ref, { status: 'rescued', key: d.data().ver + '|done', rescuer: { uid: user.uid, name: name(), sp: me.sp, lv: me.lv, shiny: !!me.shiny } });
+      t.update(ref, { status: 'rescued', key: d.data().ver + '|done', rescuer: { uid: user.uid, name: name(), sp: me.sp, lv: me.lv, shiny: !!me.shiny, ...(ng ? { noGift: true } : {}) } });
       return true;
     });
+    try { return await run(noGift); }
+    catch (e) { if (noGift && e && e.code === 'permission-denied') return run(false); throw e; }
   }
   const thankSOS = (id, item) => db.collection('sos').doc(String(id)).update({ status: 'thanked', thx: item || null });
   const deleteSOS = id => db.collection('sos').doc(String(id)).delete();

@@ -108,7 +108,7 @@ ab_(28, { synchronize: true });
 ab_(48, { earlyBird: true });
 ab_(30, { naturalCure: true, dungeon: '교체가 없으므로 대신 상태이상이 절반의 시간만에 낫는다.' });
 ab_(61, { cureChance: 0.3 }); ab_(93, { cureChance: 0.2, dungeon: '비가 없어도 턴마다 20% 확률로 상태이상이 낫는다.' });
-ab_(131, { cureChance: 0.3, dungeon: '동료 대신 자신의 상태이상이 턴마다 30% 확률로 낫는다.' });
+abSet(131, { healer: 0.3, dungeon: '턴마다 옆 칸에 있는 같은 편(자신 제외)의 상태이상을 30% 확률로 고쳐 준다.' });
 ab_(90, { poisonHeal: true });
 ab_(98, { magicGuard: true, dungeon: '공격 외의 데미지(독·화상·반동·함정·배고픔)를 받지 않는다.' });
 ab_(69, { rockHead: true });

@@ -328,7 +328,7 @@ const Dungeon = (() => {
     // 플레이어
     const p = run.p;
     D.player = p;
-    p.critBoost = 0; p.noSleep = false;   // 랑사열매·유루열매는 그 층에서만
+    p.noSleep = false;   // 유루열매는 그 층에서만 (랑사열매는 100턴)
     if (bossFloor) {
       p.dir = 4; p.tween = null; p.act = null; p.stages = p.stages || {}; p.stageT = p.stageT || {};
       p.charging = null; p.rampage = null; p.recharge = false; p.chain = null; p.struck = new Set(); p.lastActSeq = p.lastHurtSeq = 0;
@@ -406,7 +406,7 @@ const Dungeon = (() => {
     run.turnsOnFloor = 0;
     floorStartAbility(p);
     // 동료도 층마다 전투 모습을 초기화하고, 돌핀맨은 계단을 내려간 뒤로 마이티폼
-    for (const a of D.mons) if (a.ally && a.hp > 0) { resetBattleForm(a, D.weather); if (run.floor > 1 || run.sos) a.hero = true; formCheck(a, now() + 500); }
+    for (const a of D.mons) if (a.ally && a.hp > 0) floorStartAbility(a);   // 동료도 날씨 특성·다운로드 등
     setFace('Determined', 1800);
     if (D.boss) D.prompts.push(bossIntro);
     Game.saveRunSnapshot(run);
@@ -504,13 +504,24 @@ const Dungeon = (() => {
     D.fx.push({ kind: 'ring', x: c.x, y: c.y, at, dur: 700 * spd(), color: r.kind === 'mega' ? '#ff9cf0' : '#bfe8ff' });
     if (r.kind === 'mega' || fi.endsWith('-primal')) { Sound.play('shiny', at); if (c.player) setFace('Determined', 2000); }
   }
+  // 층에 들어설 때 발동하는 특성 (리더와 동료. 줍기·꿀모으기는 리더만)
   function floorStartAbility(p) {
     resetBattleForm(p, D.weather);
     if (run.floor > 1 || run.sos) p.hero = true;   // 돌핀맨: 계단을 내려간 뒤로는 마이티폼
     formCheck(p, now() + 500);
     const A = abilityOf(p), at = now() + 600;
+    if (!p.player) {
+      if (A.slowStart) p.slowT = 10;
+      // 날씨 특성: 리더 → 동료 순서로 먼저 바꾼 쪽이 이긴다 (여럿이 서로 덮어쓰지 않게)
+      if (A.setWeather && !D.wxByParty) { setWeather(A.setWeather, p, at); D.wxByParty = true; }
+      applyForecast(p);
+      if (A.download) statChange(p, p.atk >= p.spa ? 2 : 4, 1, at, p);
+      if (A.floorStart) statChange(p, A.floorStart[0], A.floorStart[1], at, p);
+      if (A.floorRandom) statChange(p, pick([2, 3, 4, 5, 7, 8]), 1, at, p);
+      return;
+    }
     if (A.slowStart) p.slowT = 10;
-    if (A.setWeather) setWeather(A.setWeather, p, at);
+    if (A.setWeather) { setWeather(A.setWeather, p, at); D.wxByParty = true; }
     applyForecast(p);
     if (A.download) statChange(p, p.atk >= p.spa ? 2 : 4, 1, at, p);
     if (A.floorStart) statChange(p, A.floorStart[0], A.floorStart[1], at, p);
@@ -604,7 +615,8 @@ const Dungeon = (() => {
   function popup(c, text, color, at, size) { D.popups.push({ x: c.x, y: c.y, text, color, at, size }); }
 
   // ───────────────────────── 전투 ─────────────────────────
-  // 숙련도 올리기: 탐험대가 기술을 쓸 때마다 (PP를 안 써도). 단계가 오르면 PP 최대치도 바로 늘어난다
+  // 숙련도 올리기: 탐험대의 기술이 적에게 맞았을 때 (자신에게 쓰는 기술은 쓸 때마다). 허공에 쓰면 오르지 않는다
+  // 모으기 기술은 발사할 때, 난동은 처음 한 번만. 단계가 오르면 PP 최대치도 바로 늘어난다
   function addMastery(c, m) {
     const S = Game.save; S.mastery = S.mastery || {};
     const book = S.mastery[c.sp] = S.mastery[c.sp] || {};
@@ -621,13 +633,13 @@ const Dungeon = (() => {
   function useMove(user, slot, dir, opts = {}) {
     const mid = slot < 0 ? null : user.moves[slot].id;
     const R = (mid && MOVE_RULES[mid]) || {};
+    const mastery = slot >= 0 && party(user) && (!opts.free || opts.release);   // 이번 사용이 숙련도에 들어가나
     let move = slot < 0 ? NORMAL_ATTACK : DATA.moves[mid];
     if (R.selfHeal) move = { ...move, r: 's' };
     if (R.weatherBall && weatherNow() && weatherNow() !== 'fog') move = { ...move, t: { sun: 10, rain: 11, sand: 6, snow: 15 }[weatherNow()], p: 100 };
     if (slot >= 0 && !opts.free) {
       if (party(user) && Math.random() < masteryFree(user.sp, mid)) log(`${jo(nm(user), '은')} PP를 쓰지 않았다! (숙련도)`, T.base);
       else user.moves[slot].pp--;
-      if (party(user)) addMastery(user, user.moves[slot]);
     }
     user.dir = dir;
     if (user.sp === 681) { user.blade = move.c !== 1; formCheck(user); }   // 킬가르도: 공격이면 블레이드폼, 변화 기술이면 실드폼
@@ -682,7 +694,7 @@ const Dungeon = (() => {
       targets = pool.filter(t => hostileTo(user, t) && Math.max(Math.abs(t.x - user.x), Math.abs(t.y - user.y)) <= 3 && los(user.x, user.y, t.x, t.y));
       D.fx.push({ kind: 'ring', x: user.x, y: user.y, at: t0 + dur * 0.3, dur: 350 * spd(), color });
     }
-    if (move.r === 's') { applySelf(user, move, hitAt, R); afterUse(); return; }
+    if (move.r === 's') { applySelf(user, move, hitAt, R); if (mastery) addMastery(user, user.moves[slot]); afterUse(); return; }
     if (!targets.length) {
       if (slot >= 0 && visible) log('그러나 아무도 맞지 않았다...', hitAt);
       user.lastMissed = true; afterUse(); return;
@@ -690,9 +702,11 @@ const Dungeon = (() => {
     if (R.delay) {
       for (const t of targets) D.delayed.push({ at: D.turn + R.delay, user, t, move });
       log(`${jo(nm(user), '은')} 미래로 공격을 보냈다!`, hitAt);
+      if (mastery) addMastery(user, user.moves[slot]);
       afterUse(); return;
     }
     user.lastMissed = false;
+    user.landed = false;   // resolveHit에서 적에게 맞으면 true
     for (const t of targets) {
       const struck = user.struck && user.struck.has(t.id);
       if (R.first && struck) { fail(`${nm(t)}에게는 통하지 않았다! (첫 공격이 아니다)`); continue; }
@@ -702,6 +716,7 @@ const Dungeon = (() => {
       resolveHit(user, t, p === move.p ? move : { ...move, p }, hitAt, R);
       (user.struck = user.struck || new Set()).add(t.id);
     }
+    if (mastery && user.landed) addMastery(user, user.moves[slot]);
     afterUse();
 
     function afterUse() {
@@ -773,6 +788,7 @@ const Dungeon = (() => {
     if (move.c === 1 && Dd.magicBounce && (move.ail || (move.sc && move.sc.some(x => x[1] < 0)))) { abLog(tgt, `${jo(nm(tgt), '은')} 변화 기술을 튕겨냈다!`, at); return; }
     const r = calcHit(user, tgt, move);
     if (r.miss) { Sound.play('miss', at); popup(tgt, 'MISS', '#ddd', at); log(`${jo(nm(tgt), '은')} 공격을 피했다!`, at); user.lastMissed = true; return; }
+    if (!(move.c !== 1 && r.eff === 0)) user.landed = true;   // 숙련도: 효과가 없는 상대에게 맞은 것은 빼고
     const serene = A.serene ? 2 : 1;
     const secondary = !(A.sheer && move.c !== 1) && !(Dd.shieldDust && move.c !== 1);
     if (move.c !== 1) {
@@ -816,7 +832,7 @@ const Dungeon = (() => {
       }
       if (tgt.hp > 0 && A.stench && Math.random() < 0.1 * serene) setFlinch(tgt, at);
       if (tgt.hp > 0 && A.poisonTouch && Math.random() < 0.3) inflict(tgt, 'psn', at, false, user);
-      if (tgt.hp > 0 && r.crit && abilityOf(tgt).angerPoint) { tgt.stages[2] = 6; stageTimer(tgt, 2); abLog(tgt, `${nm(tgt)}의 공격이 최대로 올라갔다!`, at); }
+      if (tgt.hp > 0 && r.crit && abilityOf(tgt).angerPoint) { const prev = tgt.stages[2] || 0; tgt.stages[2] = 6; stageTimer(tgt, 2, prev); abLog(tgt, `${nm(tgt)}의 공격이 최대로 올라갔다!`, at); }
       if (tgt.hp > 0 && total > 0) onHitAbility(tgt, user, move, mt, at);
       if (isContact(move) && total > 0 && !A.noContact) contactAbility(user, tgt, at);
       const Hu = heldOf(user);
@@ -863,15 +879,20 @@ const Dungeon = (() => {
     if (A.magician && user.player && Math.random() < 0.1) { const id = weighted(dropTable(D.lvl, D.dg)); if (addToBag(id)) abLog(user, `${jo(ITEMS[id].n, '을')} 손에 넣었다!`, at); }
   }
   function applySelf(user, move, at, R = {}) {
-    if (move.h > 0) {
-      // 날씨에 따라 회복량이 바뀌는 기술 (js/moverules.js)
-      const w = weatherNow();
-      const mul = R.sunHeal ? (w === 'sun' ? WEATHER_HEAL_MUL : w ? WEATHER_HEAL_LOW : 1) : R.sandHeal && w === 'sand' ? WEATHER_HEAL_MUL : 1;
-      const h = user.boss ? Math.min(move.h, BOSS_HEAL_MAX) : move.h;   // 보스는 회복량을 줄인다
-      heal(user, Math.floor(user.maxhp * h * mul / 100), at);
+    // 같은 편 전체 기술(생명의물방울 등)은 주변의 같은 편에게도
+    const who = R.team ? [D.player, ...D.mons].filter(t => t && t.hp > 0 && !t.npc && (t === user || (!hostileTo(user, t)
+      && Math.max(Math.abs(t.x - user.x), Math.abs(t.y - user.y)) <= TEAM_RANGE && los(user.x, user.y, t.x, t.y)))) : [user];
+    for (const t of who) {
+      if (move.h > 0) {
+        // 날씨에 따라 회복량이 바뀌는 기술 (js/moverules.js)
+        const w = weatherNow();
+        const mul = R.sunHeal ? (w === 'sun' ? WEATHER_HEAL_MUL : w ? WEATHER_HEAL_LOW : 1) : R.sandHeal && w === 'sand' ? WEATHER_HEAL_MUL : 1;
+        const h = user.boss ? Math.min(move.h, BOSS_HEAL_MAX) : move.h;   // 보스는 회복량을 줄인다
+        heal(t, Math.floor(t.maxhp * h * mul / 100), at);
+      }
+      if (move.sc) for (const [st, ch] of move.sc) if (ch > 0) statChange(t, st, ch, at, t);
+      D.fx.push({ kind: 'ring', x: t.x, y: t.y, at, dur: 300 * spd(), color: '#fff6a0' });
     }
-    if (move.sc) for (const [st, ch] of move.sc) if (ch > 0) statChange(user, st, ch, at, user);
-    D.fx.push({ kind: 'ring', x: user.x, y: user.y, at, dur: 300 * spd(), color: '#fff6a0' });
   }
   function heal(c, amt, at) {
     const before = c.hp; c.hp = Math.min(c.maxhp, c.hp + amt);
@@ -889,7 +910,7 @@ const Dungeon = (() => {
     }
     const cur = c.stages[st] || 0, nv = clamp(cur + ch, -6, 6);
     if (nv === cur) { log(`${nm(c)}의 ${jo(STAT_NAMES[st], '은')} 더 이상 변하지 않는다!`, at); return; }
-    c.stages[st] = nv; stageTimer(c, st);
+    c.stages[st] = nv; stageTimer(c, st, cur);
     if (c.player || seen(c)) Sound.play(ch > 0 ? 'up' : 'down2', at);
     log(`${nm(c)}의 ${jo(STAT_NAMES[st], '이')}${Math.abs(ch) > 1 ? ' 크게' : ''} ${ch > 0 ? '올라갔다!' : '떨어졌다!'}`, at);
     if (ch < 0 && byFoe && A.defiant) { abLog(c, '능력이 떨어져서 오기가 생겼다!', at); statChange(c, A.defiant, 2, at, c); }
@@ -1046,13 +1067,17 @@ const Dungeon = (() => {
     if (c.status === 'par' && Math.random() < 0.25) { if (c.player || seen(c)) log(`${jo(nm(c), '은')} 몸이 저려서 움직일 수 없다!`, undefined, 'st-par'); return false; }
     return true;
   }
-  // 능력 변화(랭크 업·다운)는 마지막으로 바뀐 뒤 STAGE_TURNS턴 동안 이어진다 (층을 넘어가도 유지)
+  // 능력 변화(랭크 업·다운)는 처음 바뀐 뒤 STAGE_TURNS턴 동안 이어진다 (층을 넘어가도 유지)
   const STAGE_TURNS = 100;
-  function stageTimer(c, st) {
+  // 처음 오르거나 내린 때부터 STAGE_TURNS턴 (더 쌓아도 남은 턴은 늘지 않는다. 0을 지나 방향이 바뀌면 새로 센다)
+  function stageTimer(c, st, prev = 0) {
     c.stageT = c.stageT || {};
-    if (c.stages[st]) c.stageT[st] = STAGE_TURNS; else delete c.stageT[st];
+    const v = c.stages[st];
+    if (!v) delete c.stageT[st];
+    else if (!c.stageT[st] || !prev || Math.sign(prev) !== Math.sign(v)) c.stageT[st] = STAGE_TURNS;
   }
   function stageTick(c) {
+    if (c.critT && --c.critT <= 0) { c.critT = 0; c.critBoost = 0; if (c.hp > 0 && (c.player || seen(c))) log(`${nm(c)}의 급소 집중이 풀렸다.`, Math.max(T.cursor, T.moveEnd)); }
     if (!c.stageT) return;
     for (const k of Object.keys(c.stageT)) {
       if (!c.stages[k]) { delete c.stageT[k]; continue; }
@@ -1065,6 +1090,12 @@ const Dungeon = (() => {
   function statusTick(c) {
     stageTick(c);
     abilityTick(c);
+    // 치유의마음: 옆 칸 같은 편의 상태이상을 고쳐 준다
+    const hl = c.hp > 0 && abilityOf(c).healer;
+    if (hl) for (const t of [D.player, ...D.mons]) {
+      if (!t || t === c || t.hp <= 0 || !t.status || t.npc || hostileTo(c, t) || Math.max(Math.abs(t.x - c.x), Math.abs(t.y - c.y)) > 1) continue;
+      if (Math.random() < hl) { abLog(c, `${nm(c)} 덕분에 ${nm(t)}의 ${STATUS_NAMES[t.status]} 상태가 나았다!`, Math.max(T.cursor, T.moveEnd)); t.status = null; }
+    }
     if (!c.status || c.hp <= 0) return;
     const A = abilityOf(c);
     const cc = abVal(c, 'cureChance');
@@ -1595,7 +1626,7 @@ const Dungeon = (() => {
       title: '동료가 되고 싶어 한다!',
       html: `<div class="center">${portraitImg(c.sp, 'portrait big', 'Happy', c.shiny)}</div>
         <p class="center">${c.shiny ? '✨ ' : ''}${esc(jo(spName(c.sp), '이'))} 일어나서 동료가 되고 싶은 듯 이쪽을 보고 있다!</p>
-        <p class="center dim">영입하면 Lv${RECRUIT_LEVEL}${c.shiny ? ' (이로치)' : ''}로 합류해서, 마을의 캐릭터 탭에서 바꿔 플레이할 수 있다.${preEvos(c.sp).length ? `<br>진화 전 모습 ${esc(preEvos(c.sp).map(spName).join(', '))}도 함께 해금된다.` : ''}</p>`,
+        <p class="center dim">영입하면 Lv${RECRUIT_LEVEL}${c.shiny ? ' (이로치)' : ''}로 합류해서, 마을의 캐릭터 탭에서 바꿔 플레이할 수 있다.</p>`,
       choices: [{ label: '영입한다', fn: () => { Game.recruit(c); log(`${jo(spName(c.sp), '이')} 동료가 되었다! (마을에서 캐릭터를 바꿀 수 있다)`, now()); setFace('Joyous', 2500); Sound.play('levelup'); } },
         { label: '거절한다', fn: () => log(`${jo(spName(c.sp), '은')} 아쉬운 듯 떠나갔다...`, now()) }],
       cancel: false,
@@ -1903,7 +1934,7 @@ const Dungeon = (() => {
         break;
       }
       case 'statRandom': statChange(p, pick([2, 3, 4, 5, 6]), 2, at, p); break;
-      case 'critUp': p.critBoost = 2; log('급소에 맞히기 쉬워졌다!', at); break;
+      case 'critUp': p.critBoost = 2; p.critT = STAGE_TURNS; log(`${jo(nm(p), '은')} 급소에 맞히기 쉬워졌다! (100턴)`, at); break;
       case 'gummy': {
         setFace('Happy', 1500);
         p.belly = Math.min(100, p.belly + it.belly);
@@ -2517,6 +2548,7 @@ const Dungeon = (() => {
   // 상하좌우 키를 누르면 잠깐(DIAG_WAIT) 기다렸다가 움직인다: 그 사이 다른 방향 키가 눌리면 대각선 (두 키를 동시에 누르기 쉽게)
   const DIAG_WAIT = 70;
   const heldMove = new Map();   // 눌려 있는 상하좌우 키 → 방향
+  const turnHeld = new Set();   // 눌려 있는 '방향만 바꾸기' 키 (기본 Shift)
   let moveTimer = null, moveFallback = null;
   const keyAct = code => keyActionMap((Game.save && Game.save.settings && Game.save.settings.keys) || {})[code];
   function heldDir() {
@@ -2534,7 +2566,8 @@ const Dungeon = (() => {
     if (bigMap) { toggleMap(false); e.preventDefault(); return; }
     if (D.auto) { stopAuto(); e.preventDefault(); return; }
     const a = keyAct(e.code);
-    if (['up', 'down', 'left', 'right'].includes(a) && !e.shiftKey) {
+    if (a === 'turn') { turnHeld.add(e.code); e.preventDefault(); return; }
+    if (['up', 'down', 'left', 'right'].includes(a) && !turnHeld.size) {
       e.preventDefault();
       heldMove.set(e.code, MOVE_ACTION_DIR[a]);
       if (heldMove.size >= 2 || e.repeat) { clearTimeout(moveTimer); moveTimer = null; sendKey({ dir: heldDir() ?? MOVE_ACTION_DIR[a] }); return; }
@@ -2542,18 +2575,18 @@ const Dungeon = (() => {
       moveTimer = setTimeout(() => { moveTimer = null; sendKey({ dir: heldDir() ?? moveFallback }); }, DIAG_WAIT);
       return;
     }
-    const k = { code: e.code, shift: e.shiftKey, key: e.key };
+    const k = { code: e.code, shift: e.shiftKey, turn: turnHeld.size > 0, key: e.key };
     if (busy()) { pendingKey = k; e.preventDefault(); return; }
     if (handleKey(k)) e.preventDefault();
   }
-  function onKeyUp(e) { heldMove.delete(e.code); }
+  function onKeyUp(e) { heldMove.delete(e.code); turnHeld.delete(e.code); }
   function handleKey(k) {
     if (!D || D.dead) return false;
     const a = k.dir != null ? null : keyAct(k.code);
     const dir = k.dir != null ? k.dir : MOVE_ACTION_DIR[a];
     if (dir != null) {
-      // Shift+방향: 제자리에서 방향만 바꾼다
-      if (k.shift) act({ t: 'face', dir });
+      // 방향만 바꾸기 키(기본 Shift)+방향: 제자리에서 방향만 바꾼다
+      if (k.turn) act({ t: 'face', dir });
       else act({ t: 'move', dir });
       return true;
     }
@@ -2615,10 +2648,20 @@ const Dungeon = (() => {
     const ox = Math.round(pv.x * TILE + TILE / 2 - canvas.width / 2), oy = Math.round(pv.y * TILE + TILE / 2 - canvas.height / 2);
     return { x: Math.floor((sx + ox) / TILE), y: Math.floor((sy + oy) / TILE) };
   }
+  // 조사: 지금 보이는 포켓몬 목록 (화면 밖이라도 보이는 곳이면. 보스방의 보스 등) + 칸을 눌러 조사하기
   function toggleLook() {
     if (!D) return;
-    D.lookNext = !D.lookNext; updateLookBtn();
-    if (D.lookNext) log('조사할 칸을 누르세요.', now());
+    if (D.lookNext) { D.lookNext = false; updateLookBtn(); return; }
+    const p = P(), dist = c => Math.max(Math.abs(c.x - p.x), Math.abs(c.y - p.y));
+    const foes = D.mons.filter(c => c.hp > 0 && !c.dead && !c.ally && seen(c)).sort((a, b) => !!b.boss - !!a.boss || dist(a) - dist(b));
+    const mine = [p, ...allies()];
+    UI.open({
+      title: '🔍 조사', wide: true,
+      html: `<h3>보이는 포켓몬 <span class="dim">(${foes.length})</span></h3>${foes.map(creatureInfo).join('') || '<p class="dim">지금 보이는 포켓몬이 없다.</p>'}
+        <h3>탐험대</h3>${mine.map(creatureInfo).join('')}
+        <p class="dim">아이템·함정·바닥은 "칸 고르기"를 누른 뒤 화면의 칸을 누르면 조사할 수 있어요. (우클릭으로도 조사)</p>`,
+      choices: [{ label: '칸 고르기 (화면의 칸을 눌러 조사)', fn: () => { D.lookNext = true; updateLookBtn(); log('조사할 칸을 누르세요.', now()); } }, { label: '닫기', fn: () => {} }],
+    });
   }
   function updateLookBtn() { document.querySelector('#actions [data-k=look]')?.classList.toggle('on', !!(D && D.lookNext)); }
   function lookAt(e) {
@@ -2686,7 +2729,7 @@ const Dungeon = (() => {
       <tr><td>이동</td><td>방향키(두 개 동시에 누르면 대각선) / 숫자패드 / WASD + QEZC / 마우스 클릭</td></tr>
       <tr><td>휴대폰</td><td>오른쪽 아래 방향 버튼: 누르고 있으면 계속 걷는다 (누른 채 옆 버튼으로 밀면 방향 전환). 가운데 ↻를 누른 뒤 방향을 누르면 제자리에서 방향만 바꾼다.
         화면의 가 본 곳을 누르면 그곳까지 이동. 창은 ✕나 바깥을 눌러 닫는다.</td></tr>
-      <tr><td>방향만 바꾸기</td><td>Shift + 방향 (방향키 / 숫자패드 / WASD)</td></tr>
+      <tr><td>방향만 바꾸기</td><td>Shift + 방향 (방향키 / 숫자패드 / WASD) · 키 설정에서 Shift 대신 다른 키로 바꿀 수 있음</td></tr>
       <tr><td>임무 확인</td><td>J: 받은 임무와 이 층의 임무 대상</td></tr>
       <tr><td>조사</td><td>K 또는 조사 버튼 → 살펴볼 칸을 누른다 (컴퓨터는 칸을 우클릭). 적의 HP·상태·가진 아이템, 떨어진 아이템, 발견한 함정을 볼 수 있다.</td></tr>
       <tr><td>메시지 기록 / 내 상태</td><td>U 또는 메시지 창을 누르면 지난 메시지, P 또는 위쪽 상태 표시줄을 누르면 내 능력치·능력 변화·기술.</td></tr>
@@ -2715,7 +2758,7 @@ const Dungeon = (() => {
     mini = document.getElementById('minimap'); mctx = mini.getContext('2d');
     window.addEventListener('keydown', onKeyDown);
     window.addEventListener('keyup', onKeyUp);
-    window.addEventListener('blur', () => heldMove.clear());
+    window.addEventListener('blur', () => { heldMove.clear(); turnHeld.clear(); });
     canvas.addEventListener('click', onClick);
     canvas.addEventListener('contextmenu', e => { if (!D || UI.isOpen()) return; e.preventDefault(); lookAt(e); });   // 우클릭: 조사
     document.getElementById('log').addEventListener('click', () => { if (D && !UI.isOpen()) { stopAuto(); showLog(); } });

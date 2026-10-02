@@ -67,6 +67,13 @@ const Game = (() => {
     try { localStorage.setItem(BACKUP_KEY, JSON.stringify(list.slice(0, 3))); } catch (e) { /* 공간 부족: 백업 생략 */ }
   }
   // 새 기능이 추가되며 생긴 항목들: 없으면 기본값
+  // 숙련도 옮기기 (진화): from에 쌓인 사용 횟수를 to에 더한다
+  function mergeMastery(s, from, to) {
+    if (!s.mastery || !s.mastery[from]) return;
+    const b = s.mastery[to] = s.mastery[to] || {};
+    for (const [mid, n] of Object.entries(s.mastery[from])) b[mid] = (b[mid] || 0) + n;
+    delete s.mastery[from];
+  }
   function ensureDefaults(s) {
     s.settings = { fast: false, autoDescend: false, ...(s.settings || {}) };
     s.bag = s.bag || []; s.storage = s.storage || {}; s.cleared = s.cleared || {}; s.best = s.best || {};
@@ -74,6 +81,8 @@ const Game = (() => {
     s.shop = s.shop || []; s.money = s.money || 0; s.day = s.day || 1; s.clears = s.clears || {};
     s.bagMax = s.bagMax || Math.max(BAG_BASE, s.bag.length);
     // v0.44: 창고 기본 40 → 300칸. 확장한 단계는 그대로 이어진다 (예: 120칸 = 4단계 → 380칸)
+    // v0.50: 진화 전 모습에 남아 있던 숙련도를 지금 모습으로 (진화 전 모습이 따로 목록에 있으면 그대로 둔다)
+    if (!s.masteryV50) { for (const sp of Object.keys(s.roster || {})) for (const pre of DATA.species[sp] ? preEvos(+sp) : []) if (!s.roster[pre]) mergeMastery(s, pre, +sp); s.masteryV50 = true; }
     if (!s.storageV44) { if (s.storageMax > OLD_STORAGE_BASE) s.storageMax += STORAGE_BASE - OLD_STORAGE_BASE; s.storageV44 = true; }
     s.storageMax = Math.max(s.storageMax || 0, STORAGE_BASE, storageUsedOf(s.storage));
     for (const [sp, ch] of Object.entries(s.roster || {})) {
@@ -426,13 +435,17 @@ const Game = (() => {
         const rs = d && d.rescuer;
         if (d && d.status === 'rescued' && rs) {
           const known = hasKey(DATA.species, rs.sp);
-          await receiveAOK({ id: s.id, sp: known ? +rs.sp : s.sp, lv: clamp(Math.floor(+rs.lv) || 1, 1, MAX_LEVEL), sh: known && rs.shiny ? 1 : 0 }, Online.cleanName(rs.name));
+          await receiveAOK({ id: s.id, sp: known ? +rs.sp : s.sp, lv: clamp(Math.floor(+rs.lv) || 1, 1, MAX_LEVEL), sh: known && rs.shiny ? 1 : 0, noGift: rs.noGift === true }, Online.cleanName(rs.name));
+        } else if (d && d.status === 'open' && sosLeft(s) <= 0) {
+          failSOS(s);
         } else if (d && d.status === 'open') {
           // 다른 탐험대가 구조하러 갔는지 (맡은 지 2시간이 지나면 다시 게시판으로)
           const at = d.takenBy && d.takenAt && d.takenAt.toMillis ? d.takenAt.toMillis() : 0;
           const taken = at && at > Date.now() - SOS_HOLD_MS ? at : null;
           if (taken && !s.takenAt) UI.toast('🏃 다른 탐험대가 구조하러 출발했어요!');
           if ((s.takenAt || null) !== taken) { s.takenAt = taken; persist(); }
+        } else if (!d && sosLeft(s) <= 0) {
+          failSOS(s);
         } else if (!d) {   // 요청이 서버에서 사라짐: 게시판으로는 더 기다릴 수 없다 (코드로 구조받거나 포기)
           s.online = false; persist();
           UI.alert('🆘 구조 요청', '<p>구조 게시판에서 내 구조 요청을 찾을 수 없어요. 임무 탭에서 SOS 코드를 친구에게 보내거나, 포기하고 돌아갈 수 있어요.</p>');
@@ -442,7 +455,7 @@ const Game = (() => {
         if (!r.online || r.thanked) continue;
         const doc = r.docId || id;
         if (!r.claimed) {
-          const ok = await Online.claimRescue(doc, r.me);
+          const ok = await Online.claimRescue(doc, r.me, !!save.settings.noGift);
           if (ok) {
             // 구조 보답: 요청자가 게임을 그만둬도 받을 수 있게 바로 준다 (감사 편지는 따로)
             r.claimed = true;
@@ -650,6 +663,7 @@ const Game = (() => {
   let ccOpen = null;   // 휴대폰에서 캐릭터 카드를 펼쳐 두었는지
   function renderTown() {
     if (onlineBoot) presenceTick();   // 마을에 오면 접속자 수가 오래됐을 때만 다시 센다
+    setTimeout(checkSOSExpiry, 0);
     const sp = save.current, ch = save.roster[sp], d = DATA.species[sp];
     const st = applyBoost(calcStats(sp, ch.lv, 31), ch.boost);
     const need = expFor(ch.lv + 1) - expFor(ch.lv), have = ch.exp - expFor(ch.lv);
@@ -775,6 +789,9 @@ const Game = (() => {
   function showDungeonInfo(id) {
     const dg = id === 'daily' ? Progress.setupDaily() : dungeonById(id);
     if (!dg) return;
+    UI.open({ title: `${esc(dg.n)} 정보`, wide: true, html: dungeonInfoHtml(dg), choices: [{ label: '닫기', fn: () => {} }] });
+  }
+  function dungeonInfoHtml(dg) {
     const floorLv = f => Math.round(dg.lv[0] + (dg.lv[1] - dg.lv[0]) * (dg.floors > 1 ? (f - 1) / (dg.floors - 1) : 0));
     // 출현 포켓몬: 층 구간마다 후보를 모은다
     const band = dg.floors <= 10 ? Math.ceil(dg.floors / 2) : 5;
@@ -831,9 +848,7 @@ const Game = (() => {
     const allIds = new Set(bands.flatMap(b => b.ids));
     const sigHere = sigItemsFor([...allIds, ...finals, ...midPool(dg)]);
     const megaHere = dg.lv[1] >= MEGA_MIN_LV ? megaPool(dg) : [];
-    UI.open({
-      title: `${esc(dg.n)} 정보`, wide: true,
-      html: `<div class="dg-info">
+    return `<div class="dg-info">
         <p>${dg.floors}층 · ${dg.mode === 'rogue' ? '로그라이크' : '일반'} 던전${dg.theme ? ` · 👑 ${esc(dg.theme)}` : ''} · ${dg.types ? typeBadges(dg.types) : '<span class="type" style="background:#777">모든 타입</span>'}
           ${dg.req ? `<br><span class="dim">${esc(jo(dungeonById(dg.req).n, '을'))} 클리어하면 열림</span>` : ''}</p>
         <ul class="dg-feat">${feat.map(x => `<li>${x}</li>`).join('')}</ul>
@@ -846,9 +861,7 @@ const Game = (() => {
         ${megaHere.length ? `<p><b>🔮 메가스톤</b> <span class="dim">레벨 ${MEGA_MIN_LV} 이상인 층에서만 · 보스·이로치 ${MEGA_RATE.boss * 100}%, 바닥 아이템·적이 떨어뜨리는 아이템 ${MEGA_RATE.floor * 100}% · 던전 타입에 맞는 ${megaHere.length}종</span>
           <details><summary class="dim">눌러서 펼치기</summary><div class="dg-items">${megaHere.map(iid => `<span class="dg-item" data-dexitem="${iid}">${ITEMS[iid].icon} ${esc(ITEMS[iid].n)}</span>`).join('')}</div></details></p>` : ''}
         ${sigHere.length ? `<p><b>전용 도구</b> <span class="dim">주인 포켓몬이 나오는 층에서 드물게 떨어진다 (보스가 주인이면 더 자주)</span><br>${sigHere.map(iid => `<span class="dg-item" data-dexitem="${iid}">${ITEMS[iid].icon} ${esc(ITEMS[iid].n)}</span>`).join(' ')}</p>` : ''}
-      </div>`,
-      choices: [{ label: '닫기', fn: () => {} }],
-    });
+      </div>`;
   }
 
   function tabMission() {
@@ -1163,14 +1176,8 @@ const Game = (() => {
         <button class="btn sm ghost" data-act="starter-rank">보기</button></div>` : ''}
       <h3>📖 게임 가이드</h3><div class="btns">${Guide.buttons()}</div>
       <h3>설정</h3>
-      <label class="chk"><input type="checkbox" data-set="fast" ${s.fast ? 'checked' : ''}> 빠른 연출</label>
-      <label class="chk"><input type="checkbox" data-set="autoDescend" ${s.autoDescend ? 'checked' : ''}> 자동 탐색이 계단에 도착하면 바로 내려가기</label>
-      <label class="chk"><input type="checkbox" data-set="dpad" ${s.dpad ? 'checked' : ''}> 던전에서 방향 버튼 항상 표시 <span class="dim">(휴대폰에서 방향 버튼이 안 보이면 켜세요)</span></label>
-      <div class="sound-set">
-        <label class="chk"><input type="checkbox" data-set="sfx" ${s.sfx !== false ? 'checked' : ''}> 효과음</label>
-        <input type="range" min="0" max="100" step="5" data-setnum="sfxVol" value="${s.sfxVol ?? 60}" title="효과음 음량">
-        <label class="chk"><input type="checkbox" data-set="bgm" ${s.bgm !== false ? 'checked' : ''}> 배경음</label>
-        <input type="range" min="0" max="100" step="5" data-setnum="bgmVol" value="${s.bgmVol ?? 40}" title="배경음 음량"></div>
+      ${playSettings(s)}
+      <label class="chk"><input type="checkbox" data-set="noGift" ${s.noGift ? 'checked' : ''}> 💌 감사 선물 받지 않기 <span class="dim">(구조 게시판으로 구조하면 요청자에게 선물 고르는 창이 뜨지 않아요. 코드로 구조했거나 그래도 선물이 오면 창고에 넣지 않고 판매 값만큼 돈으로 받아요. 구조 보답은 그대로)</span></label>
       <p class="dim tiny">소리는 게임이 직접 합성합니다 (음원 파일 없음). 브라우저 정책상 화면을 한 번 눌러야 소리가 나기 시작합니다.</p>
       <div class="btns"><button class="btn ghost" data-act="help">⌨ 조작법</button> <button class="btn ghost" data-act="key-settings">🎮 키 설정</button> <button class="btn ghost danger" data-act="reset">저장 데이터 초기화</button></div>
       <h3>세이브 관리</h3>
@@ -1524,6 +1531,7 @@ const Game = (() => {
     const slot = DATA.species[sp].ab.findIndex(a => a[0] === entry.ability);
     entry.ability = (DATA.species[to].ab[slot] || DATA.species[to].ab[0] || [0])[0];
     delete entry.form;   // 골라 둔 모습은 진화 전 포켓몬의 것
+    mergeMastery(save, sp, to);   // 숙련도도 진화한 모습으로
     save.roster[to] = entry; save.current = to;
     if (save.sos && save.sos.sp === sp) save.sos.sp = to;   // 구조를 기다리는 포켓몬이 진화하면 구조 요청도 진화한 모습으로
     // 클리어 기록도 진화한 모습으로 옮긴다
@@ -1542,6 +1550,17 @@ const Game = (() => {
     save.favs = on ? [...save.favs, id] : save.favs.filter(x => x !== id);
     persist(); return on;
   }
+
+  // 음량: 0~VOL_MAX%. 100%를 넘으면 빨간색
+  const VOL_MAX = 200;
+  const volInput = (k, def, title) => { const v = save.settings[k] ?? def, hot = v > 100 ? ' loud' : ''; return `<input type="range" class="vol${hot}" min="0" max="${VOL_MAX}" step="5" data-setnum="${k}" value="${v}" title="${title}"><span class="vol-num${hot}">${v}%</span>`; };
+  const soundSettings = s => `<div class="sound-set">
+        <label class="chk"><input type="checkbox" data-set="sfx" ${s.sfx !== false ? 'checked' : ''}> 효과음</label> ${volInput('sfxVol', 60, '효과음 음량')}
+        <label class="chk"><input type="checkbox" data-set="bgm" ${s.bgm !== false ? 'checked' : ''}> 배경음</label> ${volInput('bgmVol', 40, '배경음 음량')}</div>`;
+  const playSettings = s => `<label class="chk"><input type="checkbox" data-set="fast" ${s.fast ? 'checked' : ''}> 빠른 연출</label>
+      <label class="chk"><input type="checkbox" data-set="autoDescend" ${s.autoDescend ? 'checked' : ''}> 자동 탐색이 계단에 도착하면 바로 내려가기</label>
+      <label class="chk"><input type="checkbox" data-set="dpad" ${s.dpad ? 'checked' : ''}> 던전에서 방향 버튼 항상 표시 <span class="dim">(휴대폰에서 방향 버튼이 안 보이면 켜세요)</span></label>
+      ${soundSettings(s)}`;
 
   // ── 키 설정: 동작마다 키 하나로 바꾸기 (바꾸지 않은 동작은 기본 키 그대로) ──
   function keySettings() {
@@ -1564,7 +1583,7 @@ const Game = (() => {
             e.preventDefault(); e.stopPropagation();
             window.removeEventListener('keydown', grab, true);
             if (e.code === 'Escape') { UI.close(m); keySettings(); return; }
-            if (['ShiftLeft', 'ShiftRight', 'ControlLeft', 'ControlRight', 'AltLeft', 'AltRight', 'MetaLeft', 'MetaRight'].includes(e.code)) { UI.toast('Shift·Ctrl·Alt는 쓸 수 없어요.'); UI.close(m); keySettings(); return; }
+            if (['ControlLeft', 'ControlRight', 'AltLeft', 'AltRight', 'MetaLeft', 'MetaRight'].includes(e.code)) { UI.toast('Ctrl·Alt는 쓸 수 없어요.'); UI.close(m); keySettings(); return; }
             const keys = { ...(save.settings.keys || {}) };
             for (const [k, c] of Object.entries(keys)) if (c === e.code) delete keys[k];   // 다른 동작이 쓰던 같은 키는 뺀다
             keys[a] = e.code; save.settings.keys = keys; persist();
@@ -1779,7 +1798,7 @@ const Game = (() => {
   async function createSOS(r) {
     const p = r.p;
     const s = {
-      id: Codes.newId(), dungeon: r.dungeon, floor: r.floor, sp: p.sp, lv: p.lv, shiny: !!p.shiny, day: save.day,
+      id: Codes.newId(), dungeon: r.dungeon, floor: r.floor, sp: p.sp, lv: p.lv, shiny: !!p.shiny, day: save.day, created: Date.now(),
       snap: { bag: r.bag, money: r.money, done: r.done, held: p.held || null },
     };
     save.sos = s;
@@ -1824,6 +1843,7 @@ const Game = (() => {
       h += `<div class="row sos-row">${portraitImg(s.sp, 'portrait sm', s.revived ? 'Happy' : 'Pain', s.shiny)}<div class="grow">
         ${s.revived ? `<b>구조되었습니다!</b> ${esc(dg.n)} ${s.floor}F에서 이어서 탐험할 수 있어요.` : `<b>구조를 기다리는 중</b> — ${esc(dg.n)} ${s.floor}F에서 쓰러진 ${esc(spName(s.sp))} Lv${s.lv}`}
         <div class="dim">가방 ${s.snap.bag.length}칸${s.snap.held ? ` · 지닌 물건 ${esc(ITEMS[s.snap.held].n)}` : ''}이 함께 기다리고 있습니다.</div>
+        ${s.revived ? '' : `<div class="${sosLeft(s) < 6 * 3600e3 ? 'warn' : 'dim'}">⏳ 구조 가능 시간 ${Math.max(0, Math.floor(sosLeft(s) / 3600e3))}시간 ${Math.max(0, Math.floor(sosLeft(s) / 60000) % 60)}분 남음 <span class="dim">(48시간이 지나면 구조 실패: 포기와 같은 패널티)</span></div>`}
         ${s.online && !s.revived ? (s.takenAt && s.takenAt > Date.now() - SOS_HOLD_MS
           ? `<div class="ok">🏃 다른 탐험대가 구조하러 출발했어요! (${Math.max(1, Math.round((Date.now() - s.takenAt) / 60000))}분 전) <span class="dim">2시간 안에 구조하지 못하면 다시 게시판에 올라가요.</span></div>`
           : '<div class="dim">📋 구조 게시판에 올라가 있어요. 누군가 구조하러 가면 여기에 표시되고, 구조하면 자동으로 알려 드려요.</div>') : ''}</div>
@@ -1880,13 +1900,18 @@ const Game = (() => {
     const s = save.sos;
     if (!s || s.id !== d.id) { UI.alert('코드 오류', '<p>지금 기다리고 있는 구조 요청에 대한 A-OK 코드가 아닙니다.</p>'); return; }
     if (s.revived) { UI.alert('이미 구조됨', '<p>이미 구조되었어요. 임무 탭에서 이어서 탐험할 수 있습니다.</p>'); return; }
-    s.revived = { sp: d.sp, lv: d.lv, sh: !!d.sh, ...(from ? { from } : {}) };
+    s.revived = { sp: d.sp, lv: d.lv, sh: !!d.sh, ...(from ? { from } : {}), ...(d.noGift ? { noGift: true } : {}) };
     const ci = document.getElementById('code-input'); if (ci) ci.value = '';
     if (s.online && !from) { s.online = false; Online.deleteSOS(s.docId || s.id).catch(() => {}); }   // 코드로 구조됨: 게시판에서 내린다
     persist(); renderTown();
     await UI.alert('구조되었다!', `<div class="center">${portraitImg(d.sp, 'portrait big', 'Happy', !!d.sh)} ${portraitImg(s.sp, 'portrait big', 'Joyous', s.shiny)}</div>
       <p class="center">${from ? `<b>${esc(from)}</b> 님` : '친구'}의 <b>${esc(spName(d.sp))}</b> Lv${d.lv} 덕분에 ${esc(jo(spName(s.sp), '이'))} 되살아났다!</p>`);
-    // 감사 선물 (선택)
+    // 감사 선물 (선택). 선물을 받지 않는 탐험대면 감사 편지만
+    if (s.revived.noGift) {
+      UI.open({ title: '💌 감사 편지', html: `<p><b>${esc(from || '구조해 준 탐험대')}</b> 님은 감사 선물을 받지 않아요. 감사 편지만 보낼게요.</p>`,
+        choices: [{ label: '감사 편지를 보낸다', fn: () => sendThanks(s, null) }], cancel: false });
+      return;
+    }
     const gifts = [...save.bag.map((b, i) => ({ id: b.id, from: 'bag', i })), ...Object.keys(save.storage).filter(id => save.storage[id] > 0).map(id => ({ id, from: 'storage' }))]
       .filter(g => ITEMS[g.id] && g.id !== 'quest');
     UI.open({
@@ -1950,6 +1975,10 @@ const Game = (() => {
   async function giveUpSOS() {
     const s = save.sos; if (!s) return;
     if (!(await UI.confirm('구조 포기', '<p>구조를 포기하면 쓰러졌을 때의 패널티(가방 아이템 절반, 지닌 물건 50%, 주웠던 돈)를 받습니다. 남은 아이템은 창고로 갑니다.</p>', '포기한다', '계속 기다린다'))) return;
+    UI.alert('구조를 포기했다', endSOS(s));
+  }
+  // 구조 요청을 끝낸다 (포기·구조 실패): 쓰러졌을 때의 패널티, 게시판에서 내림. 결과 문구를 돌려준다
+  function endSOS(s) {
     const bag = s.snap.bag.slice(), lost = [];
     const loseN = Math.floor(bag.length / 2) + (bag.length % 2 && Math.random() < 0.5 ? 1 : 0);
     for (let i = 0; i < loseN; i++) lost.push(bag.splice(rand(bag.length), 1)[0]);
@@ -1958,8 +1987,28 @@ const Game = (() => {
     save.money = Math.max(0, save.money - (s.snap.money || 0));
     if (s.online) Online.deleteSOS(s.docId || s.id).catch(() => {});
     save.sos = null; persist(); renderTown();
-    UI.alert('구조를 포기했다', `<p>${lost.length ? `잃어버린 아이템: ${lost.map(b => ITEMS[b.id].icon + esc(ITEMS[b.id].n)).join(', ')}` : '잃어버린 아이템은 없다.'}</p>
-      ${s.snap.money ? `<p>주웠던 돈 ₽${jo(s.snap.money, '을')} 잃었다.</p>` : ''}<p class="dim">남은 아이템은 창고로 옮겼습니다.</p>`);
+    return `<p>${lost.length ? `잃어버린 아이템: ${lost.map(b => ITEMS[b.id].icon + esc(ITEMS[b.id].n)).join(', ')}` : '잃어버린 아이템은 없다.'}</p>
+      ${s.snap.money ? `<p>주웠던 돈 ₽${jo(s.snap.money, '을')} 잃었다.</p>` : ''}<p class="dim">남은 아이템은 창고로 옮겼습니다.</p>`;
+  }
+  // 구조 요청을 올린 시각 (예전 세이브: 게시판 문서 이름의 시각, 그것도 없으면 지금부터 센다)
+  function sosCreated(s) {
+    if (!s.created) { s.created = (s.docId && +String(s.docId).split('_')[0]) || Date.now(); persist(); }
+    return s.created;
+  }
+  const sosLeft = s => sosCreated(s) + SOS_EXPIRE_MS - Date.now();
+  // 48시간 동안 구조받지 못함 → 구조 실패 (게시판으로 구조됐는지는 먼저 확인한 뒤에 부른다)
+  let sosFailing = false;
+  function failSOS(s) {
+    if (sosFailing || !s || s.revived || save.sos !== s) return;
+    sosFailing = true;
+    const html = endSOS(s);
+    UI.alert('🆘 구조 실패', `<div class="center">${portraitImg(s.sp, 'portrait big', 'Pain', s.shiny)}</div>
+      <p class="center">${esc(dungeonById(s.dungeon)?.n || '')} ${s.floor}F에서 쓰러진 ${esc(jo(spName(s.sp), '은'))} 48시간 동안 구조받지 못했다...</p>${html}`).then(() => { sosFailing = false; });
+  }
+  // 게시판 확인이 안 되는 요청 (코드로만 부탁했거나 로그인하지 않음)은 시간만 보고 끝낸다
+  function checkSOSExpiry() {
+    const s = save && save.sos;
+    if (s && !s.revived && sosLeft(s) <= 0 && !(s.online && Online.loggedIn())) failSOS(s);
   }
 
   // 구조해 준 친구에게서 온 감사 코드
@@ -1972,11 +2021,14 @@ const Game = (() => {
   }
   function gotThanks(r, item, from) {
     r.thanked = true;
-    if (item) storeAdd(item);
+    // 설정에서 '감사 선물 받지 않기'를 켰으면 창고에 넣지 않고 판매 값만큼 돈으로
+    const cash = item && save.settings.noGift ? Math.max(1, Math.floor(sellOf(item))) : 0;
+    if (cash) save.money += cash; else if (item) storeAdd(item);
     persist(); renderTown();
     return UI.alert('💌 감사 편지', `<div class="center">${portraitImg(r.sp, 'portrait big', 'Joyous', r.shiny)}</div>
       <p class="center">구조해 준 ${esc(spName(r.sp))}의 ${from ? `탐험대 <b>${esc(from)}</b> 님` : '친구'}에게서 감사 편지가 왔다!</p>
-      ${item ? `<p class="center">선물로 ${ITEMS[item].icon} <b>${esc(jo(ITEMS[item].n, '을'))}</b> 받았다! (창고로)</p>` : ''}`);
+      ${cash ? `<p class="center">선물로 온 ${ITEMS[item].icon} <b>${esc(jo(ITEMS[item].n, '은'))}</b> 받지 않고 ₽${cash}로 바꿨다. <span class="dim">(설정: 감사 선물 받지 않기)</span></p>`
+        : item ? `<p class="center">선물로 ${ITEMS[item].icon} <b>${esc(jo(ITEMS[item].n, '을'))}</b> 받았다! (창고로)</p>` : ''}`);
   }
 
   function finishRun(r, outcome) {
@@ -2103,25 +2155,52 @@ const Game = (() => {
     UI.open({ title: '📜 임무 확인', wide: true, html, choices: [{ label: '닫기', fn: () => {} }] });
   }
 
-  function dungeonMenu() {
-    if (UI.isOpen()) return;
+  // 던전 메뉴: 탭 (메뉴 / 던전 정보 / 설정 / 조작·가이드)
+  function dungeonMenu(tabKey) {
+    if (UI.isOpen() && !tabKey) return;
     Dungeon.stopAuto();
-    const s = save.settings;
+    const s = save.settings, t = tabKey || 'menu', D = Dungeon.floor, run = Dungeon.run;
+    const tabs = [['menu', '🧭 메뉴'], ['info', '🗺 던전 정보'], ['set', '⚙ 설정'], ['help', '📖 조작·가이드']];
+    const head = `<div class="dex-tabs dm-tabs">${tabs.map(([k, n]) => `<button class="${t === k ? 'on' : ''}" data-dmtab="${k}">${n}</button>`).join('')}</div>`;
+    const close = [{ label: '닫기', fn: () => {} }];
+    const onOpen = (box, m) => {
+      box.querySelectorAll('[data-dmtab]').forEach(b => b.onclick = () => { if (b.dataset.dmtab !== t) { UI.close(m); dungeonMenu(b.dataset.dmtab); } });
+      box.addEventListener('change', e => {
+        if (e.target.dataset.set) setSetting(e.target.dataset.set, e.target.checked);
+        if (e.target.dataset.setnum) { setSetting(e.target.dataset.setnum, +e.target.value); Sound.play('menu'); }
+      });
+      box.querySelectorAll('[data-act]').forEach(b => b.onclick = () => {
+        const a = b.dataset.act;
+        if (a === 'key-settings') keySettings(); else if (a === 'help') Dungeon.showHelp(); else if (a === 'guide') Guide.open(b.dataset.arg);
+      });
+    };
+    if (t === 'info' && D && D.dg) {
+      const dg = D.dg, w = D.weather;
+      const here = `<p><b>지금 ${run.floor}층</b> / ${dg.floors}층 · 날씨 ${w ? `${WEATHERS[w].icon} ${WEATHERS[w].n}` : '없음'} · 이 층에서 ${run.turnsOnFloor || 0} / ${WIND.limit}턴</p>`;
+      UI.open({ title: esc(dg.n), wide: true, html: head + here + dungeonInfoHtml(dg), choices: close, onOpen });
+      return;
+    }
+    if (t === 'set') {
+      UI.open({ title: '설정', wide: true, html: head + playSettings(s) + '<div class="btns"><button class="btn ghost" data-act="key-settings">🎮 키 설정</button></div>', choices: close, onOpen });
+      return;
+    }
+    if (t === 'help') {
+      UI.open({ title: '조작·가이드', wide: true, html: head + `<div class="btns"><button class="btn ghost" data-act="key-settings">🎮 키 설정</button></div>
+        <h3>📖 게임 가이드 · 조작법</h3><div class="btns">${Guide.buttons()}</div>`, choices: close, onOpen });
+      return;
+    }
     UI.open({
-      title: '메뉴',
+      title: '메뉴', html: head, onOpen,
       choices: [
         { label: '돌아가기', fn: () => {} },
         { label: '가방', fn: () => Dungeon.floor && document.querySelector('#actions [data-k=bag]').click() },
         { label: '📜 임무 확인 (J)', fn: () => setTimeout(showMissions, 0) },
         { label: '💬 메시지 기록 (U)', fn: () => setTimeout(Dungeon.showLog, 0) },
         { label: '📊 내 상태 (P)', fn: () => setTimeout(Dungeon.showStatus, 0) },
-        { label: '조작법', fn: Dungeon.showHelp },
-        { label: '게임 가이드 (타입 상성표 등)', fn: Guide.menu },
         ...((Dungeon.run?.party || []).length ? [{ label: '🤝 동료 (V) — 상태·작전', fn: () => setTimeout(Dungeon.partyMenu, 0) }] : []),
-        { label: `빠른 연출: ${s.fast ? '켜짐' : '꺼짐'}`, fn: () => { s.fast = !s.fast; persist(); dungeonMenu(); } },
-        { label: `계단 자동 하강: ${s.autoDescend ? '켜짐' : '꺼짐'}`, fn: () => { s.autoDescend = !s.autoDescend; persist(); dungeonMenu(); } },
-        { label: `효과음: ${s.sfx !== false ? '켜짐' : '꺼짐'}`, fn: () => { s.sfx = s.sfx === false; persist(); Sound.refresh(); dungeonMenu(); } },
-        { label: `배경음: ${s.bgm !== false ? '켜짐' : '꺼짐'}`, fn: () => { s.bgm = s.bgm === false; persist(); Sound.refresh(); dungeonMenu(); } },
+        { label: '🗺 던전 정보', fn: () => setTimeout(() => dungeonMenu('info'), 0) },
+        { label: '⚙ 설정 (음량·키 설정 등)', fn: () => setTimeout(() => dungeonMenu('set'), 0) },
+        { label: '📖 조작법·게임 가이드', fn: () => setTimeout(() => dungeonMenu('help'), 0) },
         { label: '포기하고 돌아간다', fn: async () => {
           const ok = await UI.confirm('포기', '<p>탐험을 포기합니다. 쓰러진 것과 같이 처리됩니다.</p>', '포기한다', '계속한다');
           if (ok) endRun('quit');
@@ -2143,6 +2222,13 @@ const Game = (() => {
 })();
 
 window.addEventListener('DOMContentLoaded', () => {
+  // 음량 슬라이더: 움직이는 동안 숫자와 색(100% 넘으면 빨강)
+  document.addEventListener('input', e => {
+    const t = e.target; if (!t.classList || !t.classList.contains('vol')) return;
+    const v = +t.value, n = t.nextElementSibling;
+    t.classList.toggle('loud', v > 100);
+    if (n && n.classList.contains('vol-num')) { n.textContent = v + '%'; n.classList.toggle('loud', v > 100); }
+  });
   document.addEventListener('click', e => {
     const b = e.target.closest('[data-ability]'); if (!b) return;
     e.preventDefault(); e.stopPropagation();

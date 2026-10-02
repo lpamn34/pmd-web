@@ -454,3 +454,12 @@ i.clear.me { background: #2b6cb0; margin-left: 4px; }
 .key-list { max-height: 55vh; overflow-y: auto; }
 .key-list .row { padding: 3px 0; }
 .keycaps kbd { display: inline-block; min-width: 18px; padding: 1px 6px; margin: 0 1px; border: 1px solid #fff4; border-bottom-width: 2px; border-radius: 4px; background: #ffffff10; font: 12px/1.4 inherit; text-align: center; }
+
+/* 음량 100% 초과는 빨간색 */
+.sound-set input.vol.loud { accent-color: #ff5a5a; }
+.vol-num { font-size: 12px; color: var(--dim); min-width: 38px; }
+.vol-num.loud { color: #ff6b6b; font-weight: bold; }
+/* 도감: 영입한 포켓몬 */
+.pk i.dex-own { left: 4px; right: auto; font-size: 11px; }
+/* 던전 메뉴 탭 */
+.dm-tabs { margin-bottom: 8px; }

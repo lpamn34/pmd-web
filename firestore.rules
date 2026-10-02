@@ -91,7 +91,8 @@ service cloud.firestore {
         (resource.data.status == 'open' && resource.data.owner != request.auth.uid
           && request.resource.data.status == 'rescued'
           && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'key', 'rescuer'])
-          && request.resource.data.rescuer.keys().hasOnly(['uid', 'name', 'sp', 'lv', 'shiny'])
+          && request.resource.data.rescuer.keys().hasOnly(['uid', 'name', 'sp', 'lv', 'shiny', 'noGift'])
+          && (!('noGift' in request.resource.data.rescuer) || request.resource.data.rescuer.noGift is bool)
           && request.resource.data.rescuer.uid == request.auth.uid
           && ownsName(request.resource.data.rescuer.name)
           && request.resource.data.rescuer.sp is int && request.resource.data.rescuer.sp > 0 && request.resource.data.rescuer.sp < 5000

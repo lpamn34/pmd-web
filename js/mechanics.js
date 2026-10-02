@@ -91,7 +91,10 @@ function recalc(c) {
   c.hp = clamp(c.hp + (c.maxhp - old), 1, c.maxhp);
 }
 
-const stageMul = s => s >= 0 ? (2 + s) / 2 : 2 / (2 - s);
+// 능력 단계 (공격·방어·특공·특방): +1마다 +25%, 최대 +6에 2.5배 / −6에 0.4배 (v0.50 너프, 원래는 +6에 4배)
+const stageMul = s => s >= 0 ? (4 + s) / 4 : 4 / (4 - s);
+// 스피드 단계: 기본 스피드 차이 보정(최대 ±20%)과 따로, 단계 차이 1마다 명중 ×(1+SPEED_STAGE_ACC) 곱연산 (+6이면 내 명중 ×1.34, 나를 노리는 공격 ÷1.34)
+const SPEED_STAGE_ACC = 0.05;
 const accMul = s => s >= 0 ? (3 + s) / 3 : 3 / (3 - s);
 
 // 불가사의 던전식 상성: 효과가 굉장함 1.4배, 별로 0.7배, 원래 무효인 상성은 0.5배 (이중이면 곱해짐)
@@ -99,9 +102,13 @@ const accMul = s => s >= 0 ? (3 + s) / 3 : 3 / (3 - s);
 const TYPE_MUL = { 2: 1.4, 0.5: 0.7, 0: 0.5, 1: 1 };
 function typeEff(moveType, types) {
   if (!moveType) return 1;
-  let e = 1;
-  for (const t of types) e *= TYPE_MUL[DATA.chart[moveType - 1][t - 1]];
-  return e;
+  // 굉장함과 별로가 겹치면 서로 지워서 보통(1배)이 된다 (1.4 × 0.7 = 0.98로 '별로'가 되지 않게)
+  let n = 0, e = 1;
+  for (const t of types) {
+    const c = DATA.chart[moveType - 1][t - 1];
+    if (c === 2) n++; else if (c === 0.5) n--; else if (c === 0) e *= TYPE_MUL[0];
+  }
+  return e * (n > 0 ? TYPE_MUL[2] ** n : n < 0 ? TYPE_MUL[0.5] ** -n : 1);
 }
 
 // 현재 날씨 (플레이어가 날씨부정/에어록이면 무효)
@@ -112,13 +119,16 @@ function weatherNow() {
 }
 // 스피드: 명중률·회피율 보정에 쓰인다
 function speedOf(c) {
-  let s = c.spe * stageMul(c.stages[6] || 0) * (abVal(c, 'speedMul') || 1) * (heldOf(c).speedMul || 1);
+  let s = c.spe * (abVal(c, 'speedMul') || 1) * (heldOf(c).speedMul || 1);
   if (abilityOf(c).quickFeet && c.status) s *= 1.5;
   else if (c.status === 'par') s *= 0.5;
   return s;
 }
-// 스피드 차이 → 명중 배율 (2배 빠르면 +20%, 절반이면 -20%, 최대 ±20%)
-function speedAccMul(att, def) { return clamp(1 + 0.2 * Math.log2(speedOf(att) / speedOf(def)), 0.8, 1.2); }
+// 스피드 차이 → 명중 배율: 스피드(특성·물건·마비 포함) 2배 빠르면 +20%, 절반이면 −20% (최대 ±20%) × 1.05^(스피드 단계 차이)
+function speedAccMul(att, def) {
+  const st = ((att.stages && att.stages[6]) || 0) - ((def.stages && def.stages[6]) || 0);
+  return clamp(1 + 0.2 * Math.log2(speedOf(att) / speedOf(def)), 0.8, 1.2) * (1 + SPEED_STAGE_ACC) ** st;
+}
 
 // 기술 분류
 const hasFlag = (m, f) => !!(m.fg && m.fg.includes(f));

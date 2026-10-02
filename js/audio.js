@@ -35,7 +35,7 @@ const Sound = (() => {
     const s = set();
     const mv = s.bgm === false ? 0 : (s.bgmVol ?? 40) / 100 * 0.8 * trackVol(fileKey);
     if (musicGain) musicGain.gain.value = mv;
-    if (player && player.el) { player.el.volume = mv; if (s.bgm === false) player.el.pause(); else if (unlocked && player.el.paused && !document.hidden) player.el.play().catch(() => {}); }
+    if (player && player.el) { player.el.volume = Math.min(1, mv); if (s.bgm === false) player.el.pause(); else if (unlocked && player.el.paused && !document.hidden) player.el.play().catch(() => {}); }
     if (s.bgm === false && player && player.src) stopFile(true);
     else if (s.bgm !== false && !player && fileUrl && unlocked) playFile(fileUrl, fileKey);
     if (ac) {
