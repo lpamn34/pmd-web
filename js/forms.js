@@ -30,7 +30,7 @@ for (const [item, fi] of Object.entries(FORM_ITEMS)) if (ITEMS[item] && FORM_ID[
 const MEGA_STONE_PRICE = 30000;
 // 메가스톤 드롭: 일반 드롭 테이블과 따로 굴린다. 레벨 MEGA_MIN_LV 이상인 보스·이로치·층에서만, 던전 타입에 맞는 메가스톤만
 // (보스·이로치 0.5%, 구조 보답·바닥 아이템·적이 떨어뜨리는 아이템 0.05%)
-const MEGA_RATE = { boss: 0.005, shiny: 0.005, rescue: 0.0005, floor: 0.0005 };
+const MEGA_RATE = { boss: 0.01, shiny: 0.01, rescue: 0.001, floor: 0.001 };   // v0.52: 2배
 const MEGA_MIN_LV = 35;
 const megaPool = dg => MEGA_STONES.filter(id => typeFits(dg, id));
 function rollMega(kind, lvl, dg) {
