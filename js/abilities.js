@@ -361,7 +361,7 @@ function abilityExact(r) {
   if (r.noGuard) o.push('자신과 상대의 기술이 반드시 명중');
   if (r.skin) o.push(`노말 기술이 ${T(r.skin)} 타입이 되고 위력 1.2배`);
   if (r.typeMul) o.push(`기술 위력: ${types(r.typeMul)}`);
-  if (r.scrappy) o.push('노말·격투 기술이 고스트 타입에게도 맞음');
+  if (r.scrappy) o.push('노말·격투 기술이 고스트 타입에게 반감(0.5배) 없이 보통(1배)으로 맞음');
   if (r.moldBreaker) o.push('공격할 때 상대의 특성을 무시');
   if (r.skillLink) o.push('연속 기술이 항상 최대 횟수로 맞음');
   if (r.serene) o.push('기술의 추가 효과 확률 2배');

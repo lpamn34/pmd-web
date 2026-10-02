@@ -90,6 +90,12 @@ const WEATHER_HEAL_MUL = 4 / 3, WEATHER_HEAL_LOW = 0.5;
 rule([234, 235, 236], { sunHeal: true, text: '쾌청이면 회복량 4/3배 (최대 HP의 2/3), 다른 날씨(비·모래바람·설경·안개)면 절반 (1/4).' });
 rule([659], { sandHeal: true, text: '모래바람이면 회복량 4/3배 (최대 HP의 2/3).' });
 
+// 기술 정의에 번호를 붙여 둔다 (상성이 특별한 기술 등을 번호로 알아보게. 복사한 기술에도 남는다)
+for (const [id, m] of Object.entries(DATA.moves)) m.id = +id;
+rule([573], { text: '물타입에게도 효과가 굉장하다.' });
+rule([560], { text: '격투와 비행 두 타입의 상성을 함께 계산한다.' });
+rule([614], { text: '비행타입과 부유 특성인 상대에게도 맞는다 (비행에게는 보통 상성).' });
+
 // 같은 편 전체 기술: 자신과 주변(TEAM_RANGE칸 안, 보이는 곳)의 같은 편 모두에게
 const TEAM_RANGE = 3;
 rule([791], { team: true, text: '자신과 주변(3칸 안)의 같은 편 모두의 HP를 최대 HP의 1/4 회복한다.' });

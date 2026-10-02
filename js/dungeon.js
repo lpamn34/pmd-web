@@ -1303,6 +1303,17 @@ const Dungeon = (() => {
       return m.sc.some(([st, ch]) => self ? ch > 0 && (e.stages[st] || 0) < AI_STAGE_LIMIT : ch < 0 && (p.stages[st] || 0) > -AI_STAGE_LIMIT);
     };
     if (!e.ally && e.item && enemyUseItem(e, p, sees, dist, dx, dy)) return;
+    // 동료는 상대에게 가장 효과적인 공격을 고른다 (면역·흡수되는 기술은 쓰지 않는다). 적은 지금처럼 무작위
+    const score = o => moveScore(e, p, o.m);
+    const best = list => list.map(o => ({ o, s: score(o) })).filter(x => x.s > 0).sort((a, b) => b.s - a.s)[0]?.o;
+    if (e.ally && sees && dist === 1 && diagOK(e.x, e.y, Math.sign(dx), Math.sign(dy))) {
+      const dir = confuse(e, dirIndex(dx, dy));
+      const status = usable.filter(o => o.m.c === 1 && worthUsing(e, p, o.m));
+      if (status.length && Math.random() < 0.15 * nerve) { useMove(e, pick(status).i, dir); return; }
+      const atk = best(usable.filter(o => o.m.c !== 1 && o.m.r !== 's'));
+      useMove(e, atk && score(atk) > moveScore(e, p, NORMAL_ATTACK) ? atk.i : -1, dir);
+      return;
+    }
     if (sees && dist === 1 && diagOK(e.x, e.y, Math.sign(dx), Math.sign(dy))) {
       const dir = confuse(e, dirIndex(dx, dy));
       const opts = usable.filter(o => worthUsing(e, p, o.m));
@@ -1312,11 +1323,13 @@ const Dungeon = (() => {
     }
     if (sees && dist <= PROJ_RANGE && (dx === 0 || dy === 0 || Math.abs(dx) === Math.abs(dy))) {
       const proj = usable.filter(o => o.m.r === 'p' && o.m.c !== 1);
-      if (proj.length && Math.random() < 0.45 * nerve && lineClear(e, dirIndex(dx, dy), dist)) { useMove(e, pick(proj).i, dirIndex(dx, dy)); return; }
+      const pc = e.ally ? best(proj) : pick(proj);
+      if (pc && Math.random() < 0.45 * nerve && lineClear(e, dirIndex(dx, dy), dist)) { useMove(e, pc.i, dirIndex(dx, dy)); return; }
     }
     if (sees && dist <= 3) {
       const area = usable.filter(o => o.m.r === 'r' && o.m.c !== 1);
-      if (area.length && Math.random() < 0.25 * nerve && los(e.x, e.y, p.x, p.y)) { useMove(e, pick(area).i, dirIndex(dx, dy) || 0); return; }
+      const ac = e.ally ? best(area) : pick(area);
+      if (ac && Math.random() < 0.25 * nerve && los(e.x, e.y, p.x, p.y)) { useMove(e, ac.i, dirIndex(dx, dy) || 0); return; }
     }
     if (e.ally && tactic() === 'wait') return;   // 기다리는 동료는 쫓아가지 않는다
     let goal = e.target;
@@ -1418,8 +1431,8 @@ const Dungeon = (() => {
     return { hpLost: p.hp < hpBefore };
   }
 
-  // 기술을 쓸 때 돌아보기: 바로 앞에 적이 없으면 옆에 붙은 적 쪽으로 (근접 기술만)
-  // 원거리 기술과 도구 던지기는 바라보는 방향 그대로 (v0.52)
+  // 기술을 쓸 때 돌아보기: 바로 앞에 적이 없으면 근접 기술은 옆에 붙은 적 쪽으로, 원거리 기술·도구 던지기는 직선 위 가장 가까운 적 쪽으로
+  // (v0.52에서 바라보는 방향으로 바꿨다가 v0.53에서 되돌림)
   function autoFace(p, mv) {
     const [dx, dy] = DIRS[p.dir];
     const front = creatureAt(p.x + dx, p.y + dy);
@@ -1428,6 +1441,10 @@ const Dungeon = (() => {
     if (mv.r === 'f') {
       const adj = vis.find(e => Math.max(Math.abs(e.x - p.x), Math.abs(e.y - p.y)) === 1 && diagOK(p.x, p.y, Math.sign(e.x - p.x), Math.sign(e.y - p.y)));
       if (adj) p.dir = dirIndex(adj.x - p.x, adj.y - p.y);
+    } else if (mv.r === 'p') {
+      const al = vis.filter(e => { const dx = e.x - p.x, dy = e.y - p.y; return (dx === 0 || dy === 0 || Math.abs(dx) === Math.abs(dy)) && Math.max(Math.abs(dx), Math.abs(dy)) <= PROJ_RANGE && lineClear(p, dirIndex(dx, dy), Math.max(Math.abs(dx), Math.abs(dy))); })
+        .sort((a, b) => Math.max(Math.abs(a.x - p.x), Math.abs(a.y - p.y)) - Math.max(Math.abs(b.x - p.x), Math.abs(b.y - p.y)));
+      if (al[0]) p.dir = dirIndex(al[0].x - p.x, al[0].y - p.y);
     }
   }
 
@@ -2119,7 +2136,7 @@ const Dungeon = (() => {
     const slot = run.bag.findIndex(b => b.id === id);
     if (slot < 0) { log(`가방에 ${jo(ITEMS[id].n, '이')} 없다.`, now()); return; }
     const it = ITEMS[id];
-    if (it.throw || !it.use || it.use === 'none') act({ t: 'item', slot, mode: 'throw' });
+    if (it.throw || !it.use || it.use === 'none') { autoFace(P(), { r: 'p' }); act({ t: 'item', slot, mode: 'throw' }); }
     else useAct(slot);
   }
 
@@ -2742,7 +2759,7 @@ const Dungeon = (() => {
       <tr><td>발밑의 아이템</td><td>가방을 열면 맨 위의 "발밑"에서 조사·줍기·가방 아이템과 교환·던지기. 가방 정리 버튼으로 종류별 정렬.</td></tr>
       <tr><td>큰 지도</td><td>N 또는 미니맵 클릭. 큰 지도에서 가 본 곳을 누르면 그곳까지 이동한다. 아무 키나 누르면 닫힌다.</td></tr>
       <tr><td>공격</td><td>Space / Enter, 적 쪽으로 이동해도 공격</td></tr>
-      <tr><td>기술</td><td>1 ~ 4 (근접 기술은 옆에 붙은 적 쪽으로 자동으로 돌아봄, 원거리 기술은 바라보는 방향으로 쏨)</td></tr>
+      <tr><td>기술</td><td>1 ~ 4 (가까운 적에게 자동으로 방향을 맞춤)</td></tr>
       <tr><td>기술 정보</td><td>Shift + 1 ~ 4, 기술 버튼의 ? 또는 우클릭</td></tr>
       <tr><td>자동 (O)</td><td>적이 없으면 자동 이동: 아이템을 줍고 탐색이 끝나면 계단으로. 적을 만나면 멈춘다.<br>적이 보이면 자동 전투: 가장 가까운 적에게 최적의 기술 (누를 때마다 1턴, Tab / F도 같음)</td></tr>
       <tr><td>동료</td><td>V 또는 🤝 버튼: 동료의 HP·PP·상태 확인, 작전 바꾸기</td></tr>

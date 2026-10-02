@@ -100,12 +100,16 @@ const accMul = s => s >= 0 ? (3 + s) / 3 : 3 / (3 - s);
 // 불가사의 던전식 상성: 효과가 굉장함 1.4배, 별로 0.7배, 원래 무효인 상성은 0.5배 (이중이면 곱해짐)
 // 특성에 의한 무효(부유, 저수 등)는 calcHit/resolveHit에서 따로 처리한다
 const TYPE_MUL = { 2: 1.4, 0.5: 0.7, 0: 0.5, 1: 1 };
-function typeEff(moveType, types) {
+// mid: 상성이 특별한 기술 (프리즈드라이: 물에게 굉장함 / 플라잉프레스: 격투+비행 상성 / 사우전드애로: 비행에게도 보통)
+const FREEZE_DRY = 573, FLYING_PRESS = 560, THOUSAND_ARROWS = 614;
+function typeEff(moveType, types, mid) {
   if (!moveType) return 1;
   // 굉장함과 별로가 겹치면 서로 지워서 보통(1배)이 된다 (1.4 × 0.7 = 0.98로 '별로'가 되지 않게)
   let n = 0, e = 1;
-  for (const t of types) {
-    const c = DATA.chart[moveType - 1][t - 1];
+  for (const a of mid === FLYING_PRESS ? [moveType, 3] : [moveType]) for (const t of types) {
+    let c = DATA.chart[a - 1][t - 1];
+    if (mid === FREEZE_DRY && t === 11) c = 2;
+    if (mid === THOUSAND_ARROWS && a === 5 && t === 3) c = 1;
     if (c === 2) n++; else if (c === 0.5) n--; else if (c === 0) e *= TYPE_MUL[0];
   }
   return e * (n > 0 ? TYPE_MUL[2] ** n : n < 0 ? TYPE_MUL[0.5] ** -n : 1);
@@ -199,6 +203,12 @@ function guardMul(def, Dd, move, mt, eff) {
   return m;
 }
 
+// 기술의 상성 배율 (상성이 특별한 기술, 배짱: 노말·격투 기술이 고스트를 무시)
+function moveEff(att, def, move, mt, A) {
+  const types = A.scrappy && (mt === 1 || mt === 2) ? def.types.filter(t => t !== 8) : def.types;
+  return typeEff(mt, types, move.id);
+}
+
 // 실제 피해 계산 (명중 판정 포함)
 function calcHit(att, def, move) {
   const A = abilityOf(att), Dd = defAbility(att, def);
@@ -215,9 +225,8 @@ function calcHit(att, def, move) {
   }
   if (move.c === 1) return { hit: true, dmg: 0, eff: 1 };
   const mt = moveType(att, move);
-  let eff = typeEff(mt, def.types);
-  if (A.scrappy && (mt === 1 || mt === 2) && def.types.includes(8)) eff = typeEff(mt, def.types.filter(t => t !== 8));
-  if (Dd.levitate && mt === 5) eff = 0;
+  let eff = moveEff(att, def, move, mt, A);
+  if (Dd.levitate && mt === 5 && move.id !== THOUSAND_ARROWS) eff = 0;
   if (Dd.immuneFlag && hasFlag(move, Dd.immuneFlag)) eff = 0;
   if (Dd.wonderGuard && eff <= 1 && !(move.basic && Math.random() < WONDER_GUARD_BASIC)) eff = 0;
   if (eff === 0) return { hit: true, dmg: 0, eff: 0 };
@@ -248,7 +257,7 @@ function calcHit(att, def, move) {
   return { hit: true, dmg: Math.max(1, Math.floor(dmg)), eff, crit };
 }
 
-// 자동전투용 예상 점수
+// 자동 전투·동료 AI용 예상 점수 (실제 계산의 상성·면역·방어 특성·날씨를 반영. 효과가 없으면 0)
 function moveScore(att, def, move) {
   if (!move || move.c === 1) return 0;
   const phys = move.c === 2;
@@ -256,10 +265,15 @@ function moveScore(att, def, move) {
   const Ab = abilityOf(att), Dd = defAbility(att, def), mt = moveType(att, move);
   const stab = mt && (att.types.includes(mt) || Ab.protean) ? (Ab.adapt ? 2 : 1.5) : 1;
   const hits = move.hits ? (Ab.skillLink ? move.hits[1] : (move.hits[0] + move.hits[1]) / 2) : 1;
-  let eff = typeEff(mt, def.types);
-  if ((Dd.levitate && mt === 5) || (Dd.absorb && Dd.absorb.t === mt)) eff = 0;
+  let eff = moveEff(att, def, move, mt, Ab);
+  // 면역: 부유(땅), 흡수 특성(저수·건조한피부·축전 등), 방음·방탄 같은 기술 종류 면역
+  if ((Dd.levitate && mt === 5 && move.id !== THOUSAND_ARROWS) || (Dd.absorb && Dd.absorb.t === mt) || (Dd.immuneFlag && hasFlag(move, Dd.immuneFlag))) return 0;
   if (Dd.wonderGuard && eff <= 1) eff = move.basic ? eff * WONDER_GUARD_BASIC : 0;
-  return move.p * powerMul(att, def, move, mt, Ab) * hits * stab * eff * (A / D) * ((move.a || 100) / 100);
+  if (!eff) return 0;
+  const W = weatherNow();
+  const wx = W === 'sun' ? (mt === 10 ? 1.5 : mt === 11 ? 0.5 : 1) : W === 'rain' ? (mt === 11 ? 1.5 : mt === 10 ? 0.5 : 1) : 1;
+  const tinted = Ab.tinted && eff < 1 ? 2 : 1;
+  return move.p * powerMul(att, def, move, mt, Ab) * hits * stab * eff * wx * tinted * guardMul(def, Dd, move, mt, eff) * (A / D) * ((move.a || 100) / 100);
 }
 
 function effText(eff) {
