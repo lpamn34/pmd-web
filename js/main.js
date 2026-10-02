@@ -607,7 +607,7 @@ const Game = (() => {
     if (Math.random() < SIG_SHOP_CHANCE) held.push(pick(SIG_ITEMS));   // 전용 도구는 가끔 하나
     const tms = TM_IDS.slice().sort(() => Math.random() - 0.5).slice(0, 2);
     const vit = Math.random() < 0.35 ? [pick(Object.keys(VITAMINS))] : [];
-    const abi = [Math.random() < 0.4 ? 'abcapsule' : null, Math.random() < 0.15 ? 'abpatch' : null].filter(Boolean);
+    const abi = [Math.random() < 0.4 ? 'abcapsule' : null, Math.random() < 0.4 ? 'eggtm' : null, Math.random() < 0.15 ? 'abpatch' : null].filter(Boolean);
     // 구미: 가끔 하나 (무지개구미는 아주 가끔)
     const gum = [Math.random() < 0.2 ? pick(Object.keys(GUMMIES).filter(id => id !== 'rainbowgummy')) : null, Math.random() < 0.02 ? 'rainbowgummy' : null].filter(Boolean);
     save.shop = [...stock, ...held, ...tms, ...vit, ...abi, ...gum];
@@ -960,6 +960,8 @@ const Game = (() => {
         <button class="btn sm${cur ? '' : ' ghost'}" data-act="set-ability" data-arg="${aid}" ${cur || !ownedCount(hid ? 'abpatch' : 'abcapsule') ? 'disabled' : ''}>${cur ? '사용 중' : `${ITEMS[hid ? 'abpatch' : 'abcapsule'].icon} 바꾸기`}</button></div>`; }).join('')}
       <h3>기술머신 <span class="dim">(한 번 쓰면 사라지고, 배운 기술은 기술 설정에서 언제든 넣고 뺄 수 있습니다)</span></h3>
       ${tmSection(sp, ch)}
+      <h3>🥚 교배기술 <span class="dim">(${ITEMS.eggtm.icon}교배기술머신 ×${ownedCount('eggtm')}. 하나 쓰면 교배기술 하나를 배웁니다)</span></h3>
+      ${eggSection(sp, ch)}
       <h3>영양제 <span class="dim">(능력치를 영구히 올립니다. 일반 던전에서만 적용되고 로그라이크에서는 무시)</span></h3>
       ${vitaminSection(ch)}
       <h3>구미 <span class="dim">(아주 드문 간식. 능력치가 영구히 조금 오르고, 던전에서 먹으면 배도 찹니다)</span></h3>
@@ -1170,7 +1172,7 @@ const Game = (() => {
         <label class="chk"><input type="checkbox" data-set="bgm" ${s.bgm !== false ? 'checked' : ''}> 배경음</label>
         <input type="range" min="0" max="100" step="5" data-setnum="bgmVol" value="${s.bgmVol ?? 40}" title="배경음 음량"></div>
       <p class="dim tiny">소리는 게임이 직접 합성합니다 (음원 파일 없음). 브라우저 정책상 화면을 한 번 눌러야 소리가 나기 시작합니다.</p>
-      <div class="btns"><button class="btn ghost" data-act="help">⌨ 조작법</button> <button class="btn ghost danger" data-act="reset">저장 데이터 초기화</button></div>
+      <div class="btns"><button class="btn ghost" data-act="help">⌨ 조작법</button> <button class="btn ghost" data-act="key-settings">🎮 키 설정</button> <button class="btn ghost danger" data-act="reset">저장 데이터 초기화</button></div>
       <h3>세이브 관리</h3>
       <p class="dim">${Online.loggedIn() ? '세이브는 이 브라우저와 클라우드에 저장됩니다. 만일을 위해 가끔 파일로도 내보내 두세요.' : '세이브는 이 브라우저에만 저장됩니다. 브라우저 데이터를 지우거나 다른 컴퓨터로 옮기기 전에 파일로 내보내 두세요.'}</p>
       <div class="btns"><button class="btn" data-act="save-export">💾 세이브 내보내기</button> <button class="btn ghost" data-act="save-import">📂 세이브 불러오기</button>
@@ -1324,9 +1326,11 @@ const Game = (() => {
       case 'unhold': { const ch = save.roster[arg ? +arg : save.current]; if (ch && ch.held) { storeAdd(ch.held); ch.held = null; UI.toast('지닌 물건을 창고에 넣었습니다.'); } break; }
       case 'hold': return chooseHeld(arg && save.roster[+arg] ? +arg : save.current);
       case 'use-tm': return useTM(arg);
+      case 'learn-egg': return learnEgg(+arg);
       case 'set-ability': return changeAbility(+arg);
       case 'evolve': return evolve(+arg);
       case 'help': Dungeon.showHelp(); return;
+      case 'key-settings': keySettings(); return;
       case 'guide': Guide.open(arg); return;
       case 'music-loop': return musicLoopDialog(arg);
       case 'music-del': await Sound.removeMusic(arg); UI.toast('음악 파일을 삭제했습니다.'); break;
@@ -1382,6 +1386,32 @@ const Game = (() => {
     UI.open({
       title: `${esc(mv.n)} — 잊을 기술 선택`, html: `${moveDetailHtml(it.mv)}<p>기술을 4개 알고 있습니다. 지금 바꿀 기술을 고르세요.</p>`,
       choices: [...ch.moves.map((m, i) => ({ label: moveLine(m), fn: () => { ch.moves[i] = it.mv; persist(); renderTown(); UI.toast(`${jo(mv.n, '을')} 배웠습니다!`); } })),
+        { label: '지금은 바꾸지 않는다 (나중에 기술 설정에서 넣을 수 있음)', fn: () => {} }],
+    });
+  }
+
+  // 교배기술: 교배기술머신 하나로 그 포켓몬(진화 전 모습 포함)의 교배기술 하나를 배운다. 배운 기술은 기술머신으로 배운 기술과 같이 ch.tms에 남는다
+  function eggSection(sp, ch) {
+    const eggs = eggMovesOf(sp);
+    if (!eggs.length) return '<p class="dim">이 포켓몬은 교배기술이 없습니다.</p>';
+    const have = ownedCount('eggtm');
+    return `<div class="tm-box">${eggs.map(m => { const known = (ch.tms || []).includes(m) || ch.moves.includes(m); return `<div class="row">
+      <span class="grow">🥚 <span class="ab-link" data-move="${m}">${esc(DATA.moves[m].n)}</span> <span class="dim">${known ? '배움' : ''}</span></span>
+      <button class="btn sm" data-act="learn-egg" data-arg="${m}" ${known || !have ? 'disabled' : ''}>배우기</button></div>`; }).join('')}</div>
+      ${have ? '' : '<p class="dim">교배기술머신이 없습니다. 마을 상점에 가끔 진열되고, 던전에서 드물게 주울 수 있어요.</p>'}`;
+  }
+  async function learnEgg(mid) {
+    const sp = save.current, ch = save.roster[sp], it = ITEMS.eggtm, mv = DATA.moves[mid];
+    if (!eggMovesOf(sp).includes(mid) || (ch.tms || []).includes(mid) || !ownedCount('eggtm')) return;
+    if (!(await UI.confirm('교배기술', `<p>${it.icon} ${esc(jo(it.n, '을'))} 사용해서 ${esc(spName(sp))}에게 ${esc(jo(mv.n, '을'))} 가르칩니다.</p>${moveDetailHtml(mid)}<p class="dim">교배기술머신 1개가 사라집니다. (가진 개수 ${ownedCount('eggtm')})</p>`, '배운다', '그만둔다'))) return;
+    takeItem('eggtm');
+    ch.tms = [...new Set([...(ch.tms || []), mid])];
+    Sound.play('item');
+    if (ch.moves.length < 4) { ch.moves.push(mid); persist(); renderTown(); UI.toast(`${jo(mv.n, '을')} 배웠습니다!`); return; }
+    persist(); renderTown();
+    UI.open({
+      title: `${esc(mv.n)} — 잊을 기술 선택`, html: '<p>기술을 4개 알고 있습니다. 지금 바꿀 기술을 고르세요.</p>',
+      choices: [...ch.moves.map((m, i) => ({ label: moveLine(m), fn: () => { ch.moves[i] = mid; persist(); renderTown(); UI.toast(`${jo(mv.n, '을')} 배웠습니다!`); } })),
         { label: '지금은 바꾸지 않는다 (나중에 기술 설정에서 넣을 수 있음)', fn: () => {} }],
     });
   }
@@ -1456,12 +1486,13 @@ const Game = (() => {
   function setMoves(sp = save.current) {
     const ch = save.roster[sp];
     // 진화 전 모습이 이 레벨까지 배우는 기술과 지금 쓰고 있는 기술도 고를 수 있다 (진화해도 잊지 않는다)
+    const egg = new Set(eggMovesOf(sp));
     const all = [...new Set([...ch.moves, ...learnableUpTo(sp, ch.lv), ...preEvos(sp).flatMap(p => learnableUpTo(p, ch.lv)), ...(ch.tms || [])])].filter(m => DATA.moves[m]);
     if (!all.length) { UI.alert('기술 설정', '<p>배울 수 있는 기술이 없습니다.</p>'); return; }
     const sel = new Set(ch.moves);
     UI.open({
       title: `${esc(spName(sp))} 기술 설정 (최대 4개)`, wide: true,
-      html: `<p class="dim">현재 레벨까지 배울 수 있는 기술(진화 전 모습의 기술 포함)과 기술머신으로 배운 기술 중에서 자유롭게 고르세요. <b>?</b>를 누르면 기술 설명을 볼 수 있습니다.</p><div class="move-pick">${all.map(id => `<label class="move-row"><input type="checkbox" value="${id}" ${sel.has(id) ? 'checked' : ''}> ${moveLine(id)}${masteryStar(sp, id)}<span class="info" data-move="${id}" data-sp="${sp}" title="기술 정보">?</span></label>`).join('')}</div>`,
+      html: `<p class="dim">현재 레벨까지 배울 수 있는 기술(진화 전 모습의 기술 포함), 기술머신·🧬교배기술머신으로 배운 기술 중에서 자유롭게 고르세요. <b>?</b>를 누르면 기술 설명을 볼 수 있습니다.</p><div class="move-pick">${all.map(id => `<label class="move-row"><input type="checkbox" value="${id}" ${sel.has(id) ? 'checked' : ''}> ${moveLine(id)}${egg.has(id) && !learnableUpTo(sp, MAX_LEVEL).includes(id) ? ' <span class="tag" title="교배기술">🥚</span>' : ''}${masteryStar(sp, id)}<span class="info" data-move="${id}" data-sp="${sp}" title="기술 정보">?</span></label>`).join('')}</div>`,
       choices: [{ label: '저장', fn: () => { ch.moves = [...sel]; persist(); renderTown(); } }, { label: '취소', fn: () => {} }],
       onOpen: box => {
         box.querySelectorAll('input[type=checkbox]').forEach(cb => cb.onchange = () => {
@@ -1510,6 +1541,40 @@ const Game = (() => {
     const on = !save.favs.includes(id);
     save.favs = on ? [...save.favs, id] : save.favs.filter(x => x !== id);
     persist(); return on;
+  }
+
+  // ── 키 설정: 동작마다 키 하나로 바꾸기 (바꾸지 않은 동작은 기본 키 그대로) ──
+  function keySettings() {
+    const custom = save.settings.keys || {};
+    Dungeon.updateKeyHints();   // 던전 아래 버튼의 키 표시도 바로 맞춘다
+    const row = ([a, n]) => `<div class="row"><span class="grow">${esc(n)}</span>
+      <span class="keycaps">${keysOf(a, custom).map(c => `<kbd>${esc(keyLabel(c))}</kbd>`).join(' ') || '<span class="warn">없음</span>'}</span>
+      <button class="btn sm ghost" data-key="${a}">바꾸기</button>${custom[a] ? ` <button class="btn sm ghost" data-keyreset="${a}" title="기본 키로">↺</button>` : ''}</div>`;
+    UI.open({
+      title: '🎮 키 설정', wide: true,
+      html: `<p class="dim">바꾸기를 누른 뒤 쓸 키를 누르세요. 그 동작은 그 키 하나로 바뀌고, 다른 동작에 같은 키가 있었다면 그 동작에서는 빠져요. Esc는 늘 메뉴예요.
+        상하좌우 이동 키 두 개를 함께 누르면 대각선으로 움직여요.</p><div class="key-list">${KEY_ACTIONS.map(row).join('')}</div>`,
+      choices: [{ label: '모두 기본 키로', fn: () => { save.settings.keys = {}; persist(); keySettings(); } }, { label: '닫기', fn: () => {} }],
+      onOpen: (box, m) => {
+        box.querySelectorAll('[data-keyreset]').forEach(b => b.onclick = () => { delete save.settings.keys[b.dataset.keyreset]; persist(); UI.close(m); keySettings(); });
+        box.querySelectorAll('[data-key]').forEach(b => b.onclick = () => {
+          const a = b.dataset.key;
+          b.textContent = '키를 누르세요…'; b.classList.remove('ghost');
+          const grab = e => {
+            e.preventDefault(); e.stopPropagation();
+            window.removeEventListener('keydown', grab, true);
+            if (e.code === 'Escape') { UI.close(m); keySettings(); return; }
+            if (['ShiftLeft', 'ShiftRight', 'ControlLeft', 'ControlRight', 'AltLeft', 'AltRight', 'MetaLeft', 'MetaRight'].includes(e.code)) { UI.toast('Shift·Ctrl·Alt는 쓸 수 없어요.'); UI.close(m); keySettings(); return; }
+            const keys = { ...(save.settings.keys || {}) };
+            for (const [k, c] of Object.entries(keys)) if (c === e.code) delete keys[k];   // 다른 동작이 쓰던 같은 키는 뺀다
+            keys[a] = e.code; save.settings.keys = keys; persist();
+            UI.toast(`${KEY_ACTIONS.find(x => x[0] === a)[1]}: ${keyLabel(e.code)}`);
+            UI.close(m); keySettings();
+          };
+          window.addEventListener('keydown', grab, true);
+        });
+      },
+    });
   }
 
   // ───────────────────────── 캐릭터 선택 ─────────────────────────

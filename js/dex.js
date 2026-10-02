@@ -6,7 +6,7 @@ const Dex = (() => {
   const RANGE_SHORT = { f: '앞', p: '원거리', r: '주변', s: '자신' };
   const CLS = ['', '변화', '물리', '특수'];
   const bst = id => DATA.species[id].b.reduce((a, b) => a + b, 0);
-  const shopSet = new Set([...SHOP_POOL, ...SHOP_FIXED, ...HELD_SHOP_POOL, ...TM_IDS, ...Object.keys(VITAMINS), ...Object.keys(GUMMIES), 'abcapsule', 'abpatch']), dropSet = new Set([...DROP_TABLE.map(d => d[0]), ...MEGA_STONES]);
+  const shopSet = new Set([...SHOP_POOL, ...SHOP_FIXED, ...HELD_SHOP_POOL, ...TM_IDS, ...Object.keys(VITAMINS), ...Object.keys(GUMMIES), 'abcapsule', 'eggtm', 'abpatch']), dropSet = new Set([...DROP_TABLE.map(d => d[0]), ...MEGA_STONES]);
 
   function render() {
     const tabs = [['pokemon', '포켓몬'], ['move', '기술'], ['ability', '특성'], ['item', '아이템']]
@@ -151,6 +151,8 @@ const Dex = (() => {
         <h3>레벨업으로 배우는 기술</h3>
         <table class="dex-table"><tbody>${d.l.map(([lv, mid]) => { const m = DATA.moves[mid]; return `<tr data-dexmove="${mid}"><td class="num">Lv${lv}</td>
           <td><span class="type" style="background:${TYPE_COLORS[m.t - 1]}">${typeName(m.t)}</span></td><td><b>${esc(m.n)}</b></td><td>${CLS[m.c]}</td><td>${m.p || '—'}</td><td>${RANGE_SHORT[m.r]}</td></tr>`; }).join('')}</tbody></table>
+        <h3>🥚 교배기술 (${eggMovesOf(id).length}) <span class="dim">— 교배기술머신으로 배운다</span></h3>
+        <div class="tm-chips">${eggMovesOf(id).map(mid => `<span class="tm-chip" data-dexmove="${mid}"><i style="background:${TYPE_COLORS[DATA.moves[mid].t - 1]}"></i>${esc(DATA.moves[mid].n)}</span>`).join('') || '<span class="dim">없음</span>'}</div>
         <h3>기술머신으로 배울 수 있는 기술 (${tmMovesOf(id).length})</h3>
         <div class="tm-chips">${tmMovesOf(id).map(mid => `<span class="tm-chip" data-dexmove="${mid}"><i style="background:${TYPE_COLORS[DATA.moves[mid].t - 1]}"></i>${esc(DATA.moves[mid].n)}</span>`).join('') || '<span class="dim">없음</span>'}</div>
         ${d.cr ? `<p class="dim tiny">스프라이트: ${esc(d.cr[0])} / 초상화: ${esc(d.cr[1] || '?')} (PMD SpriteCollab)</p>` : ''}

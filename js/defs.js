@@ -3,7 +3,7 @@
 
 // 게임 버전: 업데이트할 때 올리고, index.html의 ?v= 숫자도 같이 올린다
 // (친구와 구조 코드·오늘의 도전을 주고받으려면 버전이 같아야 한다)
-const GAME_VERSION = '0.48';
+const GAME_VERSION = '0.49';
 // 버전 비교: '0.25' > '0.9' 처럼 숫자로 비교한다
 function cmpVer(a, b) {
   const x = String(a).split('.').map(Number), y = String(b).split('.').map(Number);
@@ -12,6 +12,7 @@ function cmpVer(a, b) {
 }
 const GAME_DATE = '2026-10-01';
 const VERSION_NOTES = [
+  ['0.49', ['방향키 대각선 이동이 쉬워짐 (상하좌우 키를 누르면 아주 잠깐 기다렸다가 움직여서, 두 키를 함께 누르면 대각선)', '🎮 키 설정 (정보 탭): 동작마다 쓸 키를 바꿀 수 있음, 아래 버튼의 키 표시도 따라 바뀜', '던전에서 리더(내 캐릭터)도 동료처럼 발밑에 HP 바', '미니맵: 가 본 길 둘레의 벽을 칠하고 길과 벽 사이에 밝은 선 (길 모양이 잘 보이게)', '🧬 교배기술머신 (새 아이템, ₽6000): 마을의 캐릭터 탭에서 쓰면 그 포켓몬의 교배기술 중 하나를 골라 배움. 배운 교배기술은 기술 설정과 던전의 동료 기술 바꾸기에서 고를 수 있음', '도감 포켓몬 정보에 교배기술 목록']],
   ['0.48', ['상점: 최근에 판 물건 10개를 판 값 그대로 되살 수 있음 (실수로 판 물건 되돌리기)', '창고에서 아이템을 바로 팔 수 있음 (하나씩, 겹치는 물건은 5개씩)', '물의 도시·풍요의 하늘길·왕관의 설원·쌍권의 탑·울트라 차원의 틈 등에서 최종·중간 보스 후보(라티아스·라티오스 등)가 일반 적으로 나오던 문제 수정', '발밑의 아이템을 바로 사용할 수 있음 (발밑 메뉴의 사용한다, 가방이 가득 차 있어도)', '던전의 🤝 동료 창에서 동료의 지닌 물건과 기술을 바꿀 수 있음 (뺐다가 다시 넣은 기술은 남아 있던 PP 그대로)']],
   ['0.47', ['로그라이크 던전에 지닌 물건 하나를 그대로 지니고 들어감 (메가스톤·전용 도구·모습 바꾸는 도구 사용 가능, 쓰러져도 잃지 않음)', '서버 무료 한도 아끼기: 마을 자동 클라우드 저장 10분 → 20분, 창을 내리거나 다른 앱으로 갈 때의 저장은 2분에 한 번까지 (30초 → 2분), 접속자 수 갱신 10분 → 15분']],
   ['0.46', ['구조를 기다리는 동안 그 포켓몬을 진화시키면, 구조받았을 때 Lv5 진화 전 모습으로 다시 태어나던 문제 수정 (진화한 모습·레벨로 이어서 탐험)', '울퉁불퉁멧은 까칠한피부·철가시처럼 접촉한 적에게 데미지를 주는 특성의 포켓몬이 지닐 수 없음 (반격이 겹쳐 보스가 너무 빨리 쓰러지던 문제)', '효과가 없던 특성 46개에 던전용 효과: 탈(층마다 첫 공격을 대신 맞음)·발끈·나이트메어(잠든 적에게 데미지)·멀티타입·원시회귀(시작의바다·끝의대지)·델타스트림·부자유친·관통드릴·미러아머 등 (특성 정보의 ⚑ 던전 규칙에서 확인)', '자기 자신의 SOS 코드로 구조하러 갈 수 없음 (구조를 포기한 뒤나, 로그인한 같은 계정의 다른 기기에서 올린 요청도)', '이로치 해금은 진화 계열 전체: 진화 전·후 어느 모습의 이로치를 쓰러뜨리거나 영입해도 계열 모두 이로치를 고를 수 있음 (이미 푼 이로치도 적용)', '메가저리더프 특성 천정부지: 땅 타입 기술을 받지 않고 함정을 밟지 않음, 적을 쓰러뜨리면 공격·특수공격 중 높은 쪽 1단계 상승 (이름이 영어로 나오고 효과가 없던 문제)', '모습이 바뀌는 특성(리밋실드·달마모드·배틀스위치·어군·아이스페이스·꼬르륵스위치·마이티체인지·테라체인지)의 정보에 "효과가 없다" 대신 언제 모습이 바뀌는지 표시', '설명이 비어 있던 9세대 기술 66개·특성 30개에 원작 효과 설명 추가', '카타스트로피는 위력 90의 공격 기술로, 앙갚음은 받은 데미지의 1.5배를 돌려줌 (위력 1로 거의 데미지가 없던 문제)']],
@@ -165,6 +166,7 @@ for (const [id, g] of Object.entries(GUMMIES)) {
 // ── 특성 변경 아이템: 마을의 캐릭터 탭에서 특성을 바꿀 때 소모된다 ──
 Object.assign(ITEMS, {
   abcapsule: { n: '특성캡슐', d: '특성을 다른 일반 특성으로 바꿀 때 필요하다. (마을의 캐릭터 탭에서 사용)', price: 2000, use: 'none', icon: '⚗' },
+  eggtm:     { n: '교배기술머신', d: '쓰면 그 포켓몬의 교배기술 중 하나를 골라 배운다. (마을의 캐릭터 탭에서 사용)', price: 4000, use: 'none', icon: '🧬' },
   abpatch:   { n: '특성패치', d: '특성을 숨겨진 특성으로 바꿀 때 필요하다. (마을의 캐릭터 탭에서 사용)', price: 6000, use: 'none', icon: '🧩' },
 });
 
@@ -292,7 +294,7 @@ const DROP_TABLE = [['oran', 18], ['sitrus', 4], ['apple', 12], ['bigapple', 3],
 // 지닌 물건은 가끔 바닥에서 발견된다 (종류마다 드물게)
 for (const id of HELD_SHOP_POOL) DROP_TABLE.push([id, 0.12]);
 for (const id of Object.keys(VITAMINS)) DROP_TABLE.push([id, 0.15]);
-DROP_TABLE.push(['abcapsule', 0.1], ['abpatch', 0.04]);
+DROP_TABLE.push(['abcapsule', 0.1], ['eggtm', 0.1], ['abpatch', 0.04]);
 // 열매: 상태이상 열매는 흔하게, 능력 열매는 가끔
 DROP_TABLE.push(['cheri', 3], ['chesto', 2], ['pecha', 3], ['rawst', 3], ['persim', 2], ['lum', 1], ['leppa', 1.5],
   ['liechi', 0.6], ['ganlon', 0.6], ['petaya', 0.6], ['apicot', 0.6], ['salac', 0.6], ['starf', 0.2], ['lansat', 0.2]);
@@ -459,6 +461,42 @@ function preEvos(sp) {
   }
   return out;
 }
+// ── 던전 조작 키: 동작마다 기본 키, 정보 탭에서 동작마다 키 하나를 바꿀 수 있다 (settings.keys) ──
+const KEY_ACTIONS = [
+  ['up', '위로 이동', ['ArrowUp', 'KeyW', 'Numpad8']], ['down', '아래로 이동', ['ArrowDown', 'KeyS', 'Numpad2']],
+  ['left', '왼쪽으로 이동', ['ArrowLeft', 'KeyA', 'Numpad4']], ['right', '오른쪽으로 이동', ['ArrowRight', 'KeyD', 'Numpad6']],
+  ['upleft', '왼쪽 위로 이동', ['KeyQ', 'Numpad7', 'Home']], ['upright', '오른쪽 위로 이동', ['KeyE', 'Numpad9', 'PageUp']],
+  ['downleft', '왼쪽 아래로 이동', ['KeyZ', 'Numpad1', 'End']], ['downright', '오른쪽 아래로 이동', ['KeyC', 'Numpad3', 'PageDown']],
+  ['attack', '공격', ['Space', 'Enter', 'NumpadEnter']],
+  ['skill1', '기술 1', ['Digit1']], ['skill2', '기술 2', ['Digit2']], ['skill3', '기술 3', ['Digit3']], ['skill4', '기술 4', ['Digit4']],
+  ['auto', '자동 (이동 / 전투 한 턴)', ['KeyO']], ['fight', '자동 전투 한 턴', ['Tab', 'KeyF']], ['rest', '휴식', ['KeyR']],
+  ['wait', '대기', ['KeyX', 'Numpad5', 'Period']], ['stairs', '계단', ['KeyG']], ['bag', '가방', ['KeyI', 'KeyB']],
+  ['party', '동료', ['KeyV']], ['quick', '빠른 사용', ['KeyT']], ['map', '지도', ['KeyN']], ['look', '조사', ['KeyK']],
+  ['missions', '임무', ['KeyJ', 'KeyL']], ['status', '내 상태', ['KeyP']], ['log', '메시지 기록', ['Semicolon', 'KeyU']],
+  ['help', '도움말', ['KeyH', 'Slash']], ['menu', '메뉴', ['KeyM']],
+];
+const MOVE_ACTION_DIR = { down: 0, downright: 1, right: 2, upright: 3, up: 4, upleft: 5, left: 6, downleft: 7 };
+// 키 → 동작 (바꾼 동작은 기본 키 대신 바꾼 키, 다른 동작에 같은 키가 있으면 바꾼 쪽이 이긴다). Escape는 늘 메뉴
+function keyActionMap(custom = {}) {
+  const map = {};
+  for (const [a, , def] of KEY_ACTIONS) for (const c of (custom[a] ? [] : def)) map[c] = a;
+  for (const [a, c] of Object.entries(custom)) if (c) map[c] = a;
+  map.Escape = 'menu';
+  return map;
+}
+// 그 동작에 실제로 쓰이는 키 (다른 동작이 가져간 기본 키는 뺀다)
+function keysOf(action, custom = {}) {
+  const map = keyActionMap(custom);
+  return Object.keys(map).filter(c => map[c] === action && c !== 'Escape');
+}
+const KEY_NAMES = { ArrowUp: '↑', ArrowDown: '↓', ArrowLeft: '←', ArrowRight: '→', Space: 'Space', Enter: 'Enter', NumpadEnter: '숫자패드 Enter', Semicolon: ';', Slash: '/', Period: '.', Comma: ',', Tab: 'Tab', Home: 'Home', End: 'End', PageUp: 'PgUp', PageDown: 'PgDn', Backquote: '`', Minus: '-', Equal: '=', BracketLeft: '[', BracketRight: ']', Quote: "'", Backslash: '\\', ShiftLeft: 'Shift', ShiftRight: 'Shift' };
+const keyLabel = code => KEY_NAMES[code] || code.replace(/^Key/, '').replace(/^Digit/, '').replace(/^Numpad/, '숫자패드 ');
+// 교배기술: 그 포켓몬과 진화 전 모습들의 교배기술 (js/eggmoves.js). 모습(폼)은 원래 포켓몬 기준
+function eggMovesOf(sp) {
+  const base = DATA.species[sp]?.f ? DATA.species[sp].f[0] : sp;
+  const ids = [base, ...preEvos(base)];
+  return [...new Set(ids.flatMap(x => (typeof EGG_MOVES !== 'undefined' && EGG_MOVES[x]) || []))].filter(m => DATA.moves[m]);
+}
 // 진화 계열 전체 (가장 처음 모습부터 모든 진화형까지, 갈래 진화 포함)
 const familyCache = {};
 function evoFamily(sp) {
@@ -598,7 +636,7 @@ const SHOP_FIXED = ['oran', 'apple', 'leppa', 'stone', 'link'];
 const TIER_LV = { 1: 0, 2: 10, 3: 20, 4: 28, 5: 35 };
 const TIER_NAMES = { 1: '일반', 2: '고급', 3: '희귀', 4: '유니크', 5: '전설' };
 // 유니크: 능력치를 영구히 올리거나 레벨·특성을 바꾸는 소모품
-const TIER_EPIC = ['candy', 'abcapsule'];
+const TIER_EPIC = ['candy', 'abcapsule', 'eggtm'];
 const TIER4 = ['lifeorb', 'luckyegg', 'amuletcoin', 'goldribbon', 'focussash', 'choicescarf', 'assaultvest', 'leftovers', 'expertbelt', 'friendbow', 'abpatch', 'rainbowgummy', 'starf', 'lansat'];
 const TIER2 = ['sitrus', 'bigapple', 'escape', 'foesleep', 'superpotion', 'xattack', 'xdefense', 'xspatk', 'xspeed', 'xaccuracy', 'goldthorn', 'radar', 'trapbust', 'paraorb', 'sloworb',
   'lumi', 'lum', 'leppa', 'liechi', 'ganlon', 'petaya', 'apicot', 'salac'];
@@ -631,7 +669,7 @@ function itemGroup(id) {
   const it = ITEMS[id];
   if (it.tm) return 'tm';
   if (it.held) return 'held';
-  if (VITAMINS[id] || GUMMIES[id] || ['candy', 'abcapsule', 'abpatch', 'reviver'].includes(id)) return 'rare';
+  if (VITAMINS[id] || GUMMIES[id] || ['candy', 'abcapsule', 'eggtm', 'abpatch', 'reviver'].includes(id)) return 'rare';
   if (it.use === 'cureOne' || it.use === 'chesto' || ['lum', 'leppa', 'liechi', 'ganlon', 'petaya', 'apicot', 'salac', 'starf', 'lansat', 'oran', 'sitrus'].includes(id)) return 'berry';
   if (it.use === 'food' || it.use === 'heal' || it.use === 'healPct' || it.use === 'fullheal' || it.use === 'cure' || it.use === 'pp') return 'heal';
   if (it.throw) return 'throw';

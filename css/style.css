@@ -449,3 +449,8 @@ i.clear.me { background: #2b6cb0; margin-left: 4px; }
 .pk-favonly { display: flex; align-items: center; gap: 4px; font-size: 13px; white-space: nowrap; cursor: pointer; }
 .picker-bar .pk-favonly input { flex: none; min-width: 0; width: auto; margin: 0; padding: 0; }
 .sos-row .ok { color: #8fe39b; }
+
+/* 키 설정 */
+.key-list { max-height: 55vh; overflow-y: auto; }
+.key-list .row { padding: 3px 0; }
+.keycaps kbd { display: inline-block; min-width: 18px; padding: 1px 6px; margin: 0 1px; border: 1px solid #fff4; border-bottom-width: 2px; border-radius: 4px; background: #ffffff10; font: 12px/1.4 inherit; text-align: center; }

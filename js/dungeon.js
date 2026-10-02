@@ -2248,7 +2248,7 @@ const Dungeon = (() => {
     Sprites.draw(ctx, looksOf(c), anim, c.dir, at, loop, cx, cy, alpha, flash, c.shiny);
     if (c.shiny && !c.dead && Math.floor(t / 180 + c.id * 10) % 6 === 0) { ctx.fillStyle = '#fff6a0'; ctx.font = '9px sans-serif'; ctx.textAlign = 'center'; ctx.fillText('✦', cx - 10, cy - 12); }
     if (c.ally && !c.dead) { ctx.fillStyle = '#6cf'; ctx.font = 'bold 9px sans-serif'; ctx.textAlign = 'center'; ctx.fillText('▼', cx, cy - 18); }
-    if (!c.player && !c.dead && (c.hp < c.maxhp || c.ally)) {
+    if (!c.dead && (c.player || c.ally || c.hp < c.maxhp)) {   // 리더·동료는 늘, 적은 다쳤을 때만
       ctx.fillStyle = '#000a'; ctx.fillRect(cx - 10, cy + 10, 20, 3);
       ctx.fillStyle = c.hp / c.maxhp > 0.5 ? '#5f5' : c.hp / c.maxhp > 0.2 ? '#fd4' : '#f55';
       ctx.fillRect(cx - 10, cy + 10, 20 * c.hp / c.maxhp, 3);
@@ -2423,8 +2423,25 @@ const Dungeon = (() => {
     if (mini.width !== D.w * S) { mini.width = D.w * S; mini.height = D.h * S; }
     mctx.clearRect(0, 0, mini.width, mini.height);
     if (bigMap) { mctx.fillStyle = '#081026'; mctx.fillRect(0, 0, mini.width, mini.height); }
-    mctx.fillStyle = bigMap ? 'rgb(84,120,190)' : 'rgba(120,170,255,0.55)';
-    for (let y = 0; y < D.h; y++) for (let x = 0; x < D.w; x++) if (D.explored[idx(x, y)] && floorAt(x, y)) mctx.fillRect(x * S, y * S, S, S);
+    // 가 본 바닥 둘레의 벽을 어둡게 칠하고, 바닥과 벽 사이에 밝은 선을 그어 길 모양이 잘 보이게 한다
+    const seenFloor = (x, y) => inb(x, y) && D.explored[idx(x, y)] && floorAt(x, y);
+    mctx.fillStyle = bigMap ? '#1c2748' : 'rgba(6,12,32,0.75)';
+    for (let y = 0; y < D.h; y++) for (let x = 0; x < D.w; x++) {
+      if (floorAt(x, y)) continue;
+      let near = false; for (let dy = -1; dy <= 1 && !near; dy++) for (let dx = -1; dx <= 1; dx++) if (seenFloor(x + dx, y + dy)) { near = true; break; }
+      if (near) mctx.fillRect(x * S, y * S, S, S);
+    }
+    mctx.fillStyle = bigMap ? 'rgb(84,120,190)' : 'rgba(120,170,255,0.6)';
+    for (let y = 0; y < D.h; y++) for (let x = 0; x < D.w; x++) if (seenFloor(x, y)) mctx.fillRect(x * S, y * S, S, S);
+    mctx.fillStyle = bigMap ? '#cfe0ff' : 'rgba(225,236,255,0.95)';
+    const L = bigMap ? 2 : 1;
+    for (let y = 0; y < D.h; y++) for (let x = 0; x < D.w; x++) {
+      if (!seenFloor(x, y)) continue;
+      if (!floorAt(x, y - 1)) mctx.fillRect(x * S, y * S, S, L);
+      if (!floorAt(x, y + 1)) mctx.fillRect(x * S, y * S + S - L, S, L);
+      if (!floorAt(x - 1, y)) mctx.fillRect(x * S, y * S, L, S);
+      if (!floorAt(x + 1, y)) mctx.fillRect(x * S + S - L, y * S, L, S);
+    }
     const s = D.stairs;
     if (!D.stairsHidden && D.explored[idx(s.x, s.y)]) { mctx.fillStyle = '#fff'; mctx.fillRect(s.x * S - 1, s.y * S - 1, S + 2, S + 2); mctx.fillStyle = '#39f'; mctx.fillRect(s.x * S, s.y * S, S, S); }
     const pa = { ...abilityOf(P()) };
@@ -2497,11 +2514,18 @@ const Dungeon = (() => {
   }
 
   // ───────────────────────── 입력 ─────────────────────────
-  const KEYDIR = {
-    ArrowUp: 4, ArrowDown: 0, ArrowLeft: 6, ArrowRight: 2, KeyW: 4, KeyS: 0, KeyA: 6, KeyD: 2, KeyQ: 5, KeyE: 3, KeyZ: 7, KeyC: 1,
-    Numpad8: 4, Numpad2: 0, Numpad4: 6, Numpad6: 2, Numpad7: 5, Numpad9: 3, Numpad1: 7, Numpad3: 1, Home: 5, PageUp: 3, End: 7, PageDown: 1,
-  };
-  const heldArrows = new Set();
+  // 상하좌우 키를 누르면 잠깐(DIAG_WAIT) 기다렸다가 움직인다: 그 사이 다른 방향 키가 눌리면 대각선 (두 키를 동시에 누르기 쉽게)
+  const DIAG_WAIT = 70;
+  const heldMove = new Map();   // 눌려 있는 상하좌우 키 → 방향
+  let moveTimer = null, moveFallback = null;
+  const keyAct = code => keyActionMap((Game.save && Game.save.settings && Game.save.settings.keys) || {})[code];
+  function heldDir() {
+    let dx = 0, dy = 0;
+    for (const d of heldMove.values()) { dx += DIRS[d][0]; dy += DIRS[d][1]; }
+    dx = Math.sign(dx); dy = Math.sign(dy);
+    return dx || dy ? dirIndex(dx, dy) : null;
+  }
+  function sendKey(k) { if (!D) return; if (busy()) pendingKey = k; else handleKey(k); }
   function onKeyDown(e) {
     if (!D) return;
     if (UI.key(e)) return;
@@ -2509,52 +2533,54 @@ const Dungeon = (() => {
     if (e.ctrlKey || e.metaKey || e.altKey) return;
     if (bigMap) { toggleMap(false); e.preventDefault(); return; }
     if (D.auto) { stopAuto(); e.preventDefault(); return; }
-    if (e.code.startsWith('Arrow')) heldArrows.add(e.code);
+    const a = keyAct(e.code);
+    if (['up', 'down', 'left', 'right'].includes(a) && !e.shiftKey) {
+      e.preventDefault();
+      heldMove.set(e.code, MOVE_ACTION_DIR[a]);
+      if (heldMove.size >= 2 || e.repeat) { clearTimeout(moveTimer); moveTimer = null; sendKey({ dir: heldDir() ?? MOVE_ACTION_DIR[a] }); return; }
+      clearTimeout(moveTimer); moveFallback = MOVE_ACTION_DIR[a];
+      moveTimer = setTimeout(() => { moveTimer = null; sendKey({ dir: heldDir() ?? moveFallback }); }, DIAG_WAIT);
+      return;
+    }
     const k = { code: e.code, shift: e.shiftKey, key: e.key };
     if (busy()) { pendingKey = k; e.preventDefault(); return; }
     if (handleKey(k)) e.preventDefault();
   }
-  function onKeyUp(e) { heldArrows.delete(e.code); }
+  function onKeyUp(e) { heldMove.delete(e.code); }
   function handleKey(k) {
     if (!D || D.dead) return false;
-    let dir = KEYDIR[k.code];
-    // 방향키 두 개 동시 → 대각선
-    if (k.code.startsWith('Arrow') && heldArrows.size === 2) {
-      const a = [...heldArrows]; let dx = 0, dy = 0;
-      for (const c of a) { const d = DIRS[KEYDIR[c]]; dx += d[0]; dy += d[1]; }
-      if (dx && dy) dir = dirIndex(dx, dy);
-    }
+    const a = k.dir != null ? null : keyAct(k.code);
+    const dir = k.dir != null ? k.dir : MOVE_ACTION_DIR[a];
     if (dir != null) {
       // Shift+방향: 제자리에서 방향만 바꾼다
       if (k.shift) act({ t: 'face', dir });
       else act({ t: 'move', dir });
       return true;
     }
-    switch (k.code) {
-      case 'Space': case 'Enter': case 'NumpadEnter': act({ t: 'attack' }); return true;
-      case 'Digit1': case 'Digit2': case 'Digit3': case 'Digit4': {
-        const slot = +k.code.slice(5) - 1;
+    if (k.key === '>') { tryStairs(); return true; }
+    switch (a) {
+      case 'attack': act({ t: 'attack' }); return true;
+      case 'skill1': case 'skill2': case 'skill3': case 'skill4': {
+        const slot = +a.slice(5) - 1;
         if (k.shift) { const m = P().moves[slot]; if (m) showMoveInfo(m.id, m.pp, m.max, P().sp); }
         else act({ t: 'skill', slot });
         return true;
       }
-      case 'KeyO': startAuto('explore'); return true;
-      case 'KeyV': partyMenu(); return true;
-      case 'Tab': case 'KeyF': startAuto('fight'); return true;
-      case 'KeyR': startAuto('rest'); return true;
-      case 'KeyX': case 'Numpad5': case 'Period':
-        if (k.key === '>') { tryStairs(); return true; }
-        act({ t: 'wait' }); return true;
-      case 'KeyG': tryStairs(); return true;
-      case 'KeyI': case 'KeyB': openBag(); return true;
-      case 'KeyM': case 'Escape': Game.dungeonMenu(); return true;
-      case 'KeyH': case 'Slash': showHelp(); return true;
-      case 'KeyJ': case 'KeyL': Game.showMissions(); return true;
-      case 'KeyN': toggleMap(true); return true;
-      case 'KeyK': toggleLook(); return true;
-      case 'KeyT': quickUse(); return true;
-      case 'KeyP': showStatus(); return true;
-      case 'Semicolon': case 'KeyU': showLog(); return true;
+      case 'auto': startAuto('explore'); return true;
+      case 'party': partyMenu(); return true;
+      case 'fight': startAuto('fight'); return true;
+      case 'rest': startAuto('rest'); return true;
+      case 'wait': act({ t: 'wait' }); return true;
+      case 'stairs': tryStairs(); return true;
+      case 'bag': openBag(); return true;
+      case 'menu': Game.dungeonMenu(); return true;
+      case 'help': showHelp(); return true;
+      case 'missions': Game.showMissions(); return true;
+      case 'map': toggleMap(true); return true;
+      case 'look': toggleLook(); return true;
+      case 'quick': quickUse(); return true;
+      case 'status': showStatus(); return true;
+      case 'log': showLog(); return true;
     }
     return false;
   }
@@ -2689,7 +2715,7 @@ const Dungeon = (() => {
     mini = document.getElementById('minimap'); mctx = mini.getContext('2d');
     window.addEventListener('keydown', onKeyDown);
     window.addEventListener('keyup', onKeyUp);
-    window.addEventListener('blur', () => heldArrows.clear());
+    window.addEventListener('blur', () => heldMove.clear());
     canvas.addEventListener('click', onClick);
     canvas.addEventListener('contextmenu', e => { if (!D || UI.isOpen()) return; e.preventDefault(); lookAt(e); });   // 우클릭: 조사
     document.getElementById('log').addEventListener('click', () => { if (D && !UI.isOpen()) { stopAuto(); showLog(); } });
@@ -2750,7 +2776,19 @@ const Dungeon = (() => {
     pad.addEventListener('contextmenu', e => e.preventDefault());
   }
 
+  // 아래 버튼의 키 표시를 키 설정에 맞춘다
+  const BTN_ACTION = { explore: 'auto', tactic: 'party', rest: 'rest', stairs: 'stairs', mission: 'missions', map: 'map', bag: 'bag', look: 'look', quick: 'quick', attack: 'attack', wait: 'wait' };
+  function updateKeyHints() {
+    const custom = (Game.save && Game.save.settings && Game.save.settings.keys) || {};
+    for (const [k, a] of Object.entries(BTN_ACTION)) {
+      const b = document.querySelector(`#actions [data-k=${k}]`); if (!b) continue;
+      const keys = keysOf(a, custom), kb = b.querySelector('kbd');
+      if (kb) kb.textContent = keys.length ? keyLabel(keys[0]) : '';
+      b.title = b.title.replace(/^[^:]*?(?=:|$)/, keys.map(keyLabel).join(' / ') || '키 없음');
+    }
+  }
   function enter(r) {
+    updateKeyHints();
     run = r; LOG.length = 0; hudCache = logCache = moveCache = quickCache = '';
     Sprites.load(r.p.sp, r.p.shiny);
     newFloor();
@@ -2765,5 +2803,5 @@ const Dungeon = (() => {
     clearInterval(logicTimer); logicTimer = 0;
     pendingKey = null;
   }
-  return { showLog, showStatus, partyMenu, floorCandidates, init, enter, leave, get run() { return run; }, get floor() { return D; }, stopAuto, showHelp, addToBag, _log: LOG };
+  return { showLog, showStatus, partyMenu, floorCandidates, updateKeyHints, init, enter, leave, get run() { return run; }, get floor() { return D; }, stopAuto, showHelp, addToBag, _log: LOG };
 })();
