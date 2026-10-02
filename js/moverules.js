@@ -82,6 +82,28 @@ const MOVE_DESC_FILL = {
   919: '독으로 된 사슬로 감아 공격한다. 맹독 상태로 만들 때가 있다.',
 };
 for (const [id, d] of Object.entries(MOVE_DESC_FILL)) if (DATA.moves[id] && !DATA.moves[id].d) DATA.moves[id].d = d;
+// 날씨에 따라 명중이 바뀌는 기술 (원작): wxAcc[날씨] = 'sure'(반드시 맞음) 또는 명중률 (원래 명중 대신)
+rule([87, 542], { wxAcc: { rain: 'sure', sun: 50 }, text: '비가 오면 반드시 맞고, 쾌청이면 명중률이 50이 된다.' });
+rule([59], { wxAcc: { snow: 'sure' }, text: '설경이면 반드시 맞는다.' });
+rule([846, 847, 848], { wxAcc: { rain: 'sure' }, text: '비가 오면 반드시 맞는다.' });   // 찬바람폭풍·번개폭풍·열사의폭풍
+rule([876], { text: '쾌청이면 위력이 떨어지지 않고 오히려 1.5배가 된다.' });   // 하이드로스팀
+rule([905], { charge: '전기를 모으고 있다!', chargeSc: [[4, 1]], rainNoCharge: true, text: '1턴째에 전기를 모으며 특수공격이 오르고 다음 행동 때 쏜다. 비가 오면 모으지 않고 바로 쏜다.' });   // 일렉트로빔
+
+// 블랙·화이트큐레무 전용기: 원본 데이터에 없는 프리즈볼트·콜드플레어를 넣고, 두 모습이 크로스썬더·크로스플레임과 함께 배운다 (Lv1)
+DATA.moves[553] = DATA.moves[553] || { n: '프리즈볼트', t: 15, p: 140, a: 90, pp: 5, c: 2, r: 'p', ail: 1, ac: 30,
+  d: '전기를 두른 얼음 덩어리를 2턴째에 상대에게 부딪친다. 마비 상태로 만들 때가 있다.' };
+DATA.moves[554] = DATA.moves[554] || { n: '콜드플레어', t: 15, p: 140, a: 90, pp: 5, c: 3, r: 'p', ail: 4, ac: 30,
+  d: '모든 것을 얼리는 바람으로 2턴째에 상대를 감싼다. 화상 상태로 만들 때가 있다.' };
+for (const id of [553, 554]) DATA.moves[id].id = id;
+rule([553], { charge: '차가운 빛에 휩싸였다!' });
+rule([554], { charge: '얼어붙은 공기에 휩싸였다!' });
+for (const [sp, mvs] of [[1211, [553, 559]], [1212, [554, 558]]]) {
+  const s = DATA.species[sp]; if (!s) continue;
+  for (const mid of mvs) if (!s.l.some(x => x[1] === mid)) s.l.unshift([1, mid]);
+}
+
+// 잠재파워: 원본 설명이 '사용할 수 없는 기술'(최신작 문구)이라 던전 동작에 맞게 바꾼다 (던전에서는 노말 타입 그대로)
+if (DATA.moves[237]) DATA.moves[237].d = '자신만이 가진 숨은 힘을 날려서 공격한다. (던전에서는 노말 타입)';
 
 // 보스가 회복 기술(날개쉬기·HP회복·알낳기·광합성 등)을 쓰면 최대 HP의 BOSS_HEAL_MAX%까지만 (보스는 HP가 많아서)
 const BOSS_HEAL_MAX = 20;
@@ -127,7 +149,10 @@ rule([37, 80, 200], { rampage: true, text: '2~3턴 동안 가까운 적을 자�
 // 지연 공격
 rule([248, 353], { delay: 2, text: '2턴 뒤에 앞의 적에게 공격이 떨어진다.' });
 // 자폭 계열 (완화: 기절 대신 HP가 1 남음)
-rule([120, 153], { selfKO: true, text: '사용하면 자신의 HP가 1만 남는다. (원작은 기절)' });
+// 자폭·대폭발: HP가 SELF_KO_MIN 미만이면 쓸 수 없다 (HP 1로 연속해서 터뜨리지 못하게)
+const SELF_KO_MIN = 0.5;
+const selfKOBlocked = (c, mid) => !!(MOVE_RULES[mid] && MOVE_RULES[mid].selfKO && c.hp < c.maxhp * SELF_KO_MIN);
+rule([120, 153], { selfKO: true, text: '사용하면 자신의 HP가 1만 남는다. (원작은 기절) HP가 절반보다 적으면 쓸 수 없다.' });
 rule([720], { selfDmgPct: 25, text: '사용하면 최대 HP의 25%만큼 데미지를 입는다. HP가 1 아래로는 떨어지지 않는다. (원작 50%)' });
 // HP를 깎는 변화 기술
 rule([775], { hpCostPct: 33, text: '최대 HP의 1/3을 깎아서 사용한다. HP가 부족하면 실패한다.' });

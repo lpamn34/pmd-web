@@ -173,11 +173,13 @@ const Dex = (() => {
     }
     learners.sort((a, b) => a[1] - b[1] || a[0] - b[0]);
     const tmLearners = ITEMS['tm' + mid] ? SPECIES_IDS.map(Number).filter(s => canLearnTM(s, mid)) : [];
+    const eggLearners = SPECIES_IDS.map(Number).filter(s => eggMovesOf(s).includes(mid));   // 교배기술머신으로 배우는 포켓몬 (진화형 포함)
     UI.open({
       title: '기술 도감', wide: true,
       html: `${moveDetailHtml(mid)}${ITEMS['tm' + mid] ? `<p>💿 ${esc(ITEMS['tm' + mid].n)} — 기술머신으로 배우는 포켓몬 ${tmLearners.length}종</p>` : ''}<h3>레벨업으로 배우는 포켓몬 (${learners.length})</h3>
         <div class="roster dex-learners">${learners.map(([id, lv]) => `<button class="rcard" data-dexpoke="${id}">${portraitImg(id, 'portrait sm')}<span>${esc(spName(id))}</span><span class="dim">Lv${lv}</span></button>`).join('')}</div>
-        ${tmLearners.length ? `<h3>기술머신으로 배우는 포켓몬 (${tmLearners.length})</h3><div class="roster dex-learners">${tmLearners.map(id => `<button class="rcard" data-dexpoke="${id}">${portraitImg(id, 'portrait sm')}<span>${esc(spName(id))}</span></button>`).join('')}</div>` : ''}`,
+        ${tmLearners.length ? `<h3>기술머신으로 배우는 포켓몬 (${tmLearners.length})</h3><div class="roster dex-learners">${tmLearners.map(id => `<button class="rcard" data-dexpoke="${id}">${portraitImg(id, 'portrait sm')}<span>${esc(spName(id))}</span></button>`).join('')}</div>` : ''}
+        ${eggLearners.length ? `<h3>🥚 교배기술로 배우는 포켓몬 (${eggLearners.length}) <span class="dim">— 교배기술머신으로 배운다</span></h3><div class="roster dex-learners">${eggLearners.map(id => `<button class="rcard" data-dexpoke="${id}">${portraitImg(id, 'portrait sm')}<span>${esc(spName(id))}</span></button>`).join('')}</div>` : ''}`,
       choices: [{ label: '닫기', fn: () => {} }],
     });
   }

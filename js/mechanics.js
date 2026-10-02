@@ -6,7 +6,7 @@ const NORMAL_ATTACK = { n: '공격', t: 0, p: 40, a: 100, pp: 0, c: 2, r: 'f', f
 const WONDER_GUARD_BASIC = 0.3;
 const MAX_LEVEL = 100;
 
-const expFor = lv => lv >= MAX_LEVEL ? Infinity : Math.pow(lv, 3);
+const expFor = lv => lv > MAX_LEVEL ? Infinity : Math.pow(lv, 3);   // Lv100까지 오를 수 있다 (예전엔 Lv99→100 필요 경험치가 무한대였다)
 // 레벨업 속도: 얻는 경험치를 이 수로 나눈다 (= 필요 경험치 배수). 경험치 표 자체는 모두 같아서 기존 세이브가 흐트러지지 않는다
 //  전설·준전설·환상 2배, 울트라비스트·패러독스 1.6배 (종족값이 높아 레벨이 빨리 오르는 것 보정)
 //  그 밖에는 원작의 성장 그룹을 절반쯤만 반영: 느림 1.15 · 보통-느림 1.05 · 보통 1 · 빠름 0.9 · 불규칙 0.85 · 변동 1.2
@@ -213,9 +213,11 @@ function moveEff(att, def, move, mt, A) {
 // 실제 피해 계산 (명중 판정 포함)
 function calcHit(att, def, move) {
   const A = abilityOf(att), Dd = defAbility(att, def);
-  if (move.a && !A.noGuard && !Dd.noGuard && !(A.prankster && move.c === 1)) {
+  const wxa = typeof MOVE_RULES !== 'undefined' && MOVE_RULES[move.id] && MOVE_RULES[move.id].wxAcc, wxw = wxa && wxa[weatherNow()];   // 번개·눈보라 등
+  if (wxw === 'sure') { /* 날씨 덕분에 반드시 맞는다 */ }
+  else if (move.a && !A.noGuard && !Dd.noGuard && !(A.prankster && move.c === 1)) {
     const aSt = Dd.unaware ? 0 : (att.stages[7] || 0), eSt = A.unaware || A.ignoreEvasion ? Math.min(0, def.stages[8] || 0) : (def.stages[8] || 0);
-    let acc = move.a * accMul(aSt) / accMul(eSt) * (A.accMul || 1) / (A.ignoreEvasion ? 1 : evasionMul(def, Dd));
+    let acc = (wxw || move.a) * accMul(aSt) / accMul(eSt) * (A.accMul || 1) / (A.ignoreEvasion ? 1 : evasionMul(def, Dd));
     if (A.hustle && move.c === 2) acc *= 0.8;
     if (Dd.miracle && move.c === 1) acc *= 0.5;
     if (Dd.foeAcc) acc *= Dd.foeAcc;
@@ -249,7 +251,7 @@ function calcHit(att, def, move) {
   if (mt && (att.types.includes(mt) || A.protean)) dmg *= A.adapt ? 2 : 1.5;
   dmg *= eff;
   if (Ha.seBoost && eff > 1) dmg *= Ha.seBoost;
-  if (W === 'sun') dmg *= mt === 10 ? 1.5 : mt === 11 ? 0.5 : 1;
+  if (W === 'sun') dmg *= mt === 10 ? 1.5 : mt === 11 ? (move.id === 876 ? 1.5 : 0.5) : 1;   // 하이드로스팀은 쾌청에서 오히려 1.5배
   if (W === 'rain') dmg *= mt === 11 ? 1.5 : mt === 10 ? 0.5 : 1;
   if (A.tinted && eff < 1) dmg *= 2;
   dmg *= (crit ? (A.sniper ? 2.25 : 1.5) : 1) * (0.85 + Math.random() * 0.15);
@@ -272,7 +274,7 @@ function moveScore(att, def, move) {
   if (Dd.wonderGuard && eff <= 1) eff = move.basic ? eff * WONDER_GUARD_BASIC : 0;
   if (!eff) return 0;
   const W = weatherNow();
-  const wx = W === 'sun' ? (mt === 10 ? 1.5 : mt === 11 ? 0.5 : 1) : W === 'rain' ? (mt === 11 ? 1.5 : mt === 10 ? 0.5 : 1) : 1;
+  const wx = W === 'sun' ? (mt === 10 ? 1.5 : mt === 11 ? (move.id === 876 ? 1.5 : 0.5) : 1) : W === 'rain' ? (mt === 11 ? 1.5 : mt === 10 ? 0.5 : 1) : 1;
   const tinted = Ab.tinted && eff < 1 ? 2 : 1;
   return move.p * powerMul(att, def, move, mt, Ab) * hits * stab * eff * wx * tinted * guardMul(def, Dd, move, mt, eff) * (A / D) * ((move.a || 100) / 100);
 }

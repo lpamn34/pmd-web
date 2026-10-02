@@ -1494,12 +1494,12 @@ const Game = (() => {
     const ch = save.roster[sp];
     // 진화 전 모습이 이 레벨까지 배우는 기술과 지금 쓰고 있는 기술도 고를 수 있다 (진화해도 잊지 않는다)
     const egg = new Set(eggMovesOf(sp));
-    const all = [...new Set([...ch.moves, ...learnableUpTo(sp, ch.lv), ...preEvos(sp).flatMap(p => learnableUpTo(p, ch.lv)), ...(ch.tms || [])])].filter(m => DATA.moves[m]);
+    const all = [...new Set([...ch.moves, ...learnableUpTo(sp, ch.lv), ...(ch.form && DATA.species[ch.form] ? learnableUpTo(ch.form, ch.lv) : []), ...preEvos(sp).flatMap(p => learnableUpTo(p, ch.lv)), ...(ch.tms || [])])].filter(m => DATA.moves[m]);
     if (!all.length) { UI.alert('기술 설정', '<p>배울 수 있는 기술이 없습니다.</p>'); return; }
     const sel = new Set(ch.moves);
     UI.open({
       title: `${esc(spName(sp))} 기술 설정 (최대 4개)`, wide: true,
-      html: `<p class="dim">현재 레벨까지 배울 수 있는 기술(진화 전 모습의 기술 포함), 기술머신·🧬교배기술머신으로 배운 기술 중에서 자유롭게 고르세요. <b>?</b>를 누르면 기술 설명을 볼 수 있습니다.</p><div class="move-pick">${all.map(id => `<label class="move-row"><input type="checkbox" value="${id}" ${sel.has(id) ? 'checked' : ''}> ${moveLine(id)}${egg.has(id) && !learnableUpTo(sp, MAX_LEVEL).includes(id) ? ' <span class="tag" title="교배기술">🥚</span>' : ''}${masteryStar(sp, id)}<span class="info" data-move="${id}" data-sp="${sp}" title="기술 정보">?</span></label>`).join('')}</div>`,
+      html: `<p class="dim">현재 레벨까지 배울 수 있는 기술(진화 전 모습과 지금 고른 모습의 기술 포함), 기술머신·🧬교배기술머신으로 배운 기술 중에서 자유롭게 고르세요. <b>?</b>를 누르면 기술 설명을 볼 수 있습니다.</p><div class="move-pick">${all.map(id => `<label class="move-row"><input type="checkbox" value="${id}" ${sel.has(id) ? 'checked' : ''}> ${moveLine(id)}${egg.has(id) && !learnableUpTo(sp, MAX_LEVEL).includes(id) ? ' <span class="tag" title="교배기술">🥚</span>' : ''}${masteryStar(sp, id)}<span class="info" data-move="${id}" data-sp="${sp}" title="기술 정보">?</span></label>`).join('')}</div>`,
       choices: [{ label: '저장', fn: () => { ch.moves = [...sel]; persist(); renderTown(); } }, { label: '취소', fn: () => {} }],
       onOpen: box => {
         box.querySelectorAll('input[type=checkbox]').forEach(cb => cb.onchange = () => {

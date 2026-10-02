@@ -656,7 +656,7 @@ const Dungeon = (() => {
     const visible = user.player || seen(user);
     const color = TYPE_COLORS[(move.t || 1) - 1];
     // 모으기 1턴째
-    if (R.charge && !opts.release && !(R.sunNoCharge && weatherNow() === 'sun')) {
+    if (R.charge && !opts.release && !(R.sunNoCharge && weatherNow() === 'sun') && !(R.rainNoCharge && weatherNow() === 'rain')) {
       const t0 = schedAction(user, 'Shoot', 280 * spd());
       user.charging = { slot, invuln: !!R.invuln };
       if (visible) log(`${nm(user)}의 ${move.n}! ${jo(nm(user), '은')} ${R.charge}`, t0);
@@ -1200,7 +1200,7 @@ const Dungeon = (() => {
   // 뺐던 기술을 다시 넣으면 남아 있던 PP 그대로 (기술을 바꿔 PP를 채울 수 없게)
   function allyMoves(a) {
     const tms = (Game.save.roster[a.sp] || {}).tms || [];
-    const pool = [...new Set([...learnableUpTo(a.sp, a.lv), ...preEvos(a.sp).flatMap(x => learnableUpTo(x, a.lv)), ...tms])].filter(m => DATA.moves[m] && !a.moves.some(x => x.id === m));
+    const pool = [...new Set([...learnableUpTo(a.sp, a.lv), ...(a.selForm && DATA.species[a.selForm] ? learnableUpTo(a.selForm, a.lv) : []), ...preEvos(a.sp).flatMap(x => learnableUpTo(x, a.lv)), ...tms])].filter(m => DATA.moves[m] && !a.moves.some(x => x.id === m));
     const slotRow = (m, k) => ({ label: m ? `${k + 1}. ${esc(DATA.moves[m.id].n)} <span class="dim">PP ${m.pp}/${m.max}</span>` : `${k + 1}. (빈 칸)`, fn: () => pickNew(k) });
     const pickNew = k => UI.open({ title: `${esc(nm(a))} — ${k + 1}번째 칸에 넣을 기술`, wide: true,
       choices: [...pool.map(mid => ({ label: moveLine(mid), fn: () => {
@@ -1250,7 +1250,11 @@ const Dungeon = (() => {
   // 이번 턴 행동 순서: 동료가 먼저 (리더에게 가까운 동료부터, 줄의 앞사람이 먼저 움직이게), 그다음 적
   function turnOrder() {
     const lead = P();
-    D.allyOrder = allies().sort((a, b) => cheb(a, lead) - cheb(b, lead) || run.party.indexOf(a) - run.party.indexOf(b));
+    // 줄 순서: 리더에게 가까운 순서지만, 지난 턴 순서를 크게 우선한다 (코너에서 뒷사람이 대각선으로 한 칸 가까워졌다고 앞뒤가 바뀌며 서로 자리를 바꾸지 않게)
+    // 뒷사람이 앞사람보다 (줄에서 떨어진 칸 수 + 1)칸 넘게 리더에게 가까워야 순서가 바뀐다
+    const prevOrder = (D.allyOrder || []).filter(m => m.hp > 0);
+    const rank = m => { const i = prevOrder.indexOf(m); return i < 0 ? prevOrder.length + run.party.indexOf(m) : i; };
+    D.allyOrder = allies().sort((a, b) => (cheb(a, lead) + rank(a) * 1.5) - (cheb(b, lead) + rank(b) * 1.5) || run.party.indexOf(a) - run.party.indexOf(b));
     return [...D.allyOrder, ...D.mons.filter(m => !m.ally)];
   }
   // 이번 턴에 움직인 자리 (뒤따르는 동료가 그 자리로 들어간다)
@@ -1310,7 +1314,7 @@ const Dungeon = (() => {
     const sees = tg.sees && p.hp > 0;
     if (sees) e.target = { x: p.x, y: p.y };
     const dx = p.x - e.x, dy = p.y - e.y, dist = Math.max(Math.abs(dx), Math.abs(dy));
-    const usable = e.moves.map((m, i) => ({ m: DATA.moves[m.id], i, pp: m.pp })).filter(o => o.pp > 0);
+    const usable = e.moves.map((m, i) => ({ m: DATA.moves[m.id], i, pp: m.pp, id: m.id })).filter(o => o.pp > 0 && !selfKOBlocked(e, o.id));
     // 능력 변화 기술은 이미 충분히 바뀌었으면 쓰지 않는다 (작아지기·칼춤을 끝없이 쌓거나 상대 능력을 계속 깎지 않게)
     const worthUsing = (e, p, m) => {
       if (m.c !== 1 || !m.sc) return true;
@@ -1433,6 +1437,7 @@ const Dungeon = (() => {
         const m = p.moves[action.slot];
         if (!m) return false;
         if (m.pp <= 0) { log('PP가 남아있지 않다!', now()); return false; }
+        if (selfKOBlocked(p, m.id)) { log(`HP가 부족해서 ${jo(DATA.moves[m.id].n, '을')} 쓸 수 없다! (HP 절반 이상 필요)`, now()); return false; }
         const mv = DATA.moves[m.id];
         if (action.autoFace !== false) autoFace(p, mv);
         useMove(p, action.slot, confuse(p, p.dir)); used = true; break;
@@ -1649,6 +1654,7 @@ const Dungeon = (() => {
 
   // 영입: 쓰러진 적이 동료가 되고 싶어 한다
   function recruitPrompt(c) {
+    if (Game.save.roster[c.sp]) return;   // 같은 턴에 같은 포켓몬을 둘 쓰러뜨려 영입 창이 두 번 쌓인 경우: 앞에서 이미 영입했다
     stopAuto();
     setFace('Surprised', 2500);
     Sound.play('shiny');
@@ -2256,7 +2262,7 @@ const Dungeon = (() => {
     const tgt = path ? foes.find(f => f.x === path.x && f.y === path.y) : foes[0];
     const dx = tgt.x - p.x, dy = tgt.y - p.y, dist = Math.max(Math.abs(dx), Math.abs(dy));
     const cands = [{ slot: -1, s: moveScore(p, tgt, NORMAL_ATTACK) }];
-    p.moves.forEach((m, i) => { if (m.pp > 0) { const mv = DATA.moves[m.id]; cands.push({ slot: i, mv, s: moveScore(p, tgt, mv) * (mv.r === 'r' ? 1.1 : 1) }); } });
+    p.moves.forEach((m, i) => { if (m.pp > 0 && !selfKOBlocked(p, m.id)) { const mv = DATA.moves[m.id]; cands.push({ slot: i, mv, s: moveScore(p, tgt, mv) * (mv.r === 'r' ? 1.1 : 1) }); } });
     const dir = dirIndex(dx, dy);
     if (dist === 1 && diagOK(p.x, p.y, Math.sign(dx), Math.sign(dy))) {
       const best = cands.filter(c => c.slot < 0 || c.mv.r !== 's').sort((a, b) => b.s - a.s)[0];
