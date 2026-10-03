@@ -78,6 +78,53 @@ service cloud.firestore {
              .hasOnly([string(getAfter(voteDoc()).data.sp)]);
     }
 
+    // 엔딩 통계: 엔딩을 처음 본 탐험대가 계정마다 한 번 endingVotes/{uid}를 만들면서, 같은 요청에서 집계 문서 stats/endings를 그 기록만큼 올린다
+    // 누가 무엇을 냈는지는 집계에 남지 않고 숫자만 쌓인다. 값의 형식은 여기서 확인한다
+    function endVote() { return /databases/$(database)/documents/endingVotes/$(request.auth.uid); }
+    function endStats() { return /databases/$(database)/documents/stats/endings; }
+    function spOk(x) { return x == null || (x is int && x > 0 && x < 5000); }
+    function dgOk(x) { return x == null || (x is string && x.matches('^[a-z]{1,16}$')); }
+    function numOk(x) { return x is int && x >= 0 && x <= 100000000; }
+    function endVoteOk(v) {
+      return v.keys().hasOnly(['starter', 'shiny', 'ultra', 'legend', 'lead', 'faint', 'most', 'days', 'sec', 'kills', 'floors', 'bosses', 'clears', 'missions', 'rescues', 'faints', 'ver', 'at'])
+        && spOk(v.starter) && spOk(v.shiny) && spOk(v.ultra) && spOk(v.legend) && spOk(v.lead) && dgOk(v.faint) && dgOk(v.most)
+        && numOk(v.days) && numOk(v.sec) && numOk(v.kills) && numOk(v.floors) && numOk(v.bosses) && numOk(v.clears)
+        && numOk(v.missions) && numOk(v.rescues) && numOk(v.faints)
+        && v.ver is string && v.ver.size() <= 8 && v.at == request.time;
+    }
+    // 순위 맵 cat: 낸 값 v가 없으면 그대로, 있으면 그 칸만 정확히 1 오른다
+    function cntOk(o, d, cat, v) {
+      let a = o.get(cat, {});
+      let b = d.get(cat, {});
+      return v == null ? b == a : (b.diff(a).affectedKeys().hasOnly([string(v)]) && b.get(string(v), 0) == a.get(string(v), 0) + 1);
+    }
+    // 합계 k: 낸 값만큼 오른다 (평균 = 합계 / 인원)
+    function sumOk(o, d, k, v) { return d.get('sum', {}).get(k, 0) == o.get('sum', {}).get(k, 0) + v; }
+    function endStatsOk(v) {
+      let o = resource == null ? {} : resource.data;
+      let d = request.resource.data;
+      return d.keys().hasOnly(['n', 'starter', 'shiny', 'ultra', 'legend', 'lead', 'faint', 'most', 'sum', 'minDays'])
+        && d.get('sum', {}).keys().hasOnly(['days', 'sec', 'kills', 'floors', 'bosses', 'clears', 'missions', 'rescues', 'faints'])
+        && d.n == o.get('n', 0) + 1
+        && cntOk(o, d, 'starter', v.starter) && cntOk(o, d, 'shiny', v.shiny) && cntOk(o, d, 'ultra', v.ultra) && cntOk(o, d, 'legend', v.legend)
+        && cntOk(o, d, 'lead', v.lead) && cntOk(o, d, 'faint', v.faint) && cntOk(o, d, 'most', v.most)
+        && sumOk(o, d, 'days', v.days) && sumOk(o, d, 'sec', v.sec) && sumOk(o, d, 'kills', v.kills) && sumOk(o, d, 'floors', v.floors)
+        && sumOk(o, d, 'bosses', v.bosses) && sumOk(o, d, 'clears', v.clears) && sumOk(o, d, 'missions', v.missions)
+        && sumOk(o, d, 'rescues', v.rescues) && sumOk(o, d, 'faints', v.faints)
+        // 가장 빨리 엔딩을 본 날: 더 빠르면 그 값, 아니면 그대로
+        && (v.days < o.get('minDays', 1000000) ? d.get('minDays', null) == v.days : d.get('minDays', null) == o.get('minDays', null));
+    }
+    match /endingVotes/{uid} {
+      allow read: if signedIn() && request.auth.uid == uid;
+      allow create: if signedIn() && request.auth.uid == uid && endVoteOk(request.resource.data)
+        && existsAfter(endStats()) && getAfter(endStats()).data.n == (exists(endStats()) ? get(endStats()).data.n : 0) + 1;
+      allow delete: if signedIn() && request.auth.uid == uid;   // 계정 삭제 (집계에 더한 숫자는 남는다)
+    }
+    match /stats/endings {
+      allow read: if true;
+      allow create, update: if signedIn() && !exists(endVote()) && existsAfter(endVote()) && endStatsOk(getAfter(endVote()).data);
+    }
+
     // 구조 게시판
     match /sos/{id} {
       allow read: if signedIn();

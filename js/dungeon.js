@@ -124,6 +124,7 @@ const Dungeon = (() => {
     return conceptCache;
   }
   // 그 층에 나올 수 있는 포켓몬: concept(컨셉 계열마다 그 층에 맞는 모습) + cand(던전 타입에 맞는 나머지)
+  const CAND_FALLBACK = 30;   // 강함이 맞는 후보가 8종도 안 될 때 고르는 가장 가까운 포켓몬 수
   function floorCandidates(dg, floor) {
     const prog = dg.floors > 1 ? (floor - 1) / (dg.floors - 1) : 0;
     const lvl = Math.round(dg.lv[0] + (dg.lv[1] - dg.lv[0]) * prog);
@@ -136,7 +137,10 @@ const Dungeon = (() => {
     const all = SPECIES_IDS.map(id => ({ id: +id, s: DATA.species[id], bst: bstOf(id) }))
       .filter(o => !o.s.lg && !UB_IDS.has(o.id) && !concept.includes(o.id) && (!dg.types || o.s.t.some(t => dg.types.includes(t))));
     let cand = [];
-    for (const w of [70, 110, 170, 260, 999]) { cand = all.filter(o => Math.abs(o.bst - target) <= w); if (cand.length >= 8) break; }
+    for (const w of [70, 110, 170, 260]) { cand = all.filter(o => Math.abs(o.bst - target) <= w); if (cand.length >= 8) break; }
+    // 그래도 모자라면 (적 레벨이 아주 높은 층: 목표 강함보다 센 포켓몬이 거의 없다) 강함이 가장 가까운 CAND_FALLBACK종
+    // (예전에는 모든 포켓몬이 후보가 되어 에리어 제로 최심부 14층부터 미진화체까지 나왔다)
+    if (cand.length < 8) cand = all.slice().sort((a, b) => Math.abs(a.bst - target) - Math.abs(b.bst - target)).slice(0, CAND_FALLBACK);
     return { lvl, target, cand, concept };
   }
   function makePool(dg, floor) {
@@ -1418,7 +1422,7 @@ const Dungeon = (() => {
     const p = P();
     let best = p.hp > 0 && seen(e) ? p : null;
     // 하드모드: 가까운 상대 중 HP가 적은 쪽을 노린다 (거리 + HP 비율 × 3)
-    const key = m => cheb(m, e) + (run.hard ? 3 * m.hp / m.maxhp : 0);
+    const key = m => cheb(m, e) + (smartFoes() ? 3 * m.hp / m.maxhp : 0);
     for (const a of allies()) {
       if (cheb(a, e) > ALLY_SIGHT || !los(e.x, e.y, a.x, a.y)) continue;
       if (!best || key(a) < key(best)) best = a;
@@ -1426,6 +1430,8 @@ const Dungeon = (() => {
     return best ? { p: best, sees: true } : { p, sees: false };
   }
   const ALLY_SIGHT = 6, ALLY_SIGHT_FAR = 12;
+  // 똑똑한 적: 하드모드와 smartAI 던전(에리어 제로 최심부). 상성·면역을 따져 가장 효과적인 기술을 쓰고, HP가 낮은 탐험대를 노리고, 원거리 기술을 자주 쓴다
+  const smartFoes = () => !!(run && (run.hard || (D && D.dg && D.dg.smartAI)));
   const ALLY_DETOUR = 4;   // 동료가 상대에게 가는 길이 직선거리보다 이만큼 넘게 길면 돌아가지 않는다
   // 이번 턴 행동 순서: 동료가 먼저 (리더에게 가까운 동료부터, 줄의 앞사람이 먼저 움직이게), 그다음 적
   function turnOrder() {
@@ -1552,7 +1558,7 @@ const Dungeon = (() => {
     // 동료는 상대에게 가장 효과적인 공격을 고른다 (면역·흡수되는 기술은 쓰지 않는다). 적은 지금처럼 무작위
     const score = o => moveScore(e, p, o.m);
     const best = list => list.map(o => ({ o, s: score(o) })).filter(x => x.s > 0).sort((a, b) => b.s - a.s)[0]?.o;
-    if ((e.ally || run.hard) && sees && dist === 1 && diagOK(e.x, e.y, Math.sign(dx), Math.sign(dy))) {
+    if ((e.ally || smartFoes()) && sees && dist === 1 && diagOK(e.x, e.y, Math.sign(dx), Math.sign(dy))) {
       const dir = confuse(e, dirIndex(dx, dy));
       const status = usable.filter(o => o.m.c === 1 && worthUsing(e, p, o.m));
       if (status.length && Math.random() < 0.15 * nerve) { useMove(e, pick(status).i, dir); return; }
@@ -1576,13 +1582,13 @@ const Dungeon = (() => {
     }
     if (sees && !e.moveOnly && dist <= PROJ_RANGE && (dx === 0 || dy === 0 || Math.abs(dx) === Math.abs(dy))) {
       const proj = usable.filter(o => o.m.r === 'p' && o.m.c !== 1);
-      const pc = e.ally || run.hard ? best(proj) : pick(proj);
-      const rate = e.ally ? (stuck ? 1 : 0.6) : run.hard ? 0.8 : 0.45;
+      const pc = e.ally || smartFoes() ? best(proj) : pick(proj);
+      const rate = e.ally ? (stuck ? 1 : 0.6) : smartFoes() ? 0.8 : 0.45;
       if (pc && Math.random() < rate * nerve && lineClear(e, dirIndex(dx, dy), dist)) { useMove(e, pc.i, dirIndex(dx, dy)); return; }
     }
     if (sees && !e.moveOnly && dist <= 3) {
       const area = usable.filter(o => o.m.r === 'r' && o.m.c !== 1);
-      const ac = e.ally || run.hard ? best(area) : pick(area);
+      const ac = e.ally || smartFoes() ? best(area) : pick(area);
       if (ac && Math.random() < (stuck ? 1 : 0.25) * nerve && los(e.x, e.y, p.x, p.y)) { useMove(e, ac.i, dirIndex(dx, dy) || 0); return; }
     }
     if (e.ally && tactic() === 'wait') return;   // 기다리는 동료는 쫓아가지 않는다
@@ -2321,11 +2327,15 @@ const Dungeon = (() => {
     UI.open({
       title: `가방 (${bag.length}/${bagMax()})`, wide: true, html: heldHtml,
       choices: [
-        ...(foot ? [{ label: `👣 발밑: ${ITEMS[foot.id].icon} ${esc(ITEMS[foot.id].n)}${foot.n > 1 ? ' ×' + foot.n : ''}`, sub: '사용 · 줍기 · 교환 · 던지기', fn: footMenu }] : []),
-        ...(bag.length > 1 ? [{ label: '↕ 가방 정리 (종류별로 정렬)', fn: () => { sortBag(); openBag(); } }] : []),
+        // 순서: 발밑 → 지닌 물건 넣기 → 가방 정리 → 가방 아이템 (아이템을 고르러 내려가다 '지닌 물건 넣기'를 잘못 누르지 않게 위로)
+        // 처음 고른 칸(def)은 그대로: 발밑이 있으면 발밑, 없으면 가방 정리, 둘 다 없으면 첫 아이템
+        ...(foot ? [{ def: true, label: `👣 발밑: ${ITEMS[foot.id].icon} ${esc(ITEMS[foot.id].n)}${foot.n > 1 ? ' ×' + foot.n : ''}`, sub: '사용 · 줍기 · 교환 · 던지기', fn: footMenu }] : []),
         ...(p.held ? [{ label: `지닌 물건을 가방에 넣는다 (${esc(ITEMS[p.held].n)})`, disabled: bag.length >= bagMax(), fn: () => {
         run.bag.push({ id: p.held, n: 1 }); log(`${jo(ITEMS[p.held].n, '을')} 가방에 넣었다.`, now()); p.held = null; formCheck(p); openBag();
-      } }] : []), ...bag.map((b, i) => ({
+      } }] : []),
+        ...(bag.length > 1 ? [{ def: !foot, label: '↕ 가방 정리 (종류별로 정렬)', fn: () => { sortBag(); openBag(); } }] : []),
+        ...bag.map((b, i) => ({
+        def: !foot && bag.length <= 1 && i === 0,
         label: `${ITEMS[b.id].icon} ${esc(ITEMS[b.id].n)}${b.n > 1 ? ' ×' + b.n : ''}`, sub: esc(ITEMS[b.id].d),
         fn: () => itemMenu(i),
       }))],

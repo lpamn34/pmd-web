@@ -506,3 +506,6 @@ i.clear.me { background: #2b6cb0; margin-left: 4px; }
 .end-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 4px 16px; }
 .end-stat { display: flex; justify-content: space-between; gap: 8px; border-bottom: 1px solid #ffffff14; padding: 3px 0; }
 .end-when { color: var(--text); margin: 4px 0 10px; }
+.end-mine { background: #ffe0661f; border-radius: 4px; }
+.end-global .row .num { min-width: 18px; display: inline-block; }
+.end-stat .dim { margin-left: 6px; }

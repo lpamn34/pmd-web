@@ -34,7 +34,8 @@ const UI = (() => {
         m.items.push(b);
       });
       box.appendChild(list);
-      m.sel = opts.choices.findIndex(c => !c.disabled);
+      const di = opts.choices.findIndex(c => c.def && !c.disabled);   // def: 처음 고를 칸 (없으면 맨 위의 고를 수 있는 칸)
+      m.sel = di >= 0 ? di : opts.choices.findIndex(c => !c.disabled);
       if (m.sel < 0) m.sel = 0;
       setSel(m, m.sel);
     }

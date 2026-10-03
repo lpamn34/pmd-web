@@ -170,7 +170,9 @@ const Game = (() => {
   // 클라우드 세이브 최대 크기 (보안 규칙과 같게. 문서 한도 1MB 안, v0.64에 40만 → 90만 자)
   const CLOUD_SAVE_MAX = 900000;
   const UPLOAD_GAP = 30 * 60 * 1000, FLUSH_GAP = 2 * 60 * 1000;   // 무료 한도(쓰기)를 아끼려고 10분 → 20분(v0.47) → 30분(v0.51), 창을 숨길 때 30초 → 2분
-  let bound = false, upTimer = null, lastUp = 0, upPending = false, syncing = null, cloudErr = null, onlineBoot = null;
+  // 마지막 클라우드 저장 시각도 브라우저에 남긴다 (새로고침 직후 다시 올리다 20초 제한에 걸리지 않게)
+  const UP_KEY = 'pmdweb_lastup';
+  let bound = false, upTimer = null, lastUp = (() => { try { return +localStorage.getItem(UP_KEY) || 0; } catch (e) { return 0; } })(), upPending = false, syncing = null, cloudErr = null, onlineBoot = null;
   const inDungeon = () => typeof Dungeon !== 'undefined' && !!Dungeon.run;
   function scheduleUpload() {
     if (!bound || !Online.loggedIn()) return;
@@ -182,7 +184,7 @@ const Game = (() => {
     if (!bound || !Online.loggedIn() || !save || newerSave) return false;
     const m = syncMeta();
     if (m && m.uid === Online.uid() && m.at === save.savedAt) { upPending = false; return true; }   // 바뀐 것 없음
-    lastUp = Date.now();
+    lastUp = Date.now(); try { localStorage.setItem(UP_KEY, String(lastUp)); } catch (e) { /* 무시 */ }
     const raw = JSON.stringify(save);
     if (raw.length > CLOUD_SAVE_MAX) { cloudErr = '세이브가 너무 커서 클라우드에 올릴 수 없어요. 이 브라우저에는 그대로 저장됩니다.'; upPending = false; return false; }
     // 올리는 동안 세이브가 또 바뀔 수 있다: 올린 그 시점의 값으로 기록해야 바뀐 부분이 다음에 다시 올라간다
@@ -205,20 +207,25 @@ const Game = (() => {
 
   // ── 접속자 수 (로그인한 탐험대 기준) ──
   //  "접속 중" 표시는 30분마다 남기고 (던전 안에서도), 수는 마을 화면을 보고 있을 때만 30분마다 센다. 창을 숨기면 쉰다
-  let onlineN = null, presenceAt = 0, countAt = 0, presenceTimer = null;
+  // 마지막 접속 표시·접속자 수 확인 시각은 브라우저에 남겨서 새로고침해도 이어서 센다 (v0.70: 새로고침마다 쓰기·읽기가 나가고, 1분 안이면 서버가 거절하던 문제)
+  const PRES_KEY = 'pmdweb_presence';
+  const presLoad = () => { try { const o = JSON.parse(localStorage.getItem(PRES_KEY)); return o && o.uid === Online.uid() ? o : null; } catch (e) { return null; } };
+  const presSave = () => { try { localStorage.setItem(PRES_KEY, JSON.stringify({ uid: Online.uid(), at: presenceAt, countAt, n: onlineN })); } catch (e) { /* 무시 */ } };
+  let onlineN = null, presenceAt = 0, countAt = 0, presenceTimer = null, presUid = null;
   const PRESENCE_MS = () => Online.PRESENCE_MIN * 60 * 1000 - 5000;
   const inTown = () => document.getElementById('town-screen')?.classList.contains('active');
   async function presenceTick() {
     if (!Online.loggedIn() || document.hidden) return;
+    if (presUid !== Online.uid()) { presUid = Online.uid(); const o = presLoad(); presenceAt = o ? o.at || 0 : 0; countAt = o ? o.countAt || 0 : 0; if (o && o.n != null) onlineN = o.n; }
     if (Date.now() - presenceAt >= PRESENCE_MS()) {
-      presenceAt = Date.now();
+      presenceAt = Date.now(); presSave();
       try { await Online.touchPresence(); } catch (e) { console.warn(e); }   // 방금 남겼으면 서버가 거절한다 (괜찮음)
     }
     renewSOSHolds();
     Online.flushDiag().catch(() => {});
     if (inTown() && Date.now() - countAt >= PRESENCE_MS()) {
-      countAt = Date.now();
-      try { onlineN = await Online.onlineCount(); } catch (e) { console.warn(e); }
+      countAt = Date.now(); presSave();
+      try { onlineN = await Online.onlineCount(); presSave(); } catch (e) { console.warn(e); }
     }
     showOnline();
   }
@@ -328,7 +335,7 @@ const Game = (() => {
   async function afterLogin() {
     renderAcct();
     await syncSave();
-    voteStarter();
+    voteStarter(); voteEnding();
     renderAcct();
     if (save && document.getElementById('town-screen').classList.contains('active')) { renderTown(); checkOnline(true); }
   }
@@ -621,7 +628,7 @@ const Game = (() => {
       onlineBoot = Online.init().then(async ok => {
         if (!ok) { document.getElementById('title-acct').innerHTML = '<span class="dim tiny">☁ 서버에 연결하지 못했어요. 로그인 없이 플레이할 수 있어요.</span>'; return; }
         renderAcct();
-        if (Online.loggedIn()) { await syncSave(); refreshTitle(); voteStarter(); }
+        if (Online.loggedIn()) { await syncSave(); refreshTitle(); voteStarter(); voteEnding(); }
         startPresence();
       });
       Online.onChange(() => { renderAcct(); presenceAt = 0; presenceTick(); showOnline(); });
@@ -1423,7 +1430,7 @@ const Game = (() => {
     return `<h3>버전</h3>
       <div class="row"><span class="grow">미궁 탐험대 <b>v${GAME_VERSION}</b> <span class="dim">(${GAME_DATE})</span>${ENV === 'dev' ? ' <span class="tag">개발 환경</span>' : ''}${updateVer ? ` <a href="#" data-act="update">🔔 새 버전 v${esc(updateVer)}</a>` : ''}
         <div class="dim">친구와 구조 코드나 오늘의 도전 기록을 주고받을 때는 서로 같은 버전인지 확인하세요.</div></span>
-        <button class="btn sm ghost" data-act="version-notes">변경 내역</button>${save.endingSeen || save.cleared?.[ENDING_DUNGEON] ? ' <button class="btn sm ghost" data-act="ending">🎬 엔딩 다시 보기</button>' : ''}</div>
+        <button class="btn sm ghost" data-act="version-notes">변경 내역</button>${save.endingSeen || save.cleared?.[ENDING_DUNGEON] ? ' <button class="btn sm ghost" data-act="ending">🎬 엔딩 다시 보기</button>' : ''}${Online.enabled() ? ' <button class="btn sm ghost" data-act="ending-stats">🌍 엔딩 통계</button>' : ''}</div>
       ${Online.enabled() ? `<h3>☁ 계정</h3><div class="row"><span class="grow">${Online.loggedIn() ? `<b>${esc(Online.name())}</b> 님으로 로그인 · 세이브가 클라우드에도 저장됩니다${cloudErr ? ` <span class="warn">(${esc(cloudErr)})</span>` : ''}` : '로그인하지 않았어요. 로그인하면 다른 기기에서 이어하고 구조 게시판을 쓸 수 있어요.'}</span>
         <button class="btn sm${Online.loggedIn() ? ' ghost' : ''}" data-act="account">${Online.loggedIn() ? '계정' : '로그인 / 가입'}</button></div>` : ''}
       ${Online.enabled() ? `<h3>🏆 스타팅 순위</h3><div class="row"><span class="grow">탐험대가 처음 고른 포켓몬 순위 <span class="dim">(로그인한 탐험대 기준 · 하루에 한 번 갱신)</span></span>
@@ -1452,7 +1459,7 @@ const Game = (() => {
       <p>버그 제보 · 문의 · 삭제 요청: <a href="https://github.com/pmd-fan-web/pmd-fan-web.github.io/issues" target="_blank" rel="noopener">GitHub Issues</a></p>
       <h3>개인정보</h3>
       <p class="dim">로그인하지 않으면 모든 기록은 이 브라우저에만 저장되고, 서버로 보내지 않습니다.
-        로그인하면 <b>아이디, 닉네임, 세이브, 마지막 접속 시각</b>과 구조 게시판에 올린 요청, 오류 기록(어떤 기능이 몇 번 실패했는지)만 서버(Google Firebase)에 저장합니다. 이메일·전화번호 같은 개인정보는 받지 않고, 광고나 방문 기록 분석도 하지 않습니다.
+        로그인하면 <b>아이디, 닉네임, 세이브, 마지막 접속 시각</b>과 구조 게시판에 올린 요청, 오류 기록(어떤 기능이 몇 번 실패했는지), 엔딩 통계(엔딩을 처음 본 순간의 기록, 누구의 것인지 알 수 없게 숫자로만 합산)만 서버(Google Firebase)에 저장합니다. 이메일·전화번호 같은 개인정보는 받지 않고, 광고나 방문 기록 분석도 하지 않습니다.
         계정 창의 <b>계정 삭제</b>로 언제든 서버의 기록을 모두 지울 수 있습니다. (스타팅 순위에 더해진 포켓몬 번호 하나는 누구 것인지 알 수 없는 형태로 순위에 남습니다.)</p>
       <p class="dim">비상업적 팬 게임입니다. Pokémon © Nintendo / Creatures Inc. / GAME FREAK inc. Pokémon Mystery Dungeon © Spike Chunsoft.</p>`;
   }
@@ -1574,6 +1581,7 @@ const Game = (() => {
       case 'dgtab': dgTab = arg; break;
       case 'dg-info': return showDungeonInfo(arg);
       case 'ending': return showEnding(false);
+      case 'ending-stats': return showEndingStats();
       case 'version-notes': UI.alert('변경 내역', VERSION_NOTES.map(([v, list]) => `<h3>v${v}${v === GAME_VERSION ? ' <span class="tag">지금 버전</span>' : ''}</h3><ul>${list.map(x => `<li>${esc(x)}</li>`).join('')}</ul>`).join('')); return;
       case 'vitamin': useVitamin(arg); break;
       case 'use-candy': return useCandy();
@@ -1978,6 +1986,59 @@ const Game = (() => {
 
   // ── 엔딩: 에리어 제로 최심부를 처음 완주하면 (정보 탭에서 다시 보기) ──
   const ENDING_DUNGEON = 'zerodeep';
+  // 엔딩 통계에 보낼 내 기록 (엔딩을 본 순간 고정)
+  function endingRecord() {
+    const s = save, f = s.firsts || {}, st = s.stats || {};
+    const top = o => { const e = Object.entries(o || {}).sort((a, b) => b[1] - a[1])[0]; return e ? e[0] : null; };
+    const spv = x => (x != null && DATA.species[x] ? +x : null), int = x => Math.max(0, Math.round(+x || 0));
+    return {
+      starter: spv(s.starter), shiny: spv(f.shiny && f.shiny.sp), ultra: spv(f.ultra && f.ultra.sp), legend: spv(f.legend && f.legend.sp),
+      lead: spv(top(s.usage && s.usage.lead)), faint: (f.faint && f.faint.dungeon) || null, most: top(s.usage && s.usage.dungeon),
+      days: int(s.day), sec: int(s.playSec), kills: int(st.kills), floors: int(st.floors), bosses: int(st.bosses),
+      clears: Object.keys(s.cleared || {}).length, missions: int(st.missions), rescues: int(st.rescues), faints: int(st.faints),
+    };
+  }
+  // 엔딩 통계에 보내기 (로그인했을 때 한 번. 안 했으면 다음에 로그인할 때)
+  async function voteEnding() {
+    if (!save || !save.endingRec || save.endingVoted || !Online.loggedIn()) return;
+    try { await Online.voteEnding(save.endingRec); }
+    catch (e) { if (!/permission/.test(e.code || '')) { console.warn(e); return; } }   // 거절 = 이미 냈음
+    save.endingVoted = true; persist();
+  }
+  // 🌍 엔딩 통계: 엔딩을 본 탐험대들의 기록 (하루에 한 번 갱신)
+  async function showEndingStats() {
+    let r;
+    try { r = await Online.endingStats(); } catch (e) { UI.alert('🌍 엔딩 통계', `<p>${esc(Online.why(e))}</p>`); return; }
+    const d = r.d || {}, n = d.n || 0, me = save.endingRec || null, sum = d.sum || {};
+    if (!n) { UI.alert('🌍 엔딩 통계', '<p>아직 엔딩을 본 탐험대가 없어요. 에리어 제로 최심부를 처음 완주한 탐험대가 첫 기록을 남겨요.</p><p class="dim">로그인한 탐험대만 집계돼요.</p>'); return; }
+    const rank = (cat, name, mine) => {
+      const list = Object.entries(d[cat] || {}).filter(([, c]) => c > 0).sort((a, b) => b[1] - a[1]);
+      const tot = list.reduce((t, [, c]) => t + c, 0);
+      if (!tot) return '<p class="dim">아직 기록이 없어요</p>';
+      const row = ([k, c], i) => `<div class="row${String(mine) === k ? ' end-mine' : ''}"><b class="num">${i + 1}</b> ${name(k)}<span class="grow"></span><span>${c}명 <span class="dim">(${Math.round(c * 100 / tot)}%)</span></span></div>`;
+      const mi = list.findIndex(([k]) => String(mine) === k);
+      return list.slice(0, 5).map(row).join('') + (mi >= 5 ? `<div class="dim tiny">…</div>${row(list[mi], mi)}` : '');
+    };
+    const pk = k => DATA.species[k] ? `${portraitImg(+k, 'portrait xs')} ${esc(spName(+k))}` : `#${esc(k)}`;
+    const dgn = k => esc(dungeonById(k)?.n || k);
+    const avg = k => (sum[k] || 0) / n;
+    const cmp = (label, k, fmt = x => Math.round(x).toLocaleString()) => `<div class="end-stat"><span>${label}</span><b>${fmt(avg(k))}</b>${me ? `<span class="dim">나 ${fmt(me[k] || 0)}</span>` : ''}</div>`;
+    UI.open({ title: '🌍 엔딩 통계', wide: true, html: `<div class="ending end-global">
+      <p class="center">엔딩을 본 탐험대 <b>${n}명</b>${d.minDays != null ? ` · 가장 빠른 탐험대 <b>${d.minDays}일째</b>` : ''}</p>
+      <h3>📊 평균 기록 <span class="dim">(엔딩을 본 순간)</span></h3><div class="end-stats">
+        ${cmp('엔딩까지 걸린 날', 'days', x => `${Math.round(x)}일`)}${cmp('플레이 시간', 'sec', playText)}
+        ${cmp('쓰러뜨린 적', 'kills')}${cmp('내려간 계단', 'floors')}${cmp('쓰러뜨린 보스', 'bosses')}${cmp('클리어한 던전', 'clears')}
+        ${cmp('완료한 임무', 'missions')}${cmp('친구 구조', 'rescues')}${cmp('쓰러진 횟수', 'faints')}</div>
+      <h3>🌱 가장 많이 고른 첫 파트너</h3>${rank('starter', pk, me && me.starter)}
+      <h3>🤝 가장 오래 함께한 리더</h3>${rank('lead', pk, me && me.lead)}
+      <h3>✨ 처음 만난 이로치</h3>${rank('shiny', pk, me && me.shiny)}
+      <h3>👑 처음 함께한 초전설</h3>${rank('ultra', pk, me && me.ultra)}
+      <h3>👑 처음 함께한 전설</h3>${rank('legend', pk, me && me.legend)}
+      <h3>💥 처음 쓰러진 던전</h3>${rank('faint', dgn, me && me.faint)}
+      <h3>🗺 가장 많이 도전한 던전</h3>${rank('most', dgn, me && me.most)}
+      <p class="dim tiny center">로그인한 탐험대가 엔딩을 처음 본 순간의 기록만 세요 (계정마다 한 번, 누구의 기록인지는 남지 않음) · ${esc(r.day)} 기준, 하루에 한 번 갱신 · '처음' 기록은 v0.69부터 쌓인 것만</p></div>`,
+      choices: [{ label: '닫기', fn: () => {} }] });
+  }
   const playText = sec => { const m = Math.floor((sec || 0) / 60); return m >= 60 ? `${Math.floor(m / 60)}시간 ${m % 60}분` : `${m}분`; };
   function showEnding(first) {
     const s = save, st = s.stats || {}, f = s.firsts || {}, at = s.endingAt;
@@ -2030,10 +2091,11 @@ const Game = (() => {
         ${stat('진화', `${st.evolves || 0}번`)}
         ${stat('쓰러진 횟수', `${st.faints || 0}번`)}
         ${stat('최고 레벨', `Lv${st.maxLv || 0}`)}</div>`)}
-      ${sec(i++, '', `<p class="end-title small">그리고 탐험은 계속된다…</p><p class="center dim">플레이해 주셔서 고맙습니다.</p>`)}
+      ${sec(i++, '', `<p class="end-title small">그리고 탐험은 계속된다…</p><p class="center dim">플레이해 주셔서 고맙습니다.</p>${Online.enabled() ? '<div class="btns center"><button class="btn" data-end-global>🌍 다른 탐험대는?</button></div>' : ''}`)}
     </div>`;
     Sound.play('clear');
-    UI.open({ title: first ? '🎬 엔딩' : '🎬 탐험 기록', wide: true, html, choices: [{ label: '마을로 돌아간다', fn: () => {} }] });
+    UI.open({ title: first ? '🎬 엔딩' : '🎬 탐험 기록', wide: true, html, choices: [{ label: '마을로 돌아간다', fn: () => {} }],
+      onOpen: box => { const b = box.querySelector('[data-end-global]'); if (b) b.onclick = () => showEndingStats(); } });
   }
 
   function startRun(dg, hard, abilPicks = {}) {
@@ -2547,7 +2609,7 @@ const Game = (() => {
     const res = UI.alert(title, `<div class="center">${portraitImg(p.sp, 'portrait big', face, save.roster[p.sp]?.shiny)}</div><p>${esc(dg.n)} ${reached}F${outcome === 'clear' ? ' 완주' : ''}</p><ul>${lines.map(l => `<li>${l}</li>`).join('')}</ul>${runStatsHtml(r)}`);
     if (Object.values(save.rescued || {}).some(x => x.online && !x.claimed && !x.thanked)) res.then(() => checkOnline(true));
     // 엔딩: 에리어 제로 최심부를 처음 완주하면 결과 창 뒤에
-    if (outcome === 'clear' && dg.id === ENDING_DUNGEON && !r.hard && firstClear && !save.endingSeen) { save.endingSeen = save.day; save.endingAt = { day: save.day, sec: Math.round(save.playSec || 0) }; persist(); res.then(() => setTimeout(() => showEnding(true), 0)); }
+    if (outcome === 'clear' && dg.id === ENDING_DUNGEON && !r.hard && firstClear && !save.endingSeen) { save.endingSeen = save.day; save.endingAt = { day: save.day, sec: Math.round(save.playSec || 0) }; save.endingRec = endingRecord(); voteEnding(); persist(); res.then(() => setTimeout(() => showEnding(true), 0)); }
     // 친구 구조 완료 → A-OK 코드 보여주기
     aoks.reduce((pr, a) => pr.then(() => new Promise(done => codeBox('✅ A-OK 코드', `<p>친구의 <b>${esc(jo(spName(a.m.client), '을'))}</b> 구조했다! 이 코드를 친구에게 보내면 친구가 되살아납니다.</p>`, a.code, '확인', done))), res);
   }

@@ -208,6 +208,7 @@ const Online = (() => {
       }
       await db.collection('presence').doc(uid).delete().catch(() => {});
       await db.collection('diag').doc(uid).delete().catch(() => {});
+      await db.collection('endingVotes').doc(uid).delete().catch(() => {});
       await db.collection('users').doc(uid).delete();
       await user.delete();
     } catch (e) { throw { msg: why(e) }; }
@@ -361,6 +362,36 @@ const Online = (() => {
     b.set(db.collection('stats').doc('starters'), { c: { [String(sp)]: firebase.firestore.FieldValue.increment(1) } }, { merge: true });
     await b.commit();
   }
+  // ── 엔딩 통계: 계정마다 한 번, endingVotes/{uid}를 만들면서 stats/endings를 그 기록만큼 올린다 (보안 규칙이 한 번·정확한 값만 허용) ──
+  async function voteEnding(rec) {
+    if (!user) return;
+    const cur = await db.collection('stats').doc('endings').get();
+    const minDays = cur.exists && cur.data().minDays != null ? cur.data().minDays : Infinity;
+    const inc = firebase.firestore.FieldValue.increment;
+    const st = { n: inc(1), sum: {} };
+    for (const k of ['starter', 'shiny', 'ultra', 'legend', 'lead', 'faint', 'most']) if (rec[k] != null) st[k] = { [String(rec[k])]: inc(1) };
+    for (const k of ['days', 'sec', 'kills', 'floors', 'bosses', 'clears', 'missions', 'rescues', 'faints']) st.sum[k] = inc(rec[k]);
+    if (rec.days < minDays) st.minDays = rec.days;
+    const b = db.batch();
+    b.set(db.collection('endingVotes').doc(user.uid), { ...rec, ver: GAME_VERSION, at: firebase.firestore.FieldValue.serverTimestamp() });
+    b.set(db.collection('stats').doc('endings'), st, { merge: true });
+    await b.commit();
+    try { localStorage.removeItem(END_KEY); } catch (e) { /* 무시 */ }
+  }
+  // 엔딩 통계는 하루에 한 번만 읽는다 (낸 직후에는 새로)
+  const END_KEY = 'pmdweb_endings';
+  async function endingStats() {
+    const day = new Date().toLocaleDateString('sv');
+    let cached = null;
+    try { cached = JSON.parse(localStorage.getItem(END_KEY)); } catch (e) { /* 무시 */ }
+    if (cached && cached.day === day && cached.d) return cached;
+    if (!await init()) throw new Error('offline');
+    const d = await db.collection('stats').doc('endings').get();
+    const out = { day, d: d.exists ? d.data() : { n: 0 } };
+    try { localStorage.setItem(END_KEY, JSON.stringify(out)); } catch (e) { /* 무시 */ }
+    return out;
+  }
+
   // 순위는 하루에 한 번만 읽는다 (브라우저에 저장해 두고 날짜가 바뀌면 다시 읽음)
   const RANK_KEY = 'pmdweb_starters';
   async function starterRanks() {
@@ -378,6 +409,7 @@ const Online = (() => {
   return {
     touchPresence: track('touchPresence', touchPresence), onlineCount: track('onlineCount', onlineCount), PRESENCE_MIN, ONLINE_WINDOW,
     voteStarter: track('voteStarter', voteStarter), starterRanks: track('starterRanks', starterRanks), flushDiag,
+    voteEnding: track('voteEnding', voteEnding), endingStats: track('endingStats', endingStats),
     enabled, init, onChange, loggedIn, name, userId, why, nameTaken: () => !!(profile && profile.nameTaken),
     signUp, signIn, signOut, setName: track('setName', setName), deleteAccount, cleanName, uid: () => user && user.uid,
     fetchCloud: track('fetchCloud', fetchCloud), pushCloud: track('pushCloud', pushCloud), clearCloud: track('clearCloud', clearCloud),
