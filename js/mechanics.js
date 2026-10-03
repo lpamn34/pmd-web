@@ -11,7 +11,7 @@ const expFor = lv => lv > MAX_LEVEL ? Infinity : Math.pow(lv, 3);   // Lv100까�
 //  전설·준전설·환상 2배, 울트라비스트·패러독스 1.6배 (종족값이 높아 레벨이 빨리 오르는 것 보정)
 //  그 밖에는 원작의 성장 그룹을 절반쯤만 반영: 느림 1.15 · 보통-느림 1.05 · 보통 1 · 빠름 0.9 · 불규칙 0.85 · 변동 1.2
 const LEGEND_EXP_DIV = 2, STRONG_EXP_DIV = 1.6;
-// 모든 포켓몬 공통: 적을 쓰러뜨려 얻는 경험치 배율, 보스·현상수배범 배율 (v0.29에서 1 → 0.5, 3 → 2 / v0.30에서 0.5 → 0.3)
+// 모든 포켓몬 공통: 적을 쓰러뜨려 얻는 경험치 배율, 보스·수배범 배율 (v0.29에서 1 → 0.5, 3 → 2 / v0.30에서 0.5 → 0.3)
 const EXP_RATE = 0.3, BOSS_EXP_MUL = 2;
 const GROWTH_EXP_DIV = { 1: 1.15, 2: 1, 3: 0.9, 4: 1.05, 5: 0.85, 6: 1.2 };
 function expDiv(sp) {
@@ -94,7 +94,7 @@ function makeCreature(sp, lv, opts = {}) {
 function recalc(c) {
   const old = c.maxhp;
   Object.assign(c, c.baseAll ? statsFromBase(c.baseAll, c.lv, c.iv) : applyBoost(calcStats(looksOf(c), c.lv, c.iv), c.boost));   // 모습이 바뀌면 그 모습의 능력치
-  if (c.hpMul) c.maxhp = Math.floor(c.maxhp * c.hpMul);   // 보스·현상수배범의 HP 배율 (모습이 바뀌어도 유지)
+  if (c.hpMul) c.maxhp = Math.floor(c.maxhp * c.hpMul);   // 보스·수배범의 HP 배율 (모습이 바뀌어도 유지)
   if (c.statMul) for (const k of ['atk', 'def', 'spa', 'spd']) c[k] = Math.floor(c[k] * c.statMul);
   if (c.tf) {   // 변신한 동안: HP는 원래 포켓몬 기준, 나머지 능력치는 TF_STAT_MUL배
     c.maxhp = applyBoost(calcStats(c.sp, c.lv, c.iv), c.boost).maxhp;

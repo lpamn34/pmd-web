@@ -102,6 +102,7 @@ const Sound = (() => {
     boss()   { arp([45, 46, 45, 46], 0.12, { type: 'sawtooth', vol: 0.18, len: 0.12 }); tone(mtof(33), 0.6, { type: 'square', vol: 0.18, at: 0.5 }); },
     achieve() { arp([67, 72, 76, 79], 0.08, { type: 'square', vol: 0.13 }); arp([76, 79, 84], 0.0, { type: 'triangle', vol: 0.13, len: 0.5, at: 0.34 }); },
     menu()   { tone(mtof(84), 0.04, { type: 'square', vol: 0.06 }); },
+    mission() { arp([76, 81, 85, 88], 0.07, { type: 'triangle', vol: 0.2 }); tone(mtof(93), 0.4, { type: 'sine', vol: 0.14, at: 0.3 }); },
     clear()  { arp([72, 72, 72, 76, 79, 84], 0.1, { type: 'square', vol: 0.13 }); tone(mtof(84), 0.6, { type: 'triangle', vol: 0.2, at: 0.6 }); },
     wind()   { noise(1.2, { filter: 'bandpass', freq: 400, sweep: 1500, vol: 0.3 }); },
   };

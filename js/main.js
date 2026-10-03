@@ -745,10 +745,14 @@ const Game = (() => {
   function missionText(m) {
     const dg = dungeonById(m.dungeon);
     if (m.kind === 'sos') return `<b>🆘 ${m.online ? '탐험대 구조' : '친구 구조'}</b> ${esc(dg.n)} ${m.floor}F에서 쓰러진 ${m.from ? esc(m.from) + ' 님' : '친구'}의 Lv${m.lv} ${esc(jo(spName(m.client), '을'))} 구해 주세요.`;
+    // 앞부분에 늘 '던전 층'이 오게 (한눈에 지역이 보이게)
     if (m.kind === 'rescue') return `<b>구조</b> ${esc(dg.n)} ${m.floor}F에서 길을 잃은 ${esc(jo(spName(m.client), '을'))} 구해 주세요.`;
-    if (m.kind === 'outlaw') return `<b>현상수배</b> ${esc(dg.n)} ${m.floor}F에 숨은 Lv${m.lv} ${esc(jo(spName(m.target), '을'))} 쓰러뜨려 주세요.`;
-    return `<b>탐색</b> ${esc(jo(spName(m.client), '이'))} ${esc(dg.n)} ${m.floor}F에 떨어뜨린 물건을 찾아 주세요.`;
+    if (m.kind === 'outlaw') return `<b>수배</b> ${esc(dg.n)} ${m.floor}F에 숨은 Lv${m.lv} ${esc(jo(spName(m.target), '을'))} 쓰러뜨려 주세요.`;
+    return `<b>탐색</b> ${esc(dg.n)} ${m.floor}F에서 떨어뜨린 물건을 ${esc(jo(spName(m.client), '이'))} 찾고 있어요.`;
   }
+  // 임무 정렬: 받은 순서(그대로) / 층수 (던전 → 층 순서)
+  const dgOrder = id => DUNGEONS.findIndex(d => d.id === id);
+  const sortMissions = list => save.missionSort === 'floor' ? list.slice().sort((a, b) => dgOrder(a.dungeon) - dgOrder(b.dungeon) || a.floor - b.floor) : list;
   const rewardText = m => m.kind === 'sos' ? `₽${m.reward} + ${m.online ? '구조 보답(무작위 아이템·돈)' : 'A-OK 코드'}` : `₽${m.reward}${m.item ? ` + ${ITEMS[m.item].icon}${ITEMS[m.item].n}` : ''}`;
 
   let ccOpen = null;   // 휴대폰에서 캐릭터 카드를 펼쳐 두었는지
@@ -1004,13 +1008,13 @@ const Game = (() => {
   function tabMission() {
     const acc = save.missions.accepted;
     return `${sosSection()}
-      <h3>진행 중인 임무 (${acc.length}/${MISSION_MAX})</h3>
-      ${acc.length ? acc.map(m => `<div class="row">${portraitImg(m.kind === 'outlaw' ? m.target : m.client, 'portrait sm', m.kind === 'sos' ? 'Pain' : 'Normal', !!m.shiny)}<div class="grow">${missionText(m)}<div class="dim">보상 ${rewardText(m)}</div></div>
+      <h3>진행 중인 임무 (${acc.length}/${MISSION_MAX}) <select class="mission-sort" title="임무 정렬"><option value="">받은 순서</option><option value="floor" ${save.missionSort === 'floor' ? 'selected' : ''}>던전·층수 순서</option></select></h3>
+      ${acc.length ? sortMissions(acc).map(m => `<div class="row">${portraitImg(m.kind === 'outlaw' ? m.target : m.client, 'portrait sm', m.kind === 'sos' ? 'Pain' : 'Normal', !!m.shiny)}<div class="grow">${missionText(m)}<div class="dim">보상 ${rewardText(m)}</div></div>
         <button class="btn sm ghost" data-act="drop-mission" data-arg="${m.id}">취소</button></div>`).join('') : '<p class="dim">받은 임무가 없습니다.</p>'}
       <h3>게시판 <span class="dim">(던전에서 돌아오면 새 의뢰가 붙습니다)</span></h3>
       <div class="row"><span class="grow">📍 자주 뜨는 지역 <span class="dim">(고른 던전의 의뢰가 새 의뢰의 30~50%쯤 나와요)</span></span>
         <select data-mfocus="1"><option value="">고르지 않음</option>${DUNGEONS.filter(d => d.mode === 'normal' && unlocked(d)).sort((a, b) => a.lv[0] - b.lv[0]).map(d => `<option value="${d.id}" ${save.missionFocus === d.id ? 'selected' : ''}>${esc(d.n)}</option>`).join('')}</select></div>
-      ${save.missions.board.map(m => `<div class="row">${portraitImg(m.kind === 'outlaw' ? m.target : m.client, 'portrait sm')}<div class="grow">${missionText(m)}<div class="dim">보상 ${rewardText(m)}</div></div>
+      ${sortMissions(save.missions.board).map(m => `<div class="row">${portraitImg(m.kind === 'outlaw' ? m.target : m.client, 'portrait sm')}<div class="grow">${missionText(m)}<div class="dim">보상 ${rewardText(m)}</div></div>
         <button class="btn sm" data-act="take-mission" data-arg="${m.id}" ${acc.length >= MISSION_MAX ? 'disabled' : ''}>수락</button></div>`).join('') || '<p class="dim">의뢰가 없습니다.</p>'}`;
   }
 
@@ -2643,7 +2647,7 @@ const Game = (() => {
     const r = Dungeon.run; if (!r || UI.isOpen()) return;
     Dungeon.stopAuto();
     const dg = dungeonById(r.dungeon), acc = save.missions.accepted;
-    const mine = acc.filter(m => m.dungeon === dg.id), other = acc.filter(m => m.dungeon !== dg.id);
+    const mine = acc.filter(m => m.dungeon === dg.id).sort((a, b) => a.floor - b.floor), other = sortMissions(acc.filter(m => m.dungeon !== dg.id));
     const state = m => r.done.includes(m.id) ? '<span class="tag ok">✅ 완료 · 마을로 돌아가면 보상</span>'
       : m.floor === r.floor ? '<span class="tag here">📍 이 층</span>'
       : m.floor > r.floor ? `<span class="tag">${m.floor}F · ${m.floor - r.floor}층 아래</span>` : `<span class="tag dim">${m.floor}F · 이미 지나침</span>`;
@@ -2753,6 +2757,7 @@ window.addEventListener('DOMContentLoaded', () => {
     if (e.target.dataset.setnum) { Game.setSetting(e.target.dataset.setnum, +e.target.value); Sound.play('menu'); }
     if (e.target.dataset.mfocus) { Game.setMissionFocus(e.target.value); }
     if (e.target.classList.contains('tm-only')) filterTMs();
+    if (e.target.classList.contains('mission-sort')) { Game.save.missionSort = e.target.value || null; Game.renderTown(); }
     if (e.target.classList.contains('store-filter')) { Game.save.storageFilter = e.target.value; Game.renderTown(); }
     if (e.target.id === 'save-file' && e.target.files[0]) { Game.importSave(e.target.files[0]); e.target.value = ''; }
     if (e.target.dataset.music && e.target.files[0]) {

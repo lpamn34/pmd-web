@@ -218,3 +218,30 @@ for (const [flag, ids] of Object.entries(MOVE_FLAG_FIX)) {
     if (+flag === 1 && m.c !== 1 && m.r === 'p') m.r = 'f';   // 접촉 기술은 바로 앞 칸
   }
 }
+// 선공기(원작에서 먼저 나가는 기술): 앞 2칸까지 닿는다 (바로 앞이 비었으면 한 칸 너머의 적). 원거리 선공기(진공파·얼음뭉치 등)는 그대로
+const PRIORITY_MOVES = [98, 245, 183, 252, 389, 453, 425, 418, 709, 660, 803, 857, 918];
+for (const id of PRIORITY_MOVES) if (DATA.moves[id] && DATA.moves[id].r === 'f') rule([id], { reach: 2 });
+// ── 전설 포켓몬 전용기 ──
+// 원작 전용기인데 원본 데이터에 빠져 있던 기술 (자시안·자마젠타·레지기가스·카푸·크레세리아)
+const LEGEND_NEW_MOVES = {
+  781: { n: '거수참', t: 9, p: 100, a: 100, pp: 5, c: 2, r: 'f', d: '전설의 검을 크게 휘둘러 상대를 벤다.' },
+  782: { n: '거수탄', t: 9, p: 100, a: 100, pp: 5, c: 2, r: 'f', d: '방패가 된 몸으로 상대에게 부딪친다.' },
+  462: { n: '묵사발', t: 1, p: 120, a: 100, pp: 5, c: 2, r: 'f', fg: [1], d: '엄청난 힘으로 상대를 꽉 쥐어 공격한다. 상대의 HP가 많이 남았을수록 위력이 높다.' },
+  717: { n: '자연의분노', t: 18, p: 90, a: 90, pp: 10, c: 3, r: 'p', d: '자연의 분노를 퍼부어 상대의 HP를 절반으로 줄인다.' },
+  849: { n: '초승달축복', t: 14, p: 0, a: 0, pp: 5, c: 1, r: 's', h: 25, d: '초승달의 빛으로 자신과 같은 편의 HP를 회복하고 상태 이상을 고친다.' },
+};
+for (const [id, m] of Object.entries(LEGEND_NEW_MOVES)) if (!DATA.moves[id]) DATA.moves[id] = { ...m };
+// 레벨업으로 배운다 (Lv40). 자시안·자마젠타는 검왕·방패왕 모습도
+for (const [mid, sps] of [[781, [888, 1237]], [782, [889, 1238]], [462, [486]], [717, [785, 786, 787, 788]], [849, [488]]]) {
+  for (const sp of sps) { const s = DATA.species[sp]; if (s && !s.l.some(x => x[1] === mid)) { s.l.push([40, mid]); s.l.sort((a, b) => a[0] - b[0]); } }
+}
+rule([462], { pow: 'crush', text: '위력 = 120 × 상대의 남은 HP 비율 (HP가 가득이면 120).' });
+rule([717], { text: '던전에서는 상대 HP를 절반으로 줄이는 대신 위력 90으로 공격한다.' });
+rule([849], { team: true, cure: true, text: '자신과 주변(3칸 안)의 같은 편 모두의 HP를 최대 HP의 1/4 회복하고 상태 이상을 고친다.' });
+// 전설 전용기는 주변(3칸 안)의 모든 적에게 닿는다 (위력은 그대로). 가이오가·그란돈의 근원의파동·단애의칼처럼
+const LEGEND_SIG = [540, 177, 221, 296, 295, 620, 353, 459, 460, 463, 467, 465, 449, 557, 558, 559, 551, 550, 548, 546, 613, 593, 592, 718,
+  713, 714, 722, 711, 705, 712, 721, 742, 744, 795, 817, 819, 878, 919, 821, 823, 354, 832, 877, 904, 781, 782, 462, 717];
+for (const id of LEGEND_SIG) if (DATA.moves[id] && DATA.moves[id].c !== 1) DATA.moves[id].r = 'r';
+// 범위 이름 (선공기는 '앞 2칸')
+const RANGE_SHORT_N = { f: '앞', p: '원거리', r: '주변', s: '자신' };
+const rangeShort = id => (MOVE_RULES[id] && MOVE_RULES[id].reach ? `앞 ${MOVE_RULES[id].reach}칸` : RANGE_SHORT_N[DATA.moves[id].r]);

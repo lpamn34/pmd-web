@@ -48,7 +48,7 @@ const Dex = (() => {
       <table class="dex-table"><thead><tr><th>타입</th><th>이름</th><th>분류</th><th>위력</th><th>명중</th><th>PP</th><th>범위</th></tr></thead><tbody>
       ${ids.map(id => { const m = DATA.moves[id]; return `<tr class="dex-item" data-dexmove="${id}" data-s="${esc(m.n.toLowerCase())}" data-t="${m.t}" data-c="${m.c}">
         <td><span class="type" style="background:${TYPE_COLORS[m.t - 1]}">${typeName(m.t)}</span></td><td><b>${esc(m.n)}</b></td><td>${CLS[m.c]}</td>
-        <td>${m.p || '—'}</td><td>${m.a || '—'}</td><td>${m.pp}</td><td>${RANGE_SHORT[m.r]}</td></tr>`; }).join('')}
+        <td>${m.p || '—'}</td><td>${m.a || '—'}</td><td>${m.pp}</td><td>${rangeShort(id)}</td></tr>`; }).join('')}
       </tbody></table>`;
   }
 
@@ -158,7 +158,7 @@ const Dex = (() => {
         ${pre.length || d.v.length ? `<h3>진화</h3><div class="roster">${pre.map(k => mini(k, '진화 전')).join('')}${d.v.map(v => mini(v[0], evoText(v))).join('')}</div>` : ''}
         <h3>레벨업으로 배우는 기술</h3>
         <table class="dex-table"><tbody>${d.l.map(([lv, mid]) => { const m = DATA.moves[mid]; return `<tr data-dexmove="${mid}"><td class="num">Lv${lv}</td>
-          <td><span class="type" style="background:${TYPE_COLORS[m.t - 1]}">${typeName(m.t)}</span></td><td><b>${esc(m.n)}</b></td><td>${CLS[m.c]}</td><td>${m.p || '—'}</td><td>${RANGE_SHORT[m.r]}</td></tr>`; }).join('')}</tbody></table>
+          <td><span class="type" style="background:${TYPE_COLORS[m.t - 1]}">${typeName(m.t)}</span></td><td><b>${esc(m.n)}</b></td><td>${CLS[m.c]}</td><td>${m.p || '—'}</td><td>${rangeShort(mid)}</td></tr>`; }).join('')}</tbody></table>
         <h3>🥚 교배기술 (${eggMovesOf(id).length}) <span class="dim">— 교배기술머신으로 배운다</span></h3>
         <div class="tm-chips">${eggMovesOf(id).map(mid => `<span class="tm-chip" data-dexmove="${mid}"><i style="background:${TYPE_COLORS[DATA.moves[mid].t - 1]}"></i>${esc(DATA.moves[mid].n)}</span>`).join('') || '<span class="dim">없음</span>'}</div>
         <h3>기술머신으로 배울 수 있는 기술 (${tmMovesOf(id).length})</h3>

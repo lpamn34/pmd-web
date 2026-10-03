@@ -16,7 +16,7 @@ const Dungeon = (() => {
   const idx = (x, y) => y * D.w + x;
   const inb = (x, y) => x >= 0 && y >= 0 && x < D.w && y < D.h;
   const floorAt = (x, y) => inb(x, y) && D.tiles[idx(x, y)] === 1;
-  const nm = c => (c.outlaw ? '현상수배범 ' : '') + spName(looksOf(c));
+  const nm = c => (c.outlaw ? '수배범 ' : '') + spName(looksOf(c));
 
   // cls: 로그 색 구분 (super 효과가 굉장함 / weak 효과가 별로)
   function log(text, at, cls) {
@@ -438,7 +438,7 @@ const Dungeon = (() => {
     const fname = `${dg.n} ${run.floor}F`;
     log(`— ${fname} —`, now());
     const here = dg.mode === 'normal' && !run.hard ? Game.save.missions.accepted.filter(ms => ms.dungeon === dg.id && ms.floor === run.floor && !run.done.includes(ms.id)) : [];
-    if (here.length) log(`📜 이 층에 임무 대상이 있다! (${here.length}개, J로 확인)`, now());
+    if (here.length) { log(`📜 이 층에 임무 대상이 있다! (${here.length}개, J로 확인)`, now()); Sound.play('mission', now() + 500); }
     if (D.weather) log(`날씨: ${WEATHERS[D.weather].icon} ${WEATHERS[D.weather].n} — ${WEATHERS[D.weather].d}`, now());
     showFloorBanner(fname + (D.weather ? `\n${WEATHERS[D.weather].icon} ${WEATHERS[D.weather].n}` : ''));
     run.turnsOnFloor = 0;
@@ -769,6 +769,10 @@ const Dungeon = (() => {
     if (move.r === 'f') {
       const t = creatureAt(user.x + dx, user.y + dy);
       if (t && hostileTo(user, t) && diagOK(user.x, user.y, dx, dy)) targets = [t];
+      else if ((!t || (party(user) && party(t))) && R.reach >= 2 && floorAt(user.x + dx, user.y + dy) && diagOK(user.x, user.y, dx, dy)) {   // 선공기: 바로 앞이 비었으면 한 칸 너머
+        const t2 = creatureAt(user.x + 2 * dx, user.y + 2 * dy);
+        if (t2 && hostileTo(user, t2) && diagOK(user.x + dx, user.y + dy, dx, dy)) targets = [t2];
+      }
     } else if (move.r === 'p') {
       let x = user.x, y = user.y;
       for (let i = 0, n = PROJ_RANGE; i < n; i++) {   // 직선 기술은 대각선 벽 모서리를 스쳐 지나간다
@@ -797,6 +801,7 @@ const Dungeon = (() => {
     }
     user.lastMissed = false;
     user.landed = false;   // resolveHit에서 적에게 맞으면 true
+    user.selfScDone = false;
     for (const t of targets) {
       const struck = user.struck && user.struck.has(t.id);
       if (R.first && struck) { fail(`${nm(t)}에게는 통하지 않았다! (첫 공격이 아니다)`); continue; }
@@ -845,6 +850,7 @@ const Dungeon = (() => {
       case 'assurance': if ((t.lastHurtSeq || 0) > ctx.prevAct) p *= 2; break;
       case 'firstStrike': if (!struck) p *= 2; break;
       case 'stomp': if (ctx.lastMissed) p *= 2; break;
+      case 'crush': p = Math.max(1, Math.floor(120 * t.hp / t.maxhp)); break;
     }
     if (R.chain && user.chain) {
       const n = Math.min(user.chain.n, R.chain);
@@ -949,11 +955,14 @@ const Dungeon = (() => {
       if (Math.random() * 100 < (move.ac || 100)) inflict(tgt, AILMENT_MAP[move.ail], at, true, user);
     }
     if (move.sc && secondary && Math.random() * 100 < move.scc * serene) {
+      // 자신의 능력 변화는 한 번 쓸 때 한 번만 (주변 기술로 여럿을 맞혀도 겹치지 않게)
+      const selfOk = user.hp > 0 && !user.selfScDone;
       for (const [st, ch] of move.sc) {
-        if (move.ss) { if (user.hp > 0) statChange(user, st, ch, at, user); continue; }
+        if (move.ss) { if (selfOk) statChange(user, st, ch, at, user); continue; }
         if (ch < 0 && tgt.hp > 0) statChange(tgt, st, ch, at, user);
-        if (ch > 0 && user.hp > 0) statChange(user, st, ch, at, user);
+        if (ch > 0 && selfOk) statChange(user, st, ch, at, user);
       }
+      if (move.ss || move.sc.some(([, ch]) => ch > 0)) user.selfScDone = true;
     }
   }
   function setFlinch(c, at) {
@@ -1013,6 +1022,7 @@ const Dungeon = (() => {
         heal(t, Math.floor(t.maxhp * h * mul / 100), at);
       }
       if (move.sc) for (const [st, ch] of move.sc) if (ch > 0) statChange(t, st, ch, at, t);
+      if (R.cure && t.status) { t.status = null; t.statusT = 0; log(`${nm(t)}의 상태 이상이 나았다!`, at); }
       if (R.screen) { t[R.screen === 'phys' ? 'reflectT' : 'screenT'] = SCREEN_TURNS; log(`${nm(t)}에게 ${jo(R.screen === 'phys' ? '리플렉터' : '빛의장막', '이')} 생겼다! (${SCREEN_TURNS}턴)`, at); }
       D.fx.push({ kind: 'ring', x: t.x, y: t.y, at, dur: 300 * spd(), color: '#fff6a0' });
     }
@@ -1208,7 +1218,7 @@ const Dungeon = (() => {
       }
     }
     if (c.boss) bossDefeated(c, at);
-    if (c.outlaw) missionDone(c.mission, `현상수배범 ${jo(spName(c.sp), '을')} 붙잡았다!`);
+    if (c.outlaw) missionDone(c.mission, `수배범 ${jo(spName(c.sp), '을')} 붙잡았다!`);
   }
   // 동료의 경험치: 레벨이 오르면 새 기술은 빈 칸에만 (나머지는 마을의 기술 설정에서)
   function allyExp(a, amt, at) {
@@ -1616,7 +1626,7 @@ const Dungeon = (() => {
       stuck = !near || near.len > dist + ALLY_DETOUR;
     }
     if (sees && !e.moveOnly && dist <= PROJ_RANGE && (dx === 0 || dy === 0 || Math.abs(dx) === Math.abs(dy))) {
-      const proj = usable.filter(o => o.m.r === 'p' && o.m.c !== 1);
+      const proj = usable.filter(o => o.m.c !== 1 && (o.m.r === 'p' || (o.m.r === 'f' && (MOVE_RULES[o.id] || {}).reach >= dist)));
       const pc = e.ally || smartFoes() ? best(proj) : pick(proj);
       const rate = e.ally ? (stuck ? 1 : 0.6) : smartFoes() ? 0.8 : 0.45;
       if (pc && Math.random() < rate * nerve && lineClear(e, dirIndex(dx, dy), dist)) { useMove(e, pc.i, dirIndex(dx, dy)); return; }
@@ -1719,7 +1729,7 @@ const Dungeon = (() => {
         if (p.tauntT && DATA.moves[m.id].c === 1) { log(`${jo(nm(p), '은')} 도발당해서 ${jo(DATA.moves[m.id].n, '을')} 쓸 수 없다! (${p.tauntT}턴 남음)`, now()); return false; }
         if (selfKOBlocked(p, m.id)) { log(`HP가 부족해서 ${jo(DATA.moves[m.id].n, '을')} 쓸 수 없다! (HP 절반 이상 필요)`, now()); return false; }
         const mv = DATA.moves[m.id];
-        if (action.autoFace !== false) autoFace(p, mv);
+        if (action.autoFace !== false) autoFace(p, mv, m.id);
         useMove(p, action.slot, confuse(p, p.dir)); used = true; break;
       }
       case 'wait': used = true; break;
@@ -1733,7 +1743,7 @@ const Dungeon = (() => {
 
   // 기술을 쓸 때 돌아보기: 바로 앞에 적이 없으면 근접 기술은 옆에 붙은 적 쪽으로, 원거리 기술·도구 던지기는 직선 위 가장 가까운 적 쪽으로
   // (v0.52에서 바라보는 방향으로 바꿨다가 v0.53에서 되돌림)
-  function autoFace(p, mv) {
+  function autoFace(p, mv, mid) {
     const [dx, dy] = DIRS[p.dir];
     const front = creatureAt(p.x + dx, p.y + dy);
     if (front && hostileTo(p, front)) return;
@@ -1741,6 +1751,10 @@ const Dungeon = (() => {
     if (mv.r === 'f') {
       const adj = vis.find(e => Math.max(Math.abs(e.x - p.x), Math.abs(e.y - p.y)) === 1 && diagOK(p.x, p.y, Math.sign(e.x - p.x), Math.sign(e.y - p.y)));
       if (adj) p.dir = dirIndex(adj.x - p.x, adj.y - p.y);
+      else if (MOVE_RULES[mid]?.reach >= 2) {   // 선공기: 직선 2칸의 적 (사이 칸이 비어 있을 때)
+        const far = vis.find(e => { const dx = e.x - p.x, dy = e.y - p.y; return Math.max(Math.abs(dx), Math.abs(dy)) === 2 && (dx === 0 || dy === 0 || Math.abs(dx) === Math.abs(dy)) && lineClear(p, dirIndex(dx, dy), 2); });
+        if (far) p.dir = dirIndex(far.x - p.x, far.y - p.y);
+      }
     } else if (mv.r === 'p') {
       const al = vis.filter(e => { const dx = e.x - p.x, dy = e.y - p.y; return (dx === 0 || dy === 0 || Math.abs(dx) === Math.abs(dy)) && Math.max(Math.abs(dx), Math.abs(dy)) <= PROJ_RANGE && lineClear(p, dirIndex(dx, dy), Math.max(Math.abs(dx), Math.abs(dy))); })
         .sort((a, b) => Math.max(Math.abs(a.x - p.x), Math.abs(a.y - p.y)) - Math.max(Math.abs(b.x - p.x), Math.abs(b.y - p.y)));
