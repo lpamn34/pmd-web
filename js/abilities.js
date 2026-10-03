@@ -169,8 +169,8 @@ for (const [id, t] of Object.entries(FORM_ABILITY_TEXT)) ab_(+id, { formAbility:
 // 천정부지 (메가저리더프, 데이터에는 영어 이름 Eelevate만 있음): 부유 + 쓰러뜨리면 능력 상승
 if (DATA.abilities[312]) DATA.abilities[312] = { n: '천정부지', d: '땅에서 떠 있어 땅 타입 기술을 받지 않는다. 기술로 상대를 쓰러뜨리면 가장 높은 능력이 올라간다.' };
 ab_(312, { levitate: true, onKO: 'best', dungeon: '땅 타입 기술을 받지 않고 함정을 밟지 않는다. 적을 쓰러뜨리면 공격·특수공격 중 높은 쪽이 1단계 오른다.' });
-ab_(22, { intimidate: 2, dungeon: '처음 마주친 적의 공격을 1단계 낮춘다.' });
-ab_(300, { intimidate: 8, dungeon: '처음 마주친 적의 회피율을 1단계 낮춘다.' });
+ab_(22, { intimidate: 2, dungeon: '처음 마주친 적의 공격을 1단계 낮춘다. (탐험대에 여럿 있어도 한 번만, 적의 위협은 탐험대 모두에게)' });
+ab_(300, { intimidate: 8, dungeon: '처음 마주친 적의 회피율을 1단계 낮춘다. (탐험대에 여럿 있어도 한 번만, 적의 위압감은 탐험대 모두에게)' });
 ab_(155, { onHitBy: { types: [7, 8, 17], st: 2, ch: 1 }, dungeon: '벌레·고스트·악 기술에 맞으면 공격이 오른다. (스피드 대신)' });
 ab_(154, { onHitBy: { types: [17], st: 2, ch: 1 } });
 ab_(192, { onHitBy: { st: 3, ch: 1 } });

@@ -82,6 +82,14 @@ const MOVE_DESC_FILL = {
   919: '독으로 된 사슬로 감아 공격한다. 맹독 상태로 만들 때가 있다.',
 };
 for (const [id, d] of Object.entries(MOVE_DESC_FILL)) if (DATA.moves[id] && !DATA.moves[id].d) DATA.moves[id].d = d;
+// 새로 넣은 변화 기술 (js/extramoves.js)
+rule([240], { setWx: 'rain' }); rule([241], { setWx: 'sun' }); rule([201], { setWx: 'sand' }); rule([883], { setWx: 'snow' });
+rule([182], { protect: true });
+rule([156], { rest: true });
+rule([115], { screen: 'phys', team: true }); rule([113], { screen: 'spec', team: true });
+rule([73], { seed: true }); rule([269], { taunt: true }); rule([281], { yawn: true });
+const SCREEN_TURNS = 20, TAUNT_TURNS = 10, SEED_TURNS = 20, REST_TURNS = 3;
+
 // 날씨에 따라 명중이 바뀌는 기술 (원작): wxAcc[날씨] = 'sure'(반드시 맞음) 또는 명중률 (원래 명중 대신)
 rule([87, 542], { wxAcc: { rain: 'sure', sun: 50 }, text: '비가 오면 반드시 맞고, 쾌청이면 명중률이 50이 된다.' });
 rule([59], { wxAcc: { snow: 'sure' }, text: '설경이면 반드시 맞는다.' });

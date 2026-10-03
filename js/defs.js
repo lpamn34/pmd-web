@@ -3,7 +3,7 @@
 
 // 게임 버전: 업데이트할 때 올리고, index.html의 ?v= 숫자도 같이 올린다
 // (친구와 구조 코드·오늘의 도전을 주고받으려면 버전이 같아야 한다)
-const GAME_VERSION = '0.58';
+const GAME_VERSION = '0.60';
 // 버전 비교: '0.25' > '0.9' 처럼 숫자로 비교한다
 function cmpVer(a, b) {
   const x = String(a).split('.').map(Number), y = String(b).split('.').map(Number);
@@ -12,6 +12,11 @@ function cmpVer(a, b) {
 }
 const GAME_DATE = '2026-10-01';
 const VERSION_NOTES = [
+  ['0.60', ['의뢰 보상 아이템이 지역에 맞게: 초반 던전은 기본 물건, 후반일수록 좋은 물건·비싼 기술머신, 최후반·깊은 층 의뢰는 10% 확률로 영양제·구미·이상한사탕 같은 아주 좋은 물건', '메가진화 52종 추가 (그림이 아직 없어서 원래 포켓몬 그림을 빌려 씀): 메가이상해꽃·메가거북왕·메가리자몽Y·메가갸라도스·메가보만다·메가메타그로스·메가한카리아스 등과 레전드 Z-A의 새 메가진화. 메가스톤도 추가', '독독구슬·화염구슬: 층에 들어서고 5턴 뒤 한 번 → 5턴마다 (상태이상이 없을 때), 동료가 지녀도 발동', '의뢰 게시판에 📍 자주 뜨는 지역: 고른 던전의 의뢰가 새 의뢰의 절반쯤 나옴', '☠ 하드모드: 일반·테마 던전을 모두 클리어하면 열림. 탐험대와 적 모두 던전 최고 레벨로 고정·경험치 없음, 레벨이 진화 조건보다 낮으면 진화 전 모습으로 입장',
+    '하드모드의 적: 상성·면역을 따져 가장 효과적인 기술을 쓰고, HP가 낮은 탐험대를 노리고, 레벨업 기술 중심으로 좋은 기술을 골라 들고 나옴 (기술머신은 견제기만). 보스는 +3레벨',
+    '던전 정보 등 긴 창에서 아래 닫기 버튼이 잘리던 문제', '하드모드(테스트 중)는 던전 탭의 ☠ 하드 탭에서 (작은 숲 ~ 유사 사막 7곳). 적이 더 빨리 다시 나타나고 몬스터하우스가 2층부터 더 자주(40%), 한 층에 여러 개(최대 3개) 생길 수 있음. 진화 전 모습으로 들어가는 포켓몬은 출발 창에서 특성을 고름 (기본은 진화할 때처럼 같은 칸의 특성). 가방은 기본 아이템으로 시작 (지닌 물건은 그대로, 던전 레벨이 높을수록 좋은 기본 아이템), 나올 때는 주운 것만 가져옴',
+    '기술머신 가격 ₽5000 더 인하 (₽19000~31000 → ₽14000~26000, 교배기술머신은 그대로)', '하드모드: 아이템 등급 위, 클리어 보상은 테스트 중이라 아직 없음, 하드 클리어 기록(☠)이 캐릭터 메달 칸에 표시. 출발 창에서 탐험대의 특성·지닌 물건 확인. 구조 요청·임무 불가, 쓰러지면 주운 것과 돈을 모두 잃음']],
+  ['0.59', ['새 기술 11종: 비바라기·쾌청·모래바람·설경(그 층의 날씨를 바꿈), 방어(다음 행동 전까지 모든 기술을 막음, 연속 사용 시 실패하기 쉬움), 잠자기(HP·상태이상 회복 후 3턴 잠듦), 리플렉터·빛의장막(주변 같은 편까지 20턴 동안 물리·특수 데미지 절반, PP 10), 씨뿌리기(20턴 동안 2턴마다 최대 HP의 1/12을 빼앗음, 보스는 절반), 도발(10턴 동안 변화 기술 금지), 하품(다음 턴이 끝날 때 잠듦). 레벨업·기술머신·교배기술로 배운다', '동료에게도 적용: 줍기·꿀모으기(층에 들어설 때 각자), 통찰·예지몽(탐험대 누구든 있으면 미니맵), 날카로운눈·위험예지(그 동료 근처 함정), 매지션(동료 공격), 볼주머니·수확(동료에게 열매를 먹일 때)', '위협·위압감: 동료가 가져도 발동 (탐험대에 여럿 있어도 한 번만), 적의 위협·위압감은 리더뿐 아니라 동료에게도']],
   ['0.58', ['게시판에 올린 구조 요청을 실시간으로 지켜봄: 마을에서 기다리면 구조되자마자 바로 알림 (예전엔 임무 탭을 열거나 1분 30초 간격으로만 확인). 누가 구조하러 출발한 것도 바로 표시']],
   ['0.57', ['SOS 코드로 구조하러 갈 때 게시판에 올라간 요청이면 서버에서 확인: 이미 구조됐거나 끝난 요청은 받을 수 없고, 기다리는 중이면 게시판 구조로 처리 (로그인했을 때, 이 버전부터 올린 요청)']],
   ['0.56', ['Lv99에서 Lv100까지 필요한 경험치가 무한대라 오르지 않던 문제', '하이드로스팀: 쾌청에서 위력 1.5배 (원래 0.5배로 계산됨), 일렉트로빔: 1턴째에 모으며 특공이 오르고 비에서는 바로 발사', '날씨 명중 (원작): 번개·폭풍은 비에서 반드시 맞고 쾌청에서 명중 50, 눈보라는 설경에서 반드시 맞음, 찬바람폭풍·번개폭풍·열사의폭풍은 비에서 반드시 맞음 (기술 설명에도 표시)', '자폭·대폭발: HP가 절반보다 적으면 쓸 수 없음 (HP 1로 연속 사용 방지)', '블랙큐레무: 프리즈볼트·크로스썬더, 화이트큐레무: 콜드플레어·크로스플레임을 배운다 (마을에서 그 모습을 고르면 기술 설정에 나옴). 프리즈볼트·콜드플레어는 새로 추가 (위력 140, 1턴째에 모으고 2턴째에 발사)', '도감 기술 정보에 🥚 교배기술로 배우는 포켓몬 목록', '같은 턴에 같은 포켓몬 두 마리가 동료가 되고 싶어 하면 영입 창이 두 번 뜨던 문제', '울트라 차원의 틈 중간 보스: 코스모움(너무 약함) 대신 솔가레오·루나아라 (실버디는 그대로)', '코너를 돌 때 동료들이 줄 순서를 바꾸며 서로 자리를 바꾸느라 늦게 따라오던 문제 (줄 순서를 쉽게 바꾸지 않음)']],
@@ -229,8 +234,8 @@ const HELD_ITEMS = {
   pechascarf:  { n: '복슝스카프',   d: '독 상태가 되지 않는다.', price: 600, icon: '🍑', hold: { noStatus: ['psn'] } },
   insomniscope:{ n: '불면고글',     d: '잠듦 상태가 되지 않는다.', price: 600, icon: '😳', hold: { noStatus: ['slp'] } },
   persimband:  { n: '시마밴드',     d: '혼란에 빠지지 않는다.', price: 600, icon: '🌀', hold: { noStatus: ['cnf'] } },
-  flameorb:    { n: '화염구슬',     d: '층에 들어서고 5턴 뒤 화상 상태가 된다. (근성과 함께 쓰면 좋다)', price: 500, icon: '🔥', hold: { orb: 'brn' } },
-  toxicorb:    { n: '독독구슬',     d: '층에 들어서고 5턴 뒤 독 상태가 된다. (포이즌힐·근성과 함께)', price: 500, icon: '☣', hold: { orb: 'psn' } },
+  flameorb:    { n: '화염구슬',     d: '5턴마다 (상태이상이 없으면) 화상 상태가 된다. (근성과 함께 쓰면 좋다)', price: 500, icon: '🔥', hold: { orb: 'brn' } },
+  toxicorb:    { n: '독독구슬',     d: '5턴마다 (상태이상이 없으면) 독 상태가 된다. (포이즌힐·근성과 함께)', price: 500, icon: '☣', hold: { orb: 'psn' } },
   luckyegg:    { n: '행복의알',     d: '얻는 경험치가 1.5배.', price: 2000, icon: '🥚', hold: { expMul: 1.5 } },
   amuletcoin:  { n: '부적금화',     d: '줍는 돈이 1.5배.', price: 2000, icon: '🪙', hold: { moneyMul: 1.5 } },
 };
@@ -412,6 +417,57 @@ DUNGEONS.push(
     wx: [['sun', 0.1], ['rain', 0.1], ['sand', 0.1], ['snow', 0.1]], pal: ['#24183a', '#4d3478', '#f0c8f0', '#dcb0dc'] },
 );
 const dungeonById = id => DUNGEONS.find(d => d.id === id);
+// ── 의뢰 보상 아이템: 의뢰 레벨(그 층의 적 레벨)이 높을수록 좋아진다 ──
+// 아주 좋은 물건(영양제·구미·이상한사탕·특성캡슐·교배기술머신)은 Lv60부터, Lv90 이상에서 의뢰의 MISSION_RARE_MAX(10%)
+// 기술머신은 5% → 30%, 후반일수록 위력 높은(비싼) 기술머신. 나머지는 단계별 기본 물건
+const MISSION_RARE_MAX = 0.1;
+function missionRewardItem(lvl) {
+  const r = clamp((lvl - 10) / 80, 0, 1);
+  const rareP = MISSION_RARE_MAX * Math.pow(clamp((lvl - 60) / 30, 0, 1), 1.5);
+  if (Math.random() < rareP) return pick([...Object.keys(VITAMINS), ...Object.keys(GUMMIES).filter(id => id !== 'rainbowgummy'), 'candy', 'abcapsule', 'eggtm']);
+  if (Math.random() > 0.4 + 0.2 * r) return null;
+  if (Math.random() < 0.05 + 0.25 * r) {
+    const minP = r < 0.35 ? 0 : r < 0.7 ? 70 : 90, maxP = r < 0.35 ? 70 : 999;
+    const tms = TM_IDS.filter(id => { const p = DATA.moves[ITEMS[id].mv].p || 0; return p >= minP && p <= maxP; });
+    if (tms.length) return pick(tms);
+  }
+  return pick(lvl < 15 ? ['oran', 'apple', 'sitrus', 'heal', 'escape']
+    : lvl < 35 ? ['sitrus', 'bigapple', 'elixir', 'escape', 'foesleep', 'stone', 'link']
+    : ['sitrus', 'bigapple', 'elixir', 'reviver', 'lum', 'stone', 'link', 'foesleep']);
+}
+
+// ── 하드모드: 일반·테마 던전(숨은 던전 제외)을 모두 클리어하면 열린다 ──
+// 탐험대와 적 모두 그 던전의 최고 레벨로 고정 (경험치 없음), 적은 똑똑해지고 기술을 골라서 들고 나온다
+// 고정 레벨이 진화 레벨보다 낮으면 진화 전 모습으로 들어간다. 아이템은 한 등급 위 (HARD_DROP_LV)
+// 하드 던전은 하드 탭에 따로 (HARD_LIST에 넣은 던전만). 가방은 기본 아이템(hardKit)으로 시작, 지닌 물건만 그대로
+const HARD_DROP_LV = 10;
+const HARD_LIST = ['forest', 'beach', 'crystal', 'plains', 'swamp', 'volcano', 'desert'];   // 작은 숲 ~ 유사 사막
+// 하드모드: 적이 더 빨리 다시 나타나고 (HARD_SPAWN 턴마다, 보통 30~45), 몬스터하우스가 2층부터 더 자주·한 층에 여럿
+const HARD_SPAWN = [15, 25], HARD_HOUSE = { first: 0.4, more: 0.3, max: 3 };
+// 기본 아이템: 던전 레벨(=고정 레벨)이 높을수록 좋아진다. 나올 때 기본 아이템은 가져오지 않는다 (주운 것만)
+function hardKit(lv) {
+  const list = lv < 25 ? [['oran', 3], ['apple', 2], ['thorn', 10]]
+    : lv < 45 ? [['sitrus', 2], ['oran', 2], ['bigapple', 1], ['apple', 1], ['thorn', 10], ['reviver', 1]]
+    : lv < 65 ? [['sitrus', 3], ['bigapple', 2], ['goldthorn', 10], ['reviver', 1], ['elixir', 1], ['lum', 1]]
+    : [['sitrus', 4], ['bigapple', 2], ['goldthorn', 15], ['reviver', 2], ['elixir', 2], ['lum', 2]];
+  return list.flatMap(([id, n]) => ITEMS[id].stack ? [{ id, n }] : Array.from({ length: n }, () => ({ id, n: 1 })));
+}
+// 클리어 보상은 테스트 중이라 아직 없음
+const hardDungeons = () => DUNGEONS.filter(d => d.mode === 'normal' && !d.hidden && !d.daily);
+const hardUnlocked = s => !!s && hardDungeons().every(d => s.cleared && s.cleared[d.id]);
+// 그 레벨에 맞는 모습: 진화 조건 레벨보다 낮으면 진화 전으로 (돌·통신 진화처럼 레벨 조건이 없으면 1단 진화 Lv20, 2단 진화 Lv36으로 본다)
+function devolveFor(sp, lv) {
+  const s = DATA.species[sp], base = s && s.f ? +s.f[0] : +sp;
+  let cur = base;
+  for (let k = 0; k < 3; k++) {
+    const pre = preEvos(cur)[0]; if (!pre) break;
+    const e = DATA.species[pre].v.find(v => v[0] === cur);
+    const need = e && e[1] ? e[1] : preEvos(pre).length ? 36 : 20;
+    if (lv >= need) break;
+    cur = pre;
+  }
+  return cur === base ? +sp : cur;   // 진화 전으로 바뀌지 않으면 원래 모습(폼 포함) 그대로
+}
 // 일반 던전의 적 최소 레벨은 열리게 해 준 바로 이전 던전(req)의 최대 레벨 - 1 (갑자기 약해지지 않게)
 // 테마 던전은 그 범위가 넓으면 최고 레벨 - 8까지 올린다 (첫 층부터 너무 약하지 않게)
 // (lvMin이 있으면 그 값)
@@ -616,7 +672,9 @@ function jo(word, t) {
 
 // ── 기술머신: 한 번 쓰면 사라지고, 배운 기술은 그 포켓몬이 영구히 기억한다 ──
 const TM_IDS = [];
-DATA.tms.forEach((mid, i) => {
+// 원본 기술머신 + 새로 넣은 변화 기술의 기술머신 (js/extramoves.js)
+const TM_MOVES = [...DATA.tms, ...Object.keys(typeof EXTRA_TM !== 'undefined' ? EXTRA_TM : {}).map(Number).filter(m => !DATA.tms.includes(m))];
+TM_MOVES.forEach((mid, i) => {
   const m = DATA.moves[mid], id = 'tm' + mid;
   ITEMS[id] = {
     n: `기술머신${String(i + 1).padStart(3, '0')} ${m.n}`, tm: true, mv: mid, no: i + 1, icon: '💿', use: 'tm',
@@ -653,8 +711,8 @@ for (const [id, p] of Object.entries(KECLEON_PRICE)) {
   const it = ITEMS[id], raw = p * KECLEON_MUL * (it.stack ? 5 : 1), unit = raw >= 1000 ? 100 : 10, v = Math.round(raw / unit) * unit;
   if (v > it.price) { it.sellAt = it.price * SELL_RATE; it.price = v; }
 }
-// 기술머신은 위 값에서 ₽5000 내린다 (₽19000~31000). 파는 값은 그대로
-const TM_DISCOUNT = 5000;
+// 기술머신은 위 값에서 ₽10000 내린다 (₽14000~26000, v0.56 5000 → v0.60 10000). 파는 값은 그대로
+const TM_DISCOUNT = 10000;
 for (const id of TM_IDS) ITEMS[id].price -= TM_DISCOUNT;
 // 늘 파는 기본 물건(오랭열매·사과·과사열매)은 절반 값 (v0.52). 파는 값은 그대로
 for (const id of ['oran', 'apple', 'leppa']) { const it = ITEMS[id]; it.sellAt = sellOf(id); it.price = Math.round(it.price / 2 / 10) * 10; }
@@ -766,9 +824,10 @@ function rewardPool(lvl, dg) {
 }
 const tmBits = {};
 function canLearnTM(sp, mid) {
+  if (typeof EXTRA_TM !== 'undefined' && EXTRA_TM[mid] && !DATA.tms.includes(mid)) return EXTRA_TM[mid].includes(+sp);
   const i = DATA.tms.indexOf(mid);
   if (i < 0) return false;
   if (!(sp in tmBits)) tmBits[sp] = BigInt('0x' + (DATA.species[sp].tm || '0'));
   return ((tmBits[sp] >> BigInt(i)) & 1n) === 1n;
 }
-const tmMovesOf = sp => DATA.tms.filter(mid => canLearnTM(sp, mid));
+const tmMovesOf = sp => TM_MOVES.filter(mid => canLearnTM(sp, mid));

@@ -256,6 +256,7 @@ function calcHit(att, def, move) {
   if (A.tinted && eff < 1) dmg *= 2;
   dmg *= (crit ? (A.sniper ? 2.25 : 1.5) : 1) * (0.85 + Math.random() * 0.15);
   dmg *= guardMul(def, Dd, move, mt, eff);
+  if (phys ? def.reflectT : def.screenT) dmg *= 0.5;   // 리플렉터·빛의장막
   if (!att.player && def.player && !def.partners) dmg *= SOLO_DMG_MUL;   // 혼자 탐험하므로 조금 완화 (동료가 있으면 없음)
   return { hit: true, dmg: Math.max(1, Math.floor(dmg)), eff, crit };
 }
@@ -276,7 +277,8 @@ function moveScore(att, def, move) {
   const W = weatherNow();
   const wx = W === 'sun' ? (mt === 10 ? 1.5 : mt === 11 ? (move.id === 876 ? 1.5 : 0.5) : 1) : W === 'rain' ? (mt === 11 ? 1.5 : mt === 10 ? 0.5 : 1) : 1;
   const tinted = Ab.tinted && eff < 1 ? 2 : 1;
-  return move.p * powerMul(att, def, move, mt, Ab) * hits * stab * eff * wx * tinted * guardMul(def, Dd, move, mt, eff) * (A / D) * ((move.a || 100) / 100);
+  const wall = (phys ? def.reflectT : def.screenT) ? 0.5 : 1;
+  return move.p * powerMul(att, def, move, mt, Ab) * hits * stab * eff * wx * tinted * wall * guardMul(def, Dd, move, mt, eff) * (A / D) * ((move.a || 100) / 100);
 }
 
 function effText(eff) {

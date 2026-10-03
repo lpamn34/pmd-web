@@ -32,9 +32,33 @@ const Game = (() => {
     a.ally = true; a.held = ch.held || null; a.shiny = !!ch.shiny; a.tms = (ch.tms || []).slice(); a.selForm = ch.form || undefined;
     return a;
   }
+  // 하드모드 탐험대: 고정 레벨, 레벨이 낮으면 진화 전 모습 (rsp: 캐릭터 기록의 원래 포켓몬)
+  // 진화 전 모습으로 들어갈 때 고를 수 있는 특성: 일반 특성 전부 (원래 숨겨진 특성을 쓰고 있었으면 숨겨진 특성도)
+  // 기본값은 진화할 때처럼 같은 칸의 특성
+  function hardAbilityChoices(sp, dsp) {
+    const ch = save.roster[sp], cur = entryAbility(sp, ch), hidden = !!(DATA.species[sp].ab.find(a => a[0] === cur) || [])[1];
+    const list = DATA.species[dsp].ab.filter(([, h]) => !h || hidden).map(([id]) => id);
+    const slot = Math.max(0, DATA.species[sp].ab.findIndex(a => a[0] === cur));
+    const def = (DATA.species[dsp].ab[slot] && list.includes(DATA.species[dsp].ab[slot][0])) ? DATA.species[dsp].ab[slot][0] : list[0];
+    return { list: [...new Set(list)], def };
+  }
+  function makeHardMember(sp, lv, opts, abil) {
+    const ch = save.roster[sp], dsp = devolveFor(sp, lv);
+    const ab = dsp === sp ? entryAbility(sp, ch) : (abil && DATA.species[dsp].ab.some(a => a[0] === abil) ? abil : hardAbilityChoices(sp, dsp).def);
+    const c = makeCreature(dsp, lv, { ...opts, moves: ch.moves.length ? ch.moves : undefined, ability: ab, boost: ch.boost });
+    c.rsp = sp; c.held = ch.held || null; c.shiny = !!ch.shiny && !!DATA.species[dsp].sh; c.tms = (ch.tms || []).slice();
+    if (dsp === sp) c.selForm = ch.form || undefined;
+    return c;
+  }
+  // 하드모드에서 나올 때 캐릭터 기록에 남기는 것: 지닌 물건·기술머신·영양제/구미만 (레벨·경험치·기술은 그대로)
+  function saveHardMember(c, isLeader) {
+    const k = c.rsp || c.sp; if (!save.roster[k]) return;
+    save.roster[k] = { ...save.roster[k], held: c.held || null, ...(c.tms ? { tms: c.tms } : {}), ...(isLeader && c.boost ? { boost: c.boost } : {}) };
+  }
   // 동료의 진행(레벨·경험치·기술)을 캐릭터 기록에 남긴다
   function saveParty(r) {
     if (r.mode !== 'normal') return;
+    if (r.hard) { for (const a of r.party || []) saveHardMember(a, false); return; }
     for (const a of r.party || []) if (save.roster[a.sp]) save.roster[a.sp] = { ...save.roster[a.sp], lv: a.lv, exp: a.exp, moves: a.moves.map(m => m.id), held: a.held || null };   // 던전에서 바꾼 지닌 물건도 남는다
   }
   const entryAbility = (sp, ch) => (ch && DATA.species[sp].ab.some(a => a[0] === ch.ability) ? ch.ability : defaultAbility(sp));
@@ -647,9 +671,13 @@ const Game = (() => {
   // 오늘의 진열에서 이 물건을 몇 번 더 살 수 있나 (늘 파는 물건은 제한 없음)
   const shopLeft = id => SHOP_FIXED.includes(id) ? Infinity : ((save.shopBought || {})[id] ? 0 : 1);
 
+  // 게시판에서 고른 "자주 뜨는 지역": 새 의뢰의 절반쯤이 그 던전에서 (MISSION_FOCUS_RATE)
+  const MISSION_FOCUS_RATE = 0.5;
+  const focusDungeon = () => { const d = save.missionFocus && dungeonById(save.missionFocus); return d && d.mode === 'normal' && unlocked(d) ? d : null; };
   function genMission() {
     const dgs = DUNGEONS.filter(d => d.mode === 'normal' && unlocked(d));
-    const dg = pick(dgs);
+    const fd = focusDungeon();
+    const dg = fd && Math.random() < MISSION_FOCUS_RATE ? fd : pick(dgs);
     const tier = dungeonTier(dg);
     let floor = rint(Math.min(2, dg.floors - 1), Math.max(1, dg.floors - 1));
     while (floor > 1 && isBossFloor(dg, floor)) floor--;
@@ -660,7 +688,7 @@ const Game = (() => {
     const lvl = Math.round(dg.lv[0] + (dg.lv[1] - dg.lv[0]) * prog);
     const reward = Math.round((80 + floor * 35) * (1 + tier * 0.8) * MISSION_MONEY_MUL / 20) * 10;
     const m = { id: Date.now() + '' + rand(1e6), dungeon: dg.id, floor, kind, client, reward, lv: Math.min(MAX_LEVEL, lvl + 3) };
-    if (Math.random() < 0.4) m.item = pick(['sitrus', 'bigapple', 'elixir', 'reviver', 'candy', 'stone', 'link', 'escape', 'foesleep']);
+    const item = missionRewardItem(lvl); if (item) m.item = item;   // 의뢰 레벨에 맞는 보상 (js/defs.js)
     if (kind === 'outlaw') {
       // 그 층에 실제로 나오는 포켓몬 중에서 (컨셉 포켓몬 + 타입에 맞는 포켓몬)
       const fc = Dungeon.floorCandidates(dg, floor);
@@ -730,7 +758,7 @@ const Game = (() => {
   const itemLabel = id => `<span class="ico">${ITEMS[id].icon}</span> <b>${esc(ITEMS[id].n)}</b>`;
 
   const DG_TABS = [['normal', '🗺 일반 던전', d => d.mode === 'normal' && !d.theme], ['theme', '👑 테마 던전', d => !!d.theme],
-    ['rogue', '🌀 로그라이크', d => d.mode === 'rogue' && !d.daily], ['daily', '🗓 오늘의 도전', d => false]];
+    ['rogue', '🌀 로그라이크', d => d.mode === 'rogue' && !d.daily], ['daily', '🗓 오늘의 도전', d => false], ['hard', '☠ 하드 (테스트 중)', d => false]];
   // ── 포켓몬별 클리어 기록과 메달 (오늘의 도전 제외) ──
   const MEDALS = [
     { k: 'normal', icon: '🎖', n: '일반 던전 정복', d: '일반 던전을 모두 클리어' },
@@ -767,7 +795,8 @@ const Game = (() => {
       const list = m.k === 'all' ? DUNGEONS.filter(d => ['normal', 'theme', 'rogue'].some(k => DG_TABS.find(t => t[0] === k)[2](d))) : medalDungeons(m.k);
       const n = list.filter(d => c[d.id]).length;
       return `<div class="medal-row${got.includes(m.k) ? ' got' : ''}"><span class="medal">${m.icon}</span><b>${esc(m.n)}</b> <span class="dim">${esc(m.d)} · ${n}/${list.length}</span></div>`;
-    }).join('')}</div>`;
+    }).join('')}${hardUnlocked(save) ? (() => { const hc = (save.hardClears || {})[sp] || {}, all = hardDungeons(), n = all.filter(d => hc[d.id]).length;
+      return `<div class="medal-row${n >= all.length ? ' got' : ''}"><span class="medal">☠</span><b>하드모드</b> <span class="dim">하드모드로 클리어한 일반·테마 던전 · ${n}/${all.length}</span></div>`; })() : ''}</div>`;
   }
 
   function tabDungeon() {
@@ -786,6 +815,7 @@ const Game = (() => {
     const progress = dgTab === 'daily' ? '' : `<div class="dg-progress">${portraitImg(save.current, 'portrait xs', 'Normal', save.roster[save.current]?.shiny)} <span><b>${esc(spName(save.current))}</b>${jo(spName(save.current), '으로').slice(spName(save.current).length)} 클리어 <b>${curList.filter(d => mine[d.id]).length}</b>/${curList.length}</span>
       ${medal ? (medalsOf(save.current).some(m => m.k === medal.k) ? `<span class="medal-got">${medal.icon} ${esc(medal.n)}!</span>` : `<span class="dim">· 모두 클리어하면 ${medal.icon} ${esc(medal.n)} 메달</span>`) : ''}</div>`;
     if (dgTab === 'daily') return nav + `<div class="cards">${Progress.dailyCard()}</div>`;
+    if (dgTab === 'hard') return nav + hardTabHtml();
     return nav + progress + (hiddenLeft ? `<p class="dim">🔒 아직 찾지 못한 숨은 던전이 ${hiddenLeft}곳 있어요. 던전을 클리어하다 보면 열려요.</p>` : '') + `<div class="cards">${shown.map(dg => {
       const ok = unlocked(dg);
       const ms = save.missions.accepted.filter(m => m.dungeon === dg.id).length;
@@ -803,6 +833,44 @@ const Game = (() => {
           : `<button class="btn" data-act="go" data-arg="${dg.id}" ${ok ? '' : 'disabled'}>${ok ? '출발' : `🔒 ${esc(dungeonById(dg.req).n)} 클리어 필요`}</button>`}
           <button class="btn ghost" data-act="dg-info" data-arg="${dg.id}" title="나오는 적과 아이템">ℹ 정보</button></div></div>`;
     }).join('')}</div>`;
+  }
+
+  // ── ☠ 하드 탭 ──
+  const kitText = lv => { const c = {}; for (const b of hardKit(lv)) c[b.id] = (c[b.id] || 0) + b.n; return Object.entries(c).map(([id, n]) => `${ITEMS[id].icon}${esc(ITEMS[id].n)}×${n}`).join(' '); };
+  function hardTabHtml() {
+    if (!hardUnlocked(save)) {
+      const all = hardDungeons(), n = all.filter(d => save.cleared[d.id]).length;
+      return `<p>🔒 <b>하드모드</b>는 일반·테마 던전(숨은 던전 제외)을 모두 클리어하면 열려요. <span class="dim">(${n}/${all.length})</span></p>`;
+    }
+    const mine = (save.hardClears || {})[save.current] || {};
+    return `<p class="warn">🧪 하드모드는 테스트 중이에요. 규칙·난이도·보상이 바뀔 수 있어요.</p><p class="dim">탐험대와 적 모두 던전 최고 레벨로 고정 (경험치 없음, 레벨이 진화 조건보다 낮으면 진화 전 모습). 가방은 기본 아이템으로 시작하고 지닌 물건만 그대로예요. 적이 똑똑해지고 좋은 기술을 들고 나와요.</p>
+      <div class="cards">${HARD_LIST.map(dungeonById).filter(Boolean).map(dg => `<div class="card dg normal" style="--c1:${dg.pal[1]};--c2:${dg.pal[2]}">
+        <div class="dg-head"><b>☠ ${esc(dg.n)}</b> ${(save.hardCleared || {})[dg.id] ? '<i class="clear">클리어</i>' : ''}${mine[dg.id] ? `<i class="clear me" title="${esc(jo(spName(save.current), '으로'))} 하드 클리어">☠</i>` : ''}</div>
+        <div class="dim">${dg.floors}층 · 탐험대·적 Lv${dg.lv[1]} 고정</div>
+        <div class="note">기본 아이템: ${kitText(dg.lv[1])}</div>
+        <div class="note theme">클리어 보상: 테스트 중이라 아직 없음 (주운 아이템과 돈은 가져옴)</div>
+        <div class="dg-btns"><button class="btn" data-act="go-hard" data-arg="${dg.id}">출발</button> <button class="btn ghost" data-act="dg-info" data-arg="${dg.id}">ℹ 정보</button></div></div>`).join('')}</div>`;
+  }
+  function prepareHard(id) {
+    const dg = dungeonById(id); if (!dg || !hardUnlocked(save) || !HARD_LIST.includes(id)) return;
+    const lv = dg.lv[1], sp = save.current, ch = save.roster[sp];
+    // 진화 전 모습으로 들어가는 포켓몬은 특성을 고른다
+    const picks = {};
+    const heldTxt = x => { const h = save.roster[x].held; return ` · 지닌 물건 ${h ? `${ITEMS[h].icon}${esc(ITEMS[h].n)}` : '<span class="dim">없음</span>'}`; };
+    const team = [sp, ...partyList()].map(x => {
+      const d = devolveFor(x, lv);
+      if (d === x) return `<div class="row">${portraitImg(x, 'portrait xs')} <b>${esc(spName(x))}</b> Lv${lv} <span class="dim">· 특성 ${esc(abilityName(entryAbility(x, save.roster[x])))}</span>${heldTxt(x)}</div>`;
+      const { list, def } = hardAbilityChoices(x, d); picks[x] = def;
+      return `<div class="row">${portraitImg(d, 'portrait xs')} <b>${esc(spName(d))}</b> Lv${lv} <span class="dim">(${esc(spName(x))}의 진화 전 모습)</span>
+        · 특성 <select data-hab="${x}">${list.map(a => `<option value="${a}" ${a === def ? 'selected' : ''}>${esc(abilityName(a))}${DATA.species[d].ab.find(z => z[0] === a)?.[1] ? ' (숨겨진 특성)' : ''}</option>`).join('')}</select>${heldTxt(x)}</div>`;
+    });
+    UI.open({ title: `☠ ${esc(dg.n)} (하드)`, wide: true, html: `<p class="warn">🧪 하드모드는 테스트 중이에요. 규칙·난이도·보상이 바뀔 수 있어요.</p>${team.join('')}<ul>
+      <li>탐험대와 적 모두 <b>Lv${lv}</b> 고정. 경험치·숙련도는 오르지 않아요.</li>
+      <li>가방: ${kitText(lv)} <span class="dim">(마을 가방은 그대로 두고 가요. 지닌 물건은 그대로)</span></li>
+      <li>클리어하거나 탈출하면 주운 아이템과 돈을 가져와요 (기본 아이템은 빼고). 클리어 보상은 테스트 중이라 아직 없어요.</li>
+      <li class="warn">쓰러지면 주운 아이템과 돈을 모두 잃어요. 구조 요청과 임무는 없어요.</li></ul>`,
+      choices: [{ label: '출발한다', fn: () => startRun(dg, true, picks) }, { label: '그만둔다', fn: () => {} }],
+      onOpen: box => box.querySelectorAll('[data-hab]').forEach(s => s.onchange = () => { picks[s.dataset.hab] = +s.value; }) });
   }
 
   // ── 던전 정보: 나오는 적, 보스, 아이템, 특징 ──
@@ -891,6 +959,8 @@ const Game = (() => {
       ${acc.length ? acc.map(m => `<div class="row">${portraitImg(m.kind === 'outlaw' ? m.target : m.client, 'portrait sm', m.kind === 'sos' ? 'Pain' : 'Normal', !!m.shiny)}<div class="grow">${missionText(m)}<div class="dim">보상 ${rewardText(m)}</div></div>
         <button class="btn sm ghost" data-act="drop-mission" data-arg="${m.id}">취소</button></div>`).join('') : '<p class="dim">받은 임무가 없습니다.</p>'}
       <h3>게시판 <span class="dim">(던전에서 돌아오면 새 의뢰가 붙습니다)</span></h3>
+      <div class="row"><span class="grow">📍 자주 뜨는 지역 <span class="dim">(고른 던전의 의뢰가 새 의뢰의 절반쯤 나와요)</span></span>
+        <select data-mfocus="1"><option value="">고르지 않음</option>${DUNGEONS.filter(d => d.mode === 'normal' && unlocked(d)).sort((a, b) => a.lv[0] - b.lv[0]).map(d => `<option value="${d.id}" ${save.missionFocus === d.id ? 'selected' : ''}>${esc(d.n)}</option>`).join('')}</select></div>
       ${save.missions.board.map(m => `<div class="row">${portraitImg(m.kind === 'outlaw' ? m.target : m.client, 'portrait sm')}<div class="grow">${missionText(m)}<div class="dim">보상 ${rewardText(m)}</div></div>
         <button class="btn sm" data-act="take-mission" data-arg="${m.id}" ${acc.length >= 4 ? 'disabled' : ''}>수락</button></div>`).join('') || '<p class="dim">의뢰가 없습니다.</p>'}`;
   }
@@ -1200,6 +1270,7 @@ const Game = (() => {
       <label class="chk"><input type="checkbox" data-set="noGift" ${s.noGift ? 'checked' : ''}> 💌 감사 선물 받지 않기 <span class="dim">(구조 게시판으로 구조하면 요청자에게 선물 고르는 창이 뜨지 않아요. 코드로 구조했거나 그래도 선물이 오면 창고에 넣지 않고 판매 값만큼 돈으로 받아요. 구조 보답은 그대로)</span></label>
       <p class="dim tiny">소리는 게임이 직접 합성합니다 (음원 파일 없음). 브라우저 정책상 화면을 한 번 눌러야 소리가 나기 시작합니다.</p>
       <div class="btns"><button class="btn ghost" data-act="help">⌨ 조작법</button> <button class="btn ghost" data-act="key-settings">🎮 키 설정</button> <button class="btn ghost danger" data-act="reset">저장 데이터 초기화</button></div>
+      ${ENV === 'dev' ? '<div class="btns"><button class="btn ghost" data-act="dev-admin" title="로컬(개발)에서만 보입니다">🛠 운영자 테스트 계정으로 만들기 (개발용)</button></div>' : ''}
       <h3>세이브 관리</h3>
       <p class="dim">${Online.loggedIn() ? '세이브는 이 브라우저와 클라우드에 저장됩니다. 만일을 위해 가끔 파일로도 내보내 두세요.' : '세이브는 이 브라우저에만 저장됩니다. 브라우저 데이터를 지우거나 다른 컴퓨터로 옮기기 전에 파일로 내보내 두세요.'}</p>
       <div class="btns"><button class="btn" data-act="save-export">💾 세이브 내보내기</button> <button class="btn ghost" data-act="save-import">📂 세이브 불러오기</button>
@@ -1225,6 +1296,7 @@ const Game = (() => {
   async function onAction(act, arg) {
     switch (act) {
       case 'go': return prepareRun(arg);
+      case 'go-hard': return prepareHard(arg);
       case 'take-mission': {
         const i = save.missions.board.findIndex(m => m.id === arg);
         if (i >= 0 && save.missions.accepted.length < 4) save.missions.accepted.push(save.missions.board.splice(i, 1)[0]);
@@ -1358,6 +1430,7 @@ const Game = (() => {
       case 'evolve': return evolve(+arg);
       case 'help': Dungeon.showHelp(); return;
       case 'key-settings': keySettings(); return;
+      case 'dev-admin': return devAdmin();
       case 'guide': Guide.open(arg); return;
       case 'music-loop': return musicLoopDialog(arg);
       case 'music-del': await Sound.removeMusic(arg); UI.toast('음악 파일을 삭제했습니다.'); break;
@@ -1582,6 +1655,24 @@ const Game = (() => {
       <label class="chk"><input type="checkbox" data-set="dpad" ${s.dpad ? 'checked' : ''}> 던전에서 방향 버튼 항상 표시 <span class="dim">(휴대폰에서 방향 버튼이 안 보이면 켜세요)</span></label>
       ${soundSettings(s)}`;
 
+  // ── 개발용 운영자 테스트 계정 (로컬에서만): 모든 포켓몬 Lv100 영입, 영양제·구미 최대, 배울 수 있는 기술 전부, 특성 변경 아이템·돈 넉넉히, 모든 던전 클리어 ──
+  // 세이브가 커서(약 400KB) 이 상태로 로그인하면 클라우드 저장이 막힌다. 로그인하지 않고 쓴다
+  async function devAdmin() {
+    if (ENV !== 'dev') return;
+    if (Online.loggedIn()) { UI.alert('운영자 계정', '<p>로그인한 상태에서는 만들 수 없어요. (클라우드 세이브를 덮어쓰지 않게) 로그아웃하고 해 주세요.</p>'); return; }
+    if (!(await UI.confirm('운영자 계정', '<p>이 브라우저의 세이브를 테스트용 운영자 계정으로 바꿉니다. (개발용, 되돌릴 수 없음)</p>', '바꾼다', '그만둔다'))) return;
+    const boost = {}; for (const [, [, k]] of Object.entries(VITAMINS)) boost[k] = VITAMIN_MAX; for (const g of Object.values(GUMMIES)) for (const k of g.stats) boost['g_' + k] = GUMMY_MAX;
+    for (const id of SPECIES_IDS.map(Number)) {
+      const learn = [...new Set([...learnableUpTo(id, MAX_LEVEL), ...preEvos(id).flatMap(p => learnableUpTo(p, MAX_LEVEL)), ...tmMovesOf(id), ...eggMovesOf(id)])].filter(m => DATA.moves[m]);
+      save.roster[id] = { ...(save.roster[id] || { moves: defaultMoves(id, MAX_LEVEL), ability: defaultAbility(id), shiny: false }), lv: MAX_LEVEL, exp: expFor(MAX_LEVEL), boost: { ...boost }, tms: learn };
+      if (DATA.species[id].sh) (save.shinyOwned = save.shinyOwned || {})[id] = true;
+    }
+    for (const d of DUNGEONS) if (!d.daily) save.cleared[d.id] = true;
+    save.money = 9999999; save.storageMax = 99999;
+    for (const it of ['abcapsule', 'abpatch', 'eggtm', 'candy', 'stone', 'link']) save.storage[it] = 999;
+    persist(); renderTown(); UI.toast('운영자 테스트 계정으로 바꿨어요.');
+  }
+
   // ── 키 설정: 동작마다 키 하나로 바꾸기 (바꾸지 않은 동작은 기본 키 그대로) ──
   function keySettings() {
     const custom = save.settings.keys || {};
@@ -1694,9 +1785,18 @@ const Game = (() => {
     startRun(dg);
   }
 
-  function startRun(dg) {
+  function startRun(dg, hard, abilPicks = {}) {
     const sp = save.current, ch = save.roster[sp];
     let p, bag;
+    if (hard) {
+      const lv = dg.lv[1];
+      p = makeHardMember(sp, lv, { player: true }, abilPicks[sp]);
+      p.belly = 100;
+      const run = { dungeon: dg.id, floor: 1, mode: 'normal', hard: true, hardLv: lv, p, bag: hardKit(lv), kit: hardKit(lv), money: 0, done: [], party: partyList().map(id => makeHardMember(id, lv, { ally: true }, abilPicks[id])).map(a => Object.assign(a, { ally: true })), carried: null };
+      show('dungeon-screen');
+      Dungeon.enter(run);
+      return;
+    }
     if (dg.mode === 'rogue') {
       p = makeCreature(sp, ROGUE_LEVEL, { player: true, ability: entryAbility(sp, ch) });
       p.shiny = !!ch.shiny;
@@ -1740,17 +1840,30 @@ const Game = (() => {
   function saveRunSnapshot(r) {
     const p = r.p;
     save.run = { dungeon: r.dungeon, floor: r.floor, mode: r.mode, bag: r.bag, money: r.money, done: r.done, daily: r.daily || null, turns: r.turns || 0, kills: r.kills || 0, carried: r.carried || null, stats: r.stats || null,
+      ...(r.hard ? { hard: true, hardLv: r.hardLv, rsp: p.rsp, kit: r.kit } : {}),
       p: { sp: p.sp, lv: p.lv, exp: p.exp, hp: p.hp, belly: p.belly, status: p.status, statusT: p.statusT, moves: p.moves.map(m => m.id), pp: p.moves.map(m => m.pp), ability: p.baseAbility ?? p.ability, held: p.held || null, tms: p.tms || [], shiny: !!p.shiny, boost: p.boost || null, form: p.selForm || null } };
-    save.run.party = (r.party || []).map(a => ({ sp: a.sp, lv: a.lv, exp: a.exp, hp: a.hp, moves: a.moves.map(m => m.id), pp: a.moves.map(m => m.pp), ability: a.baseAbility ?? a.ability, fainted: !!a.fainted, status: a.status, statusT: a.statusT }));
+    save.run.party = (r.party || []).map(a => ({ sp: a.sp, rsp: a.rsp, lv: a.lv, exp: a.exp, hp: a.hp, moves: a.moves.map(m => m.id), pp: a.moves.map(m => m.pp), ability: a.baseAbility ?? a.ability, fainted: !!a.fainted, status: a.status, statusT: a.statusT }));
     saveParty(r);
     // 일반 던전은 층마다 레벨도 저장
-    if (r.mode === 'normal') save.roster[p.sp] = { ...save.roster[p.sp], lv: p.lv, exp: p.exp, moves: p.moves.map(m => m.id), held: p.held || null, tms: p.tms || [], ...(p.boost ? { boost: p.boost } : {}) };
+    if (r.hard) saveHardMember(p, true);
+    else if (r.mode === 'normal') save.roster[p.sp] = { ...save.roster[p.sp], lv: p.lv, exp: p.exp, moves: p.moves.map(m => m.id), held: p.held || null, tms: p.tms || [], ...(p.boost ? { boost: p.boost } : {}) };
     persist();
   }
 
   function resumeRun() {
     const s = save.run;
     if (s.daily) Progress.setupDaily(s.daily);
+    if (s.hard) {   // 하드모드: 고정 레벨 탐험대를 다시 만들고 저장된 HP·기술 상태를 얹는다
+      if (!save.roster[s.rsp]) { save.run = null; persist(); renderTown(); return; }
+      const restore = (c, x) => { if (x.ability != null && DATA.species[c.sp].ab.some(a => a[0] === x.ability)) { c.ability = x.ability; c.baseAbility = x.ability; } c.hp = clamp(x.hp, 1, c.maxhp); c.status = x.status; c.statusT = x.statusT; if (x.moves) { c.moves = x.moves.map((id, i) => ({ ...newMove(c, id), pp: x.pp ? x.pp[i] : undefined })).map(m => ({ ...m, pp: m.pp ?? m.max })); } return c; };
+      const p = restore(makeHardMember(s.rsp, s.hardLv, { player: true }), s.p);
+      p.belly = s.p.belly; p.held = s.p.held || null;
+      const party = (s.party || []).filter(x => save.roster[x.rsp]).map(x => { const a = restore(Object.assign(makeHardMember(x.rsp, s.hardLv, { ally: true }), { ally: true }), x); a.fainted = !!x.fainted; return a; });
+      const run = { dungeon: s.dungeon, floor: s.floor, mode: 'normal', hard: true, hardLv: s.hardLv, kit: s.kit || [], p, bag: s.bag, money: s.money, done: s.done, turns: s.turns || 0, kills: s.kills || 0, party, carried: null, stats: s.stats || null };
+      show('dungeon-screen');
+      Dungeon.enter(run);
+      return;
+    }
     const p = makeCreature(s.p.sp, s.p.lv, { player: true, exp: s.p.exp, moves: s.p.moves, pp: s.p.pp, ability: s.p.ability ?? entryAbility(s.p.sp, save.roster[s.p.sp]), boost: s.p.boost || undefined });
     p.hp = clamp(s.p.hp, 1, p.maxhp); p.belly = s.p.belly; p.held = s.p.held || null; p.tms = s.p.tms || []; p.shiny = !!s.p.shiny; p.status = s.p.status; p.statusT = s.p.statusT; p.selForm = s.p.form || undefined;
     const party = (s.party || []).filter(x => save.roster[x.sp]).map(x => {
@@ -1766,8 +1879,8 @@ const Game = (() => {
   function abandonSavedRun() {
     const s = save.run;
     if (s.daily) Progress.setupDaily(s.daily);
-    const fake = { dungeon: s.dungeon, floor: s.floor, mode: s.mode, bag: s.bag, money: s.money, done: [], daily: s.daily || null, turns: s.turns || 0, kills: s.kills || 0,
-      p: { sp: s.p.sp, lv: s.p.lv, exp: s.p.exp, ability: s.p.ability, held: s.p.held, moves: s.p.moves.map(id => ({ id })) } };
+    const fake = { dungeon: s.dungeon, floor: s.floor, mode: s.mode, bag: s.bag, money: s.money, done: [], daily: s.daily || null, turns: s.turns || 0, kills: s.kills || 0, hard: !!s.hard,
+      kit: s.kit || [], p: { sp: s.p.sp, rsp: s.rsp, lv: s.p.lv, exp: s.p.exp, ability: s.p.ability, held: s.p.held, moves: s.p.moves.map(id => ({ id })) } };
     finishRun(fake, 'faint');
   }
 
@@ -1777,7 +1890,7 @@ const Game = (() => {
     Dungeon.leave();
     UI.closeAll();
     // 일반 던전에서 쓰러졌을 때: 친구에게 구조를 요청할 수 있다 (요청은 한 번에 하나)
-    if (outcome === 'faint' && r.mode === 'normal') {
+    if (outcome === 'faint' && r.mode === 'normal' && !r.hard) {
       show('town-screen'); renderTown(); Sound.town();   // 구조 요청 창도 마을에서 띄운다 (던전 음악이 남지 않게)
       if (save.sos) {
         UI.alert('구조 요청 불가', '<p>이미 기다리고 있는 구조 요청이 있어서 새로 요청할 수 없습니다.</p>').then(() => finishRun(r, 'faint'));
@@ -2069,7 +2182,11 @@ const Game = (() => {
     const reached = outcome === 'clear' ? dg.floors : r.floor;
     if (!success) Progress.add('faints');
     if (!dg.daily) save.best[dg.id] = Math.max(save.best[dg.id] || 0, reached);
-    if (outcome === 'clear' && !dg.daily) {
+    if (outcome === 'clear' && r.hard) {   // 하드모드 클리어: 캐릭터(원래 포켓몬)마다 따로 기록
+      const k = p.rsp || p.sp; save.hardClears = save.hardClears || {}; save.hardClears[k] = save.hardClears[k] || {};
+      const was = save.hardClears[k][dg.id]; save.hardClears[k][dg.id] = true;
+      if (!was) lines.push(`☠ ${esc(jo(spName(k), '으로'))} ${esc(jo(dg.n, '을'))} 하드모드로 처음 클리어했다!`);
+    } else if (outcome === 'clear' && !dg.daily) {
       const was = clearsOf(p.sp)[dg.id];
       const got = recordClear(p.sp, dg);
       if (dg.mode === 'rogue') save.cleared[dg.id] = true;
@@ -2077,8 +2194,23 @@ const Game = (() => {
       for (const m of got) lines.push(`${m.icon} <b>메달 획득: ${esc(m.n)}</b> — ${esc(jo(spName(p.sp), '으로'))} ${esc(m.d.replace('모두 클리어', '모두 클리어했다!'))}`);
     }
     saveParty(r);
-    if (dg.mode === 'normal') {
-      if (save.roster[p.sp] || p.sp === save.current) save.roster[p.sp] = { ...save.roster[p.sp], lv: p.lv, exp: p.exp, moves: p.moves.map(m => m.id), held: p.held || null, ...(p.tms ? { tms: p.tms } : {}), ...(p.boost ? { boost: p.boost } : {}) };
+    if (r.hard) {
+      saveHardMember(p, true);
+      if (success) {
+        // 주운 것만 가져온다: 가방에서 기본 아이템 개수만큼 뺀다 (마을 가방은 그대로)
+        const left = {}; for (const b of r.kit || []) left[b.id] = (left[b.id] || 0) + b.n;
+        const got = [];
+        for (const b of r.bag) { const take = Math.min(b.n, left[b.id] || 0); if (take) left[b.id] -= take; if (b.n - take > 0) got.push({ id: b.id, n: b.n - take }); }
+        got.forEach(b => storeAdd(b.id, b.n));
+        lines.push(got.length ? `주운 아이템 ${got.length}종을 창고에 넣었다.` : '주운 아이템은 없다.');
+        if (r.money) lines.push(`주운 돈 ₽${r.money}`);
+        if (outcome === 'clear') { save.hardCleared = save.hardCleared || {}; save.hardCleared[dg.id] = true; }   // 클리어 보상은 테스트 중이라 아직 없음
+      } else {
+        save.money = Math.max(0, save.money - r.money);
+        lines.push('쓰러져서 주운 아이템과 돈을 모두 잃었다...');
+      }
+    } else if (dg.mode === 'normal') {
+      if (!r.hard && (save.roster[p.sp] || p.sp === save.current)) save.roster[p.sp] = { ...save.roster[p.sp], lv: p.lv, exp: p.exp, moves: p.moves.map(m => m.id), held: p.held || null, ...(p.tms ? { tms: p.tms } : {}), ...(p.boost ? { boost: p.boost } : {}) };
       if (success) {
         save.bag = r.bag;
         if (outcome === 'clear') {
@@ -2117,7 +2249,7 @@ const Game = (() => {
         const lost = [];
         for (let i = 0; i < loseN; i++) lost.push(bag.splice(rand(bag.length), 1)[0]);
         save.bag = bag;
-        if (p.held && Math.random() < (abilityOf(p).stickyHold ? 0.25 : 0.5)) { lost.push({ id: p.held, n: 1 }); save.roster[p.sp].held = null; }
+        if (p.held && Math.random() < (abilityOf(p).stickyHold ? 0.25 : 0.5)) { lost.push({ id: p.held, n: 1 }); if (save.roster[p.rsp || p.sp]) save.roster[p.rsp || p.sp].held = null; }
         save.money = Math.max(0, save.money - r.money);
         if (lost.length) lines.push(`가방의 아이템 ${lost.length}개를 잃어버렸다: ${lost.map(b => ITEMS[b.id].icon + esc(ITEMS[b.id].n) + (b.n > 1 ? '×' + b.n : '')).join(', ')}`);
         else lines.push('가방의 아이템은 무사했다.');
@@ -2263,7 +2395,8 @@ const Game = (() => {
   // 도감용: 클리어 기록이 있는 포켓몬의 메달 (기록이 없으면 빈 값)
   const hasClears = sp => Object.keys(clearsOf(sp)).length > 0;
   const dexMedals = () => { const out = {}; for (const k of new Set([...Object.keys(save?.clears || {}), ...Object.keys(save?.roster || {})])) { const ic = medalIcons(+k); if (ic) out[k] = ic; } return out; };
-  return { hasClears, medalSection, dexMedals, askUpdate, recruit, unlockShiny, showMissions, importSave, noteShiny, boot, endRun, saveRunSnapshot, dungeonMenu, setSetting, renderTown, get save() { return save; }, setTab(t) { tab = t; renderTown(); } };
+  function setMissionFocus(id) { save.missionFocus = id || null; persist(); UI.toast(id ? `${dungeonById(id).n}의 의뢰가 더 자주 붙어요. (다음 새 의뢰부터)` : '자주 뜨는 지역을 해제했어요.'); }
+  return { setMissionFocus, hasClears, medalSection, dexMedals, askUpdate, recruit, unlockShiny, showMissions, importSave, noteShiny, boot, endRun, saveRunSnapshot, dungeonMenu, setSetting, renderTown, get save() { return save; }, setTab(t) { tab = t; renderTown(); } };
 })();
 
 window.addEventListener('DOMContentLoaded', () => {
@@ -2290,6 +2423,7 @@ window.addEventListener('DOMContentLoaded', () => {
   document.getElementById('town-screen').addEventListener('change', async e => {
     if (e.target.dataset.set) Game.setSetting(e.target.dataset.set, e.target.checked);
     if (e.target.dataset.setnum) { Game.setSetting(e.target.dataset.setnum, +e.target.value); Sound.play('menu'); }
+    if (e.target.dataset.mfocus) { Game.setMissionFocus(e.target.value); }
     if (e.target.classList.contains('tm-only')) filterTMs();
     if (e.target.classList.contains('store-filter')) { Game.save.storageFilter = e.target.value; Game.renderTown(); }
     if (e.target.id === 'save-file' && e.target.files[0]) { Game.importSave(e.target.files[0]); e.target.value = ''; }
