@@ -1729,7 +1729,7 @@ const Game = (() => {
     try { localStorage.setItem(SAVE_KEY, JSON.stringify(s)); } catch (e) { UI.alert('불러오기 실패', '<p>브라우저에 저장할 수 없습니다.</p>'); return; }
     location.reload();
   }
-  function noteShiny(sp) { save.shinySeen = save.shinySeen || {}; save.shinySeen[sp] = (save.shinySeen[sp] || 0) + 1; }
+  function noteShiny(sp) { save.shinySeen = save.shinySeen || {}; save.shinySeen[sp] = (save.shinySeen[sp] || 0) + 1; noteFirst('shiny', { sp }); }   // 엔딩: 처음 만난 이로치
   // 이로치 모습: 그 포켓몬의 이로치를 쓰러뜨리거나 영입하면 해금 (이미 이로치로 쓰던 캐릭터는 그대로 인정)
   // 진화 계열 전체가 함께 풀린다 (미진화체의 이로치를 만나도 진화체에서 쓸 수 있게)
   const shinyOk = sp => evoFamily(sp).some(x => (save.shinyOwned && save.shinyOwned[x]) || save.roster[x]?.shiny);
@@ -2002,6 +2002,8 @@ const Game = (() => {
       ${sec(i++, '🌱 모든 것의 시작', `<div class="end-cards">${s.starter ? card(s.starter, '처음 고른 파트너', 'Happy') : ''}</div>`)}
       ${sec(i++, '🤝 가장 오래 함께한 포켓몬', lead || mate ? `<div class="end-cards">${lead ? card(+lead[0], `리더로 ${lead[1]}번 탐험`) : ''}${mate ? card(+mate[0], `동료로 ${mate[1]}번 탐험`) : ''}</div>` : none)}
       ${sec(i++, '🔆 처음 진화시킨 포켓몬', f.evolve ? `<div class="end-cards">${card(f.evolve.from, '진화 전', 'Normal')}<span class="end-arrow">→</span>${card(f.evolve.to, `${f.evolve.day}일째`)}</div>` : none)}
+      ${sec(i++, '✨ 처음 만난 이로치', f.shiny && DATA.species[f.shiny.sp] ? `<div class="end-cards"><div class="end-card">${portraitImg(f.shiny.sp, 'portrait big', 'Normal', true)}<b>${esc(spName(f.shiny.sp))}</b><span class="dim">${f.shiny.day}일째</span></div></div>`
+        : Object.keys(s.shinySeen || {}).length ? `<p class="dim center">이로치를 ${Object.values(s.shinySeen).reduce((a, b) => a + b, 0)}번 만났어요 (처음 만난 이로치는 v0.70부터 기록돼요)</p>` : '<p class="dim center">아직 이로치를 만나지 못했어요</p>')}
       ${sec(i++, '👑 처음 함께한 전설', `<div class="end-cards">${f.ultra ? card(f.ultra.sp, `초전설 · ${f.ultra.day}일째`, 'Determined') : ''}${f.legend ? card(f.legend.sp, `전설 · ${f.legend.day}일째`, 'Determined') : ''}</div>
         ${!f.ultra && !f.legend ? (legends.length ? '' : none) : ''}
         <p class="dim center">함께하는 초전설 ${ultra.length}마리 · 전설·환상 ${legend.length}마리</p>`)}
