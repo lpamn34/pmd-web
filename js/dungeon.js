@@ -270,6 +270,7 @@ const Dungeon = (() => {
     const full = b.hp >= b.maxhp;
     formCheck(b);
     const wx = abilityOf(b).setWeather; if (wx && EXTREME_WX.includes(wx)) setWeather(wx, b, now() + 300);   // 원시회귀한 보스: 전용 날씨
+    for (const m of [P(), ...allies()]) if (abilityOf(m).imposter && !m.tf) transformInto(m, b, now() + 500);   // 괴짜: 변신한 보스로
     if (full) b.hp = b.maxhp;
     if (b.fsp) Sound.play('shiny', now());
   }
@@ -320,6 +321,7 @@ const Dungeon = (() => {
   }
 
   function newFloor() {
+    untransform(run.p); (run.party || []).forEach(untransform);   // 괴짜: 지난 층의 변신을 푼다 (이 층에서 처음 만나는 적으로 다시)
     const dg = dungeonById(run.dungeon);
     const bossFloor = isBossFloor(dg, run.floor);
     if (bossFloor) Sound.boss(); else Sound.dungeon(dg);
@@ -538,7 +540,9 @@ const Dungeon = (() => {
     if (!p.player) {
       if (A.slowStart) p.slowT = 10;
       // 날씨 특성: 리더 → 동료 순서로 먼저 바꾼 쪽이 이긴다 (여럿이 서로 덮어쓰지 않게)
-      if (A.setWeather && !D.wxByParty) { setWeather(A.setWeather, p, at); D.wxByParty = true; }
+      // 단, 전용 날씨(원시회귀·델타스트림)는 보통 날씨보다 앞선다 (리더가 가뭄이어도 동료 원시가이오가의 강한 비)
+      const extreme = EXTREME_WX.includes(A.setWeather) && !EXTREME_WX.includes(D.weather);
+      if (A.setWeather && (!D.wxByParty || extreme)) { setWeather(A.setWeather, p, at); D.wxByParty = true; }
       applyForecast(p);
       if (A.download) statChange(p, p.atk >= p.spa ? 2 : 4, 1, at, p);
       if (A.floorStart) statChange(p, A.floorStart[0], A.floorStart[1], at, p);
@@ -556,6 +560,33 @@ const Dungeon = (() => {
     if (A.pickup && Math.random() < A.pickup) { const id = weighted(dropTable(D.lvl, D.dg)); if (addToBag(id)) abLog(p, `${jo(ITEMS[id].n, '을')} 주워 왔다!`, at); }
     if (A.honey && Math.random() < 0.2 && addToBag('apple')) abLog(p, '사과를 발견했다!', at);
   }
+  // ── 괴짜(메타몽): 처음 마주친 상대로 변신 ──
+  // 모습·타입·능력치(내 레벨 기준, TF_STAT_MUL배)·능력 변화·특성·기술(PP TF_PP)을 따라 한다. HP는 그대로, 다음 층에 들어설 때 원래대로
+  // 변신 기술(144)도 같은 방식 (앞에 있는 포켓몬으로)
+  function transformInto(c, t, at, byMove) {
+    if (!c || c.tf || !t || t.hp <= 0 || c.hp <= 0) return false;
+    const look = looksOf(t), who = nm(c);
+    c.tf = { moves: c.moves, types: c.types, ability: c.ability, fsp: c.fsp || null, stages: c.stages, stageT: c.stageT };
+    if (c.baseAbility == null) c.baseAbility = c.ability;
+    const hp = c.hp;
+    c.fsp = look; recalc(c); c.hp = Math.min(hp, c.maxhp);
+    c.types = t.types.slice(); c.ability = t.ability;
+    c.stages = { ...(t.stages || {}) }; c.stageT = { ...(t.stageT || {}) };
+    c.moves = t.moves.map(m => ({ id: m.id, pp: TF_PP, max: TF_PP }));
+    Sprites.load(look, c.shiny);
+    if (c.player || seen(c)) {
+      log(`${byMove ? '' : '[괴짜] '}${jo(who, '은')} ${jo(spName(look), '으로')} 변신했다!`, at);
+      D.fx.push({ kind: 'ring', x: c.x, y: c.y, at, dur: 600 * spd(), color: '#d6a6ff' });
+    }
+    return true;
+  }
+  function untransform(c) {
+    if (!c || !c.tf) return;
+    const o = c.tf; c.tf = null;
+    const hp = c.hp;
+    c.moves = o.moves; c.types = o.types; c.ability = o.ability; c.fsp = o.fsp; c.stages = o.stages || {}; c.stageT = o.stageT || {};
+    recalc(c); c.hp = Math.min(hp, c.maxhp);
+  }
   // 위협: 처음 마주쳤을 때
   // 탐험대: 리더·동료 중 위협(위압감)을 가진 포켓몬이 있으면 그 능력을 한 번만 낮춘다 (여럿이어도 겹치지 않음, 리더 우선)
   // 적의 위협은 리더와 동료 모두에게
@@ -570,6 +601,10 @@ const Dungeon = (() => {
       if (e.shiny) { Sound.play('shiny', at); log(`✨ 색이 다른 ${jo(spName(e.sp), '이')} 나타났다!`, at); setFace('Surprised', 2000); D.fx.push({ kind: 'ring', x: e.x, y: e.y, at, dur: 700, color: '#fff6a0' }); Game.noteShiny(e.sp); }
       for (const [st, m] of byStat) intimidate(m, e, st, at);
       const ea = abilityOf(e);
+      // 괴짜: 이 층에서 처음 마주친 적으로. 등장 후 변신하는 보스가 있는 층에서는 보스가 변신할 때까지 기다렸다가 변신 후 모습으로 (bossTransform)
+      const bossWait = D.boss && D.boss.introForm && D.boss.hp > 0;
+      if (!bossWait) for (const m of team) if (abilityOf(m).imposter && !m.tf) transformInto(m, e, at);
+      if (ea.imposter && !e.tf) transformInto(e, p, at);   // 적 메타몽: 리더로
       if (ea.intimidate) for (const m of team) intimidate(e, m, ea.intimidate, at);
       if (ea.setWeather) setWeather(ea.setWeather, e, at);
     }
@@ -664,7 +699,7 @@ const Dungeon = (() => {
   function useMove(user, slot, dir, opts = {}) {
     const mid = slot < 0 ? null : user.moves[slot].id;
     const R = (mid && MOVE_RULES[mid]) || {};
-    const mastery = slot >= 0 && party(user) && (!opts.free || opts.release) && !run.hard;   // 이번 사용이 숙련도에 들어가나 (하드모드는 레벨처럼 성장 없음)
+    const mastery = slot >= 0 && party(user) && (!opts.free || opts.release) && !run.hard && !user.tf;   // 이번 사용이 숙련도에 들어가나 (하드모드는 레벨처럼 성장 없음)
     let move = slot < 0 ? NORMAL_ATTACK : DATA.moves[mid];
     if (R.selfHeal) move = { ...move, r: 's' };
     const wbT = { sun: 10, rain: 11, sand: 6, snow: 15 }[weatherNow()];
@@ -880,6 +915,8 @@ const Dungeon = (() => {
       if (tgt.types.includes(12)) log(`${nm(tgt)}에게는 효과가 없는 것 같다...`, at, 'weak');
       else if (tgt.seeded) log('그러나 실패했다!', at);
       else { tgt.seeded = { by: user, t: SEED_TURNS, k: 0 }; log(`${nm(tgt)}에게 씨앗을 심었다!`, at); }
+    } else if (R.transform) {
+      if (!transformInto(user, tgt, at, true)) log('그러나 실패했다!', at);
     } else if (R.taunt) {
       if (tgt.tauntT) log('그러나 실패했다!', at);
       else { tgt.tauntT = TAUNT_TURNS; log(`${jo(nm(tgt), '은')} 도발에 넘어가 버렸다! (${TAUNT_TURNS}턴 동안 공격 기술만)`, at); }
@@ -1234,12 +1271,13 @@ const Dungeon = (() => {
     if (c.status === 'psn' && A.poisonHeal) {
       c.stTick = (c.stTick || 0) + 1;
       if (c.stTick % 2 === 0 && c.hp < c.maxhp) heal(c, Math.max(1, Math.floor(c.maxhp / 12)), Math.max(T.cursor, T.moveEnd));
-    } else if (c.status === 'psn' || c.status === 'brn') {
+    } else if ((c.status === 'psn' || c.status === 'brn') && !(heldOf(c).orb === c.status && !ORB_STATUS_DMG)) {
+      // 화염구슬·독독구슬을 지니고 있으면 그 상태이상의 데미지는 ORB_STATUS_DMG배 (지금은 0: 받지 않는다)
       c.stTick = (c.stTick || 0) + 1;
       if (c.stTick % 2 === 0) {
         const at = Math.max(T.cursor, T.moveEnd);
         if (c.player || seen(c)) log(`${jo(nm(c), '은')} ${c.status === 'psn' ? '독' : '화상'} 데미지를 입었다.`, at, 'st-' + c.status);
-        damage(c, pctDmg(c, 1 / 14), null, at);
+        damage(c, Math.max(1, Math.floor(pctDmg(c, 1 / 14) * (heldOf(c).orb === c.status ? ORB_STATUS_DMG : 1))), null, at);
       }
     }
     if (--c.statusT <= 0 && c.hp > 0) {
@@ -1312,6 +1350,7 @@ const Dungeon = (() => {
   // 동료 기술: 지금 레벨까지 배우는 기술(진화 전 포함)·기술머신으로 배운 기술 중에서 한 칸씩 바꾼다
   // 뺐던 기술을 다시 넣으면 남아 있던 PP 그대로 (기술을 바꿔 PP를 채울 수 없게)
   function allyMoves(a) {
+    if (a.tf) { UI.alert('기술 바꾸기', `<p>${esc(jo(nm(a), '은'))} 변신 중이라 기술을 바꿀 수 없어요. 다음 층에서 원래대로 돌아와요.</p>`); return; }
     const tms = (Game.save.roster[a.rsp || a.sp] || {}).tms || [];
     const pool = [...new Set([...learnableUpTo(a.sp, a.lv), ...(a.selForm && DATA.species[a.selForm] ? learnableUpTo(a.selForm, a.lv) : []), ...preEvos(a.sp).flatMap(x => learnableUpTo(x, a.lv)), ...tms])].filter(m => DATA.moves[m] && !a.moves.some(x => x.id === m));
     const slotRow = (m, k) => ({ label: m ? `${k + 1}. ${esc(DATA.moves[m.id].n)} <span class="dim">PP ${m.pp}/${m.max}</span>` : `${k + 1}. (빈 칸)`, fn: () => pickNew(k) });
@@ -1441,6 +1480,7 @@ const Dungeon = (() => {
       if (R.screen) return !e[R.screen === 'phys' ? 'reflectT' : 'screenT'];
       if (R.seed) return !p.seeded && !p.types.includes(12);
       if (R.taunt) return !p.tauntT;
+      if (R.transform) return !e.tf;
       if (R.yawn) return !p.status && !p.yawnT;
       if (R.protect) return !e.protectPrev;
       if (m.c !== 1 || !m.sc) return true;
@@ -1938,12 +1978,12 @@ const Dungeon = (() => {
       // 화난 켈리몬: 이동만 한 번 더 (한 턴에 두 칸)
       if (e.thief && !D.dead && e.hp > 0 && (e.x !== ex || e.y !== ey)) { e.moveOnly = true; enemyAct(e); e.moveOnly = false; }
       statusTick(e);
-      const es = abVal(e, 'speedy');
+      const es = (abVal(e, 'speedy') || 0) + (heldOf(e).speedy || 0);   // 선제공격손톱: 동료(지닌 포켓몬)도
       if (es && !e.npc && !D.dead && e.hp > 0 && Math.random() < es) enemyAct(e);
     }
     // 동료: 배가 고프지 않은 동안 조금씩 회복 (플레이어와 같은 속도)
     for (const a of allies()) {
-      a.regen = (a.regen || 0) + (a.maxhp / 110 + 0.05) * (abVal(a, 'regen') || 1) * (heldOf(a).regen || 1);
+      a.regen = (a.regen || 0) + (a.maxhp / 110 + 0.05) * (abVal(a, 'regen') || 1) * (heldOf(a).regen || 1) * (heldOf(a).sludge && a.types.includes(4) ? 2.5 : 1);   // 검은오물: 독 타입이면 2.5배
       if (a.regen >= 1) { const n = Math.floor(a.regen); if (p.belly > 0 && a.hp < a.maxhp) a.hp = Math.min(a.maxhp, a.hp + n); a.regen -= n; }
     }
     p.partners = allies().length;   // 혼자 탐험 보정은 동료가 없을 때만
@@ -2124,6 +2164,7 @@ const Dungeon = (() => {
     if (!it.use || it.use === 'none') { log('지금은 사용할 수 없다.', now()); return false; }
     if (it.use === 'tm') {
       const mv = DATA.moves[it.mv];
+      if (p.tf) { log(`${jo(nm(p), '은')} 변신 중이라 기술을 배울 수 없다.`, now()); return false; }
       if (!canLearnTM(p.sp, it.mv)) { log(`${jo(nm(p), '은')} ${jo(mv.n, '을')} 배울 수 없다.`, now()); return false; }
       if (p.moves.some(m => m.id === it.mv)) { log(`이미 ${jo(mv.n, '을')} 알고 있다.`, now()); return false; }
       takeFromBag(slot);

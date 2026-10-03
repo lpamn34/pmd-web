@@ -59,7 +59,7 @@ const Game = (() => {
   function saveParty(r) {
     if (r.mode !== 'normal') return;
     if (r.hard) { for (const a of r.party || []) saveHardMember(a, false); return; }
-    for (const a of r.party || []) if (save.roster[a.sp]) save.roster[a.sp] = { ...save.roster[a.sp], lv: a.lv, exp: a.exp, moves: a.moves.map(m => m.id), held: a.held || null };   // 던전에서 바꾼 지닌 물건도 남는다
+    for (const a of r.party || []) if (save.roster[a.sp]) save.roster[a.sp] = { ...save.roster[a.sp], lv: a.lv, exp: a.exp, moves: ownMoves(a).map(m => m.id), held: a.held || null };   // 던전에서 바꾼 지닌 물건도 남는다
   }
   const entryAbility = (sp, ch) => (ch && DATA.species[sp].ab.some(a => a[0] === ch.ability) ? ch.ability : defaultAbility(sp));
   let newerSave = null;   // 세이브가 이 화면보다 새 버전에서 저장됐으면 그 버전 (덮어쓰지 않는다)
@@ -1929,12 +1929,12 @@ const Game = (() => {
     const p = r.p;
     save.run = { dungeon: r.dungeon, floor: r.floor, mode: r.mode, bag: r.bag, money: r.money, done: r.done, daily: r.daily || null, turns: r.turns || 0, kills: r.kills || 0, carried: r.carried || null, stats: r.stats || null,
       ...(r.hard ? { hard: true, hardLv: r.hardLv, rsp: p.rsp, kit: r.kit } : {}),
-      p: { sp: p.sp, lv: p.lv, exp: p.exp, hp: p.hp, belly: p.belly, status: p.status, statusT: p.statusT, moves: p.moves.map(m => m.id), pp: p.moves.map(m => m.pp), ability: p.baseAbility ?? p.ability, held: p.held || null, tms: p.tms || [], shiny: !!p.shiny, boost: p.boost || null, form: p.selForm || null } };
-    save.run.party = (r.party || []).map(a => ({ sp: a.sp, rsp: a.rsp, lv: a.lv, exp: a.exp, hp: a.hp, moves: a.moves.map(m => m.id), pp: a.moves.map(m => m.pp), ability: a.baseAbility ?? a.ability, fainted: !!a.fainted, status: a.status, statusT: a.statusT }));
+      p: { sp: p.sp, lv: p.lv, exp: p.exp, hp: p.hp, belly: p.belly, status: p.status, statusT: p.statusT, moves: ownMoves(p).map(m => m.id), pp: ownMoves(p).map(m => m.pp), ability: p.baseAbility ?? p.ability, held: p.held || null, tms: p.tms || [], shiny: !!p.shiny, boost: p.boost || null, form: p.selForm || null } };
+    save.run.party = (r.party || []).map(a => ({ sp: a.sp, rsp: a.rsp, lv: a.lv, exp: a.exp, hp: a.hp, moves: ownMoves(a).map(m => m.id), pp: ownMoves(a).map(m => m.pp), ability: a.baseAbility ?? a.ability, fainted: !!a.fainted, status: a.status, statusT: a.statusT }));
     saveParty(r);
     // 일반 던전은 층마다 레벨도 저장
     if (r.hard) saveHardMember(p, true);
-    else if (r.mode === 'normal') save.roster[p.sp] = { ...save.roster[p.sp], lv: p.lv, exp: p.exp, moves: p.moves.map(m => m.id), held: p.held || null, tms: p.tms || [], ...(p.boost ? { boost: p.boost } : {}) };
+    else if (r.mode === 'normal') save.roster[p.sp] = { ...save.roster[p.sp], lv: p.lv, exp: p.exp, moves: ownMoves(p).map(m => m.id), held: p.held || null, tms: p.tms || [], ...(p.boost ? { boost: p.boost } : {}) };
     persist();
   }
 
@@ -2026,7 +2026,7 @@ const Game = (() => {
     save.mySOS = [...(save.mySOS || []), s.id].slice(-50);   // 내가 보낸 구조 요청 (포기한 뒤에도 내 코드로 구조하러 가지 못하게)
     saveParty(r);
     // 레벨은 그대로 남고, 가방과 지닌 물건은 쓰러진 곳에 남아 구조를 기다린다
-    save.roster[p.sp] = { ...save.roster[p.sp], lv: p.lv, exp: p.exp, moves: p.moves.map(m => m.id), held: null, ...(p.tms ? { tms: p.tms } : {}), ...(p.boost ? { boost: p.boost } : {}) };
+    save.roster[p.sp] = { ...save.roster[p.sp], lv: p.lv, exp: p.exp, moves: ownMoves(p).map(m => m.id), held: null, ...(p.tms ? { tms: p.tms } : {}), ...(p.boost ? { boost: p.boost } : {}) };
     save.bag = [];   // 가방은 쓰러진 곳에서 구조를 기다린다 (s.snap.bag)
     save.best[r.dungeon] = Math.max(save.best[r.dungeon] || 0, r.floor);
     save.run = null; save.day++; refreshDay(); persist();
@@ -2298,7 +2298,7 @@ const Game = (() => {
         lines.push('쓰러져서 주운 아이템과 돈을 모두 잃었다...');
       }
     } else if (dg.mode === 'normal') {
-      if (!r.hard && (save.roster[p.sp] || p.sp === save.current)) save.roster[p.sp] = { ...save.roster[p.sp], lv: p.lv, exp: p.exp, moves: p.moves.map(m => m.id), held: p.held || null, ...(p.tms ? { tms: p.tms } : {}), ...(p.boost ? { boost: p.boost } : {}) };
+      if (!r.hard && (save.roster[p.sp] || p.sp === save.current)) save.roster[p.sp] = { ...save.roster[p.sp], lv: p.lv, exp: p.exp, moves: ownMoves(p).map(m => m.id), held: p.held || null, ...(p.tms ? { tms: p.tms } : {}), ...(p.boost ? { boost: p.boost } : {}) };
       if (success) {
         save.bag = r.bag;
         if (outcome === 'clear') {

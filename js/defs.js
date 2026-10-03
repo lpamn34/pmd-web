@@ -3,7 +3,7 @@
 
 // 게임 버전: 업데이트할 때 올리고, index.html의 ?v= 숫자도 같이 올린다
 // (친구와 구조 코드·오늘의 도전을 주고받으려면 버전이 같아야 한다)
-const GAME_VERSION = '0.65';
+const GAME_VERSION = '0.66';
 // 버전 비교: '0.25' > '0.9' 처럼 숫자로 비교한다
 function cmpVer(a, b) {
   const x = String(a).split('.').map(Number), y = String(b).split('.').map(Number);
@@ -12,6 +12,7 @@ function cmpVer(a, b) {
 }
 const GAME_DATE = '2026-10-01';
 const VERSION_NOTES = [
+  ["0.66", ["리더가 지닐 때만 효과가 있는 지닌 물건(투시안경·스태미나밴드·부적금화·친구리본·함정스카프)의 설명에 \"(리더가 지닐 때만)\"을 적었습니다", "검은오물·선제공격손톱: 동료가 지녀도 효과가 있습니다", "리더가 가뭄·잔비 같은 날씨 특성을 가지고 있으면 동료 원시가이오가·원시그란돈·레쿠쟈(델타스트림)의 전용 날씨가 나오지 않던 문제를 고쳤습니다", "메타몽의 괴짜: 층에서 처음 마주친 상대로 변신합니다. 모습·타입·능력치·능력 변화·특성·기술을 따라 하고 HP는 그대로입니다. 다음 층에 가면 원래대로 돌아옵니다. 적 메타몽은 리더로 변신합니다", "새 기술 변신: 앞에 있는 포켓몬으로 변신합니다 (메타몽 Lv1, 뮤 Lv80에 배움)", "변신하면 (괴짜·변신 기술 모두) HP를 뺀 모든 능력치가 1.1배가 되고, 빌린 기술의 PP는 10입니다", "화염구슬·독독구슬: 지니고 있는 동안은 화상·독 데미지를 받지 않습니다. 근성·속보 같은 특성과 함께 쓰기 좋아졌습니다 (화상으로 공격이 줄어드는 것은 그대로)"]],
   ["0.65", ["원시회귀·레쿠쟈 특성을 전용 날씨로 바꿨습니다. 끝의대지는 아주 강한 햇살(물 공격 기술이 증발해서 실패), 시작의바다는 강한 비(불꽃 공격 기술이 꺼져서 실패), 델타스트림은 난기류(비행 타입이 약점에 보통 데미지만 받음)를 부릅니다. 부른 포켓몬이 쓰러지기 전에는 다른 날씨로 바뀌지 않습니다",
     "전에는 이 특성들이 불꽃·물 기술 위력 1.5배였는데, 쾌청·비와 겹쳐 2.25배가 되던 문제도 함께 없어졌습니다"]],
   ["0.64", ["구조 게시판: 닉네임이 등록되지 않은 계정은 구조 완료를 전하지 못하고 계속 실패하던 문제를 고쳤습니다. 이제 처음 쓸 때 닉네임을 자동으로 등록합니다",
@@ -228,15 +229,15 @@ const HELD_ITEMS = {
   defscarf:    { n: '방어스카프',   d: '방어가 1.2배.', price: 1000, icon: '🟫', hold: { defMul: 1.2 } },
   specialband: { n: '스페셜밴드',   d: '특수공격이 1.2배.', price: 1000, icon: '🔵', hold: { spaMul: 1.2 } },
   zincband:    { n: '아연밴드',     d: '특수방어가 1.2배.', price: 1000, icon: '⚪', hold: { spdMul: 1.2 } },
-  xrayspecs:   { n: '투시안경',     d: '층의 적과 아이템 위치가 항상 미니맵에 보인다.', price: 1500, icon: '🥽', hold: { xray: true } },
-  staminaband: { n: '스태미나밴드', d: '배가 고파지는 속도가 절반이 된다.', price: 1000, icon: '🍙', hold: { bellyMul: 0.5 } },
+  xrayspecs:   { n: '투시안경',     d: '층의 적과 아이템 위치가 항상 미니맵에 보인다. (리더가 지닐 때만)', price: 1500, icon: '🥽', hold: { xray: true } },
+  staminaband: { n: '스태미나밴드', d: '배가 고파지는 속도가 절반이 된다. (리더가 지닐 때만)', price: 1000, icon: '🍙', hold: { bellyMul: 0.5 } },
   pechascarf:  { n: '복슝스카프',   d: '독 상태가 되지 않는다.', price: 600, icon: '🍑', hold: { noStatus: ['psn'] } },
   insomniscope:{ n: '불면고글',     d: '잠듦 상태가 되지 않는다.', price: 600, icon: '😳', hold: { noStatus: ['slp'] } },
   persimband:  { n: '시마밴드',     d: '혼란에 빠지지 않는다.', price: 600, icon: '🌀', hold: { noStatus: ['cnf'] } },
-  flameorb:    { n: '화염구슬',     d: '5턴마다 (상태이상이 없으면) 화상 상태가 된다. (근성과 함께 쓰면 좋다)', price: 500, icon: '🔥', hold: { orb: 'brn' } },
-  toxicorb:    { n: '독독구슬',     d: '5턴마다 (상태이상이 없으면) 독 상태가 된다. (포이즌힐·근성과 함께)', price: 500, icon: '☣', hold: { orb: 'psn' } },
+  flameorb:    { n: '화염구슬',     d: '5턴마다 (상태이상이 없으면) 화상 상태가 된다. 지니고 있는 동안은 화상 데미지를 받지 않는다. (근성과 함께 쓰면 좋다)', price: 500, icon: '🔥', hold: { orb: 'brn' } },
+  toxicorb:    { n: '독독구슬',     d: '5턴마다 (상태이상이 없으면) 독 상태가 된다. 지니고 있는 동안은 독 데미지를 받지 않는다. (포이즌힐·근성과 함께)', price: 500, icon: '☣', hold: { orb: 'psn' } },
   luckyegg:    { n: '행복의알',     d: '얻는 경험치가 1.5배.', price: 2000, icon: '🥚', hold: { expMul: 1.5 } },
-  amuletcoin:  { n: '부적금화',     d: '줍는 돈이 1.5배.', price: 2000, icon: '🪙', hold: { moneyMul: 1.5 } },
+  amuletcoin:  { n: '부적금화',     d: '줍는 돈이 1.5배. (리더가 지닐 때만)', price: 2000, icon: '🪙', hold: { moneyMul: 1.5 } },
 };
 // 타입 강화 도구 (해당 타입 기술 1.2배)
 [['silkscarf', '실크스카프', 1], ['blackbelt', '검은띠', 2], ['sharpbeak', '예리한부리', 3], ['poisonbarb', '독바늘', 4], ['softsand', '부드러운모래', 5],
@@ -246,11 +247,11 @@ const HELD_ITEMS = {
   .forEach(([id, n, t]) => { HELD_ITEMS[id] = { n, d: `${DATA.types[t - 1]} 타입 기술의 위력이 1.2배.`, price: 600, icon: '🔸', hold: { typeMul: { [t]: 1.2 } } }; });
 // 스카프·리본
 Object.assign(HELD_ITEMS, {
-  friendbow:   { n: '친구리본',   d: '쓰러뜨린 적이 동료가 되고 싶어 할 확률이 1.5배.', price: 2500, icon: '🎀', hold: { recruitMul: 1.5 } },
+  friendbow:   { n: '친구리본',   d: '쓰러뜨린 적이 동료가 되고 싶어 할 확률이 1.5배. (리더가 지닐 때만)', price: 2500, icon: '🎀', hold: { recruitMul: 1.5 } },
   healribbon:  { n: '치유리본',   d: '상태이상이 절반의 시간에 낫는다.', price: 900, icon: '💗', hold: { statusShort: true } },
   goldribbon:  { n: '황금리본',   d: '공격·방어·특공·특방·스피드가 모두 1.1배.', price: 4000, icon: '🏅', hold: { atkMul: 1.1, defMul: 1.1, spaMul: 1.1, spdMul: 1.1, speedMul: 1.1 } },
   twistband:   { n: '비틀밴드',   d: '적이 능력을 떨어뜨리지 못한다.', price: 1000, icon: '🌀', hold: { noDrop: true } },
-  trapscarf:   { n: '함정스카프', d: '함정을 밟아도 발동하지 않는다.', price: 900, icon: '🧣', hold: { trapImmune: true } },
+  trapscarf:   { n: '함정스카프', d: '함정을 밟아도 발동하지 않는다. (리더가 지닐 때만)', price: 900, icon: '🧣', hold: { trapImmune: true } },
   detectband:  { n: '탐지밴드',   d: '회피율이 1.1배.', price: 900, icon: '🟪', hold: { evaMul: 1.1 } },
 });
 // 전용 도구: 정해진 포켓몬이 지닐 때만 효과
@@ -631,6 +632,8 @@ const STAT_NAMES = { 2: '공격', 3: '방어', 4: '특수공격', 5: '특수방�
 const STAT_SHORT = { 2: '공', 3: '방', 4: '특공', 5: '특방', 6: '스', 7: '명', 8: '회' };   // 휴대폰 상태창용
 const STATUS_NAMES = { psn: '독', brn: '화상', par: '마비', slp: '잠듦', frz: '얼음', cnf: '혼란' };
 const STATUS_COLORS = { psn: '#c77dff', brn: '#ff7a3c', par: '#ffd84a', slp: '#9fb4ff', frz: '#7fe3ff', cnf: '#8ff0b0' };
+// 화염구슬·독독구슬을 지닌 포켓몬이 받는 화상·독 데미지 배율 (0이면 받지 않음)
+const ORB_STATUS_DMG = 0;
 const AILMENT_MAP = { 1: 'par', 2: 'slp', 3: 'frz', 4: 'brn', 5: 'psn', 6: 'cnf' };
 
 // 유틸
@@ -663,6 +666,10 @@ const spName = id => DATA.species[id]?.n || ('#' + id);
 const SPECIES_IDS = Object.keys(DATA.species).filter(id => !DATA.species[id].fc);
 // 보이는 모습: 던전에서 모습이 바뀌면 c.fsp (그림·능력치·타입·이름), 원래 포켓몬 번호 c.sp는 저장·영입용으로 그대로
 const looksOf = c => (c && c.fsp) || (c && c.sp);
+// 원래 기술 (괴짜로 변신한 동안은 변신 전 기술. 세이브에는 이것을 남긴다)
+const ownMoves = c => (c.tf ? c.tf.moves : c.moves);
+// 변신(괴짜·변신 기술): 따라 한 능력치(HP 제외)에 이 배율, 빌린 기술의 PP는 TF_PP
+const TF_STAT_MUL = 1.1, TF_PP = 10;
 const typeName = t => DATA.types[t - 1];
 const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 // 한국어 조사

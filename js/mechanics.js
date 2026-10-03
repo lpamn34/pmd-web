@@ -94,6 +94,10 @@ function recalc(c) {
   Object.assign(c, c.baseAll ? statsFromBase(c.baseAll, c.lv, c.iv) : applyBoost(calcStats(looksOf(c), c.lv, c.iv), c.boost));   // 모습이 바뀌면 그 모습의 능력치
   if (c.hpMul) c.maxhp = Math.floor(c.maxhp * c.hpMul);   // 보스·현상수배범의 HP 배율 (모습이 바뀌어도 유지)
   if (c.statMul) for (const k of ['atk', 'def', 'spa', 'spd']) c[k] = Math.floor(c[k] * c.statMul);
+  if (c.tf) {   // 변신한 동안: HP는 원래 포켓몬 기준, 나머지 능력치는 TF_STAT_MUL배
+    c.maxhp = applyBoost(calcStats(c.sp, c.lv, c.iv), c.boost).maxhp;
+    for (const k of ['atk', 'def', 'spa', 'spd', 'spe']) c[k] = Math.floor(c[k] * TF_STAT_MUL);
+  }
   c.hp = clamp(c.hp + (c.maxhp - old), 1, c.maxhp);
 }
 

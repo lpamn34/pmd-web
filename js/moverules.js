@@ -87,6 +87,7 @@ rule([240], { setWx: 'rain' }); rule([241], { setWx: 'sun' }); rule([201], { set
 rule([182], { protect: true });
 rule([156], { rest: true });
 rule([115], { screen: 'phys', team: true }); rule([113], { screen: 'spec', team: true });
+rule([144], { transform: true });   // 변신: 앞의 포켓몬으로 (js/dungeon.js transformInto)
 rule([73], { seed: true }); rule([269], { taunt: true }); rule([281], { yawn: true });
 const SCREEN_TURNS = 20, TAUNT_TURNS = 10, SEED_TURNS = 20, REST_TURNS = 3;
 
