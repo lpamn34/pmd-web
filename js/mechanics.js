@@ -122,8 +122,15 @@ function typeEff(moveType, types, mid) {
 }
 
 // 현재 날씨 (플레이어가 날씨부정/에어록이면 무효)
+// 실제 날씨 이름 (아주 강한 햇살 등 전용 날씨 그대로). 효과 계산은 weatherNow (전용 날씨는 쾌청·비로 본다)
+function weatherRaw() {
+  if (!CUR_WEATHER) return null;
+  if (typeof Dungeon !== 'undefined' && Dungeon.floor && abilityOf(Dungeon.floor.player).cloudNine) return null;
+  return CUR_WEATHER;
+}
 function weatherNow() {
   if (!CUR_WEATHER) return null;
+  if (WEATHERS[CUR_WEATHER] && WEATHERS[CUR_WEATHER].base) return weatherRaw() && WEATHERS[CUR_WEATHER].base;
   if (typeof Dungeon !== 'undefined' && Dungeon.floor && abilityOf(Dungeon.floor.player).cloudNine) return null;
   return CUR_WEATHER;
 }
@@ -235,6 +242,7 @@ function calcHit(att, def, move) {
   if (move.c === 1) return { hit: true, dmg: 0, eff: 1 };
   const mt = moveType(att, move);
   let eff = moveEff(att, def, move, mt, A);
+  if (weatherRaw() === 'wind' && mt && def.types.includes(3) && typeEff(mt, [3]) > 1) eff /= TYPE_MUL[2];   // 난기류: 비행의 약점을 지운다
   if (Dd.levitate && mt === 5 && move.id !== THOUSAND_ARROWS) eff = 0;
   if (Dd.immuneFlag && hasFlag(move, Dd.immuneFlag)) eff = 0;
   if (Dd.wonderGuard && eff <= 1 && !(move.basic && Math.random() < WONDER_GUARD_BASIC)) eff = 0;
@@ -276,6 +284,8 @@ function moveScore(att, def, move) {
   const stab = mt && (att.types.includes(mt) || Ab.protean) ? (Ab.adapt ? 2 : 1.5) : 1;
   const hits = move.hits ? (Ab.skillLink ? move.hits[1] : (move.hits[0] + move.hits[1]) / 2) : 1;
   let eff = moveEff(att, def, move, mt, Ab);
+  if (WX_BLOCK[weatherRaw()] === mt) return 0;   // 아주 강한 햇살의 물 기술, 강한 비의 불꽃 기술은 실패한다
+  if (weatherRaw() === 'wind' && mt && def.types.includes(3) && typeEff(mt, [3]) > 1) eff /= TYPE_MUL[2];
   // 면역: 부유(땅), 흡수 특성(저수·건조한피부·축전 등), 방음·방탄 같은 기술 종류 면역
   if ((Dd.levitate && mt === 5 && move.id !== THOUSAND_ARROWS) || (Dd.absorb && Dd.absorb.t === mt) || (Dd.immuneFlag && hasFlag(move, Dd.immuneFlag))) return 0;
   if (Dd.wonderGuard && eff <= 1) eff = move.basic ? eff * WONDER_GUARD_BASIC : 0;

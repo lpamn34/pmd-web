@@ -58,7 +58,7 @@ for (const [fi, fid] of Object.entries(FORM_ID)) {
 // ── 전투 중 바뀌는 모습: 원래 포켓몬 번호 → 지금 되어야 할 모습의 포켓API 이름 (없으면 원래 모습) ──
 const hpRate = c => c.hp / c.maxhp;
 const BATTLE_FORMS = {
-  351: c => ({ sun: 'castform-sunny', rain: 'castform-rainy', snow: 'castform-snowy' })[CUR_WEATHER],   // 캐스퐁: 날씨
+  351: c => ({ sun: 'castform-sunny', rain: 'castform-rainy', snow: 'castform-snowy' })[weatherNow()],   // 캐스퐁: 날씨
   681: c => (c.blade ? 'aegislash-blade' : null),                                    // 킬가르도: 공격 기술을 쓰면 블레이드폼, 변화 기술·대기면 실드폼
   555: c => (hpRate(c) <= 0.5 ? 'darmanitan-zen' : null),                            // 불비달마: HP 절반 이하
   746: c => (c.lv >= 20 && hpRate(c) > 0.25 ? 'wishiwashi-school' : null),          // 약어리: Lv20 이상, HP 1/4 초과

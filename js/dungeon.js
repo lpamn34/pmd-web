@@ -269,6 +269,7 @@ const Dungeon = (() => {
     b.introForm = false;
     const full = b.hp >= b.maxhp;
     formCheck(b);
+    const wx = abilityOf(b).setWeather; if (wx && EXTREME_WX.includes(wx)) setWeather(wx, b, now() + 300);   // 원시회귀한 보스: 전용 날씨
     if (full) b.hp = b.maxhp;
     if (b.fsp) Sound.play('shiny', now());
   }
@@ -328,7 +329,7 @@ const Dungeon = (() => {
       prompts: [], learnQueue: [], delayed: [], traps: [], shop: null, houses: [], seq: 0, turn: 0, spawnT: run.hard ? 20 : 40, auto: null, ignore: new Set(), regen: 0, dg };
     const { pool, lvl } = makePool(dg, run.floor);
     D.pool = pool; D.lvl = lvl + (run.hard ? HARD_DROP_LV : 0);   // 하드모드: 아이템·돈은 한 등급 위 (적 레벨은 run.hardLv)
-    D.weather = rollWeather(dg); CUR_WEATHER = D.weather;
+    D.weather = rollWeather(dg); CUR_WEATHER = D.weather; D.baseWeather = D.weather; D.wxLock = null;
     pool.forEach(id => Sprites.load(id));
     // 탐험대가 바뀔 수 있는 모습(메가진화·폼체인지)의 그림도 미리 받아 둔다
     for (const c of [run.p, ...(run.party || [])]) if (c && FORMS_OF[c.sp]) for (const f of FORMS_OF[c.sp]) if (!formsOfKind(c.sp, 'select').includes(f) || f === c.selForm) Sprites.load(f, c.shiny);
@@ -496,6 +497,13 @@ const Dungeon = (() => {
   // byMove: 기술(비바라기 등)로 바꿨으면 특성 이름 없이 알린다
   function setWeather(w, src, at, byMove) {
     if (D.weather === w) return;
+    // 전용 날씨(아주 강한 햇살 등)는 부른 포켓몬이 쓰러지기 전에는 보통 날씨로 바뀌지 않는다 (다른 전용 날씨로는 바뀜)
+    const lock = D.wxLock;
+    if (lock && lock.hp > 0 && !lock.dead && !EXTREME_WX.includes(w)) {
+      if (byMove ? (src.player || seen(src)) : true) log(`그러나 ${WEATHERS[D.weather].n} 때문에 날씨가 바뀌지 않았다!`, at);
+      return;
+    }
+    D.wxLock = EXTREME_WX.includes(w) ? src : null;
     D.weather = w; CUR_WEATHER = w;
     const msg = `날씨가 ${WEATHERS[w].icon} ${jo(WEATHERS[w].n, '으로')} 바뀌었다!`;
     if (byMove) { if (src.player || seen(src)) log(msg, at); } else abLog(src, msg, at);
@@ -659,7 +667,8 @@ const Dungeon = (() => {
     const mastery = slot >= 0 && party(user) && (!opts.free || opts.release) && !run.hard;   // 이번 사용이 숙련도에 들어가나 (하드모드는 레벨처럼 성장 없음)
     let move = slot < 0 ? NORMAL_ATTACK : DATA.moves[mid];
     if (R.selfHeal) move = { ...move, r: 's' };
-    if (R.weatherBall && weatherNow() && weatherNow() !== 'fog') move = { ...move, t: { sun: 10, rain: 11, sand: 6, snow: 15 }[weatherNow()], p: 100 };
+    const wbT = { sun: 10, rain: 11, sand: 6, snow: 15 }[weatherNow()];
+    if (R.weatherBall && wbT) move = { ...move, t: wbT, p: 100 };
     if (slot >= 0 && !opts.free) {
       if (party(user) && Math.random() < masteryFree(user.sp, mid)) log(`${jo(nm(user), '은')} PP를 쓰지 않았다! (숙련도)`, T.base);
       else user.moves[slot].pp--;
@@ -689,6 +698,8 @@ const Dungeon = (() => {
     const hitAt = t0 + dur * 0.55;
     if (slot >= 0 && visible) log(`${nm(user)}의 ${move.n}!`, t0);
     const fail = msg => { log(msg || '그러나 실패했다!', hitAt); user.lastMissed = true; };
+    const blk = WX_BLOCK[weatherRaw()];
+    if (blk && move.c !== 1 && moveType(user, move) === blk) return fail(blk === 11 ? '아주 강한 햇살에 물 기술이 증발해 버렸다!' : '강한 비에 불꽃 기술이 꺼져 버렸다!');
     if (R.focus && ctx.hurtSince) return fail(`${jo(nm(user), '은')} 집중이 흐트러져서 기술을 쓸 수 없었다!`);
     if (R.needSleepSelf && user.status !== 'slp') return fail();
     if (R.hpCostPct) {
@@ -1074,6 +1085,13 @@ const Dungeon = (() => {
     run.stats = run.stats || {};
     return run.stats[c.sp] = run.stats[c.sp] || { dealt: 0, taken: 0, kills: 0, heal: 0, leader: !!c.player };
   }
+  // 전용 날씨를 부른 포켓몬이 쓰러지면: 층의 원래 날씨로
+  function endExtremeWeather(at) {
+    const old = D.weather; D.wxLock = null;
+    D.weather = D.baseWeather || null; CUR_WEATHER = D.weather;
+    log(`${WEATHERS[old].icon} ${jo(WEATHERS[old].n, '이')} 그쳤다.`, at);
+    applyForecast(D.player); D.mons.forEach(applyForecast);
+  }
   function faint(c, src, at) {
     if (c.player) {
       const bi = run.bag.findIndex(b => b.id === 'reviver');
@@ -1090,6 +1108,7 @@ const Dungeon = (() => {
       D.prompts = [faintReport];   // 같은 턴에 쌓인 계단·영입 창보다 먼저 (계단을 밟으며 쓰러져도 탐험이 끝나게)
       return;
     }
+    if (D.wxLock === c) endExtremeWeather(at);
     if (c.ally) {   // 동료: 이번 탐험에서 빠진다 (마을로 돌아감)
       c.dead = true; c.deadAt = at; c.fainted = true;
       D.mons = D.mons.filter(m => m !== c); D.corpses.push(c);
@@ -2705,7 +2724,7 @@ const Dungeon = (() => {
   function updateHud(t) {
     const p = P(), dg = D.dg;
     const pt = (run.party || []).map(a => `${a.sp}:${a.lv}:${a.hp}:${a.maxhp}:${a.fainted ? 1 : 0}:${a.status}`).join(',');
-    const hud = `${pt}|${p.held}|${weatherNow()}|${dg.n}|${run.floor}|${p.lv}|${p.hp}|${p.maxhp}|${Math.ceil(p.belly)}|${Game.save.money}|${run.money}|${p.status}|${p.exp}|${JSON.stringify(p.stages)}|${JSON.stringify(p.stageT || {})}`;
+    const hud = `${pt}|${p.held}|${weatherRaw()}|${dg.n}|${run.floor}|${p.lv}|${p.hp}|${p.maxhp}|${Math.ceil(p.belly)}|${Game.save.money}|${run.money}|${p.status}|${p.exp}|${JSON.stringify(p.stages)}|${JSON.stringify(p.stageT || {})}`;
     if (hud !== hudCache) {
       hudCache = hud;
       const hpPct = p.hp / p.maxhp * 100;
@@ -2713,7 +2732,7 @@ const Dungeon = (() => {
       // 랭크 변화: 넓은 화면은 이름 그대로, 휴대폰은 줄임말 (css .sl / .ss)
       const stg = Object.entries(p.stages).filter(([, v]) => v).map(([k, v]) => `<span class="${v > 0 ? 'up' : 'down'}" title="${STAT_NAMES[k]} ${p.stageT?.[k] || 0}턴 남음"><i class="sl">${STAT_NAMES[k]}</i><i class="ss">${STAT_SHORT[k]}</i>${v > 0 ? '+' : ''}${v}</span>`).join(' ');
       document.getElementById('hud').innerHTML = `
-        <span class="floor">${run.hard ? '☠ ' : ''}${esc(dg.n)} <b>${run.floor}F</b>${weatherNow() ? ` <span class="wx" title="${esc(WEATHERS[weatherNow()].d)}">${WEATHERS[weatherNow()].icon} ${WEATHERS[weatherNow()].n}</span>` : ''}${dg.mode === 'rogue' ? ' <i class="rogue">로그라이크</i>' : ''}</span>
+        <span class="floor">${run.hard ? '☠ ' : ''}${esc(dg.n)} <b>${run.floor}F</b>${weatherRaw() ? ` <span class="wx" title="${esc(WEATHERS[weatherRaw()].d)}">${WEATHERS[weatherRaw()].icon} ${WEATHERS[weatherRaw()].n}</span>` : ''}${dg.mode === 'rogue' ? ' <i class="rogue">로그라이크</i>' : ''}</span>
         <span>Lv <b>${p.lv}</b></span>
         <span class="hpwrap">HP <b>${p.hp}</b>/${p.maxhp}<span class="bar"><i style="width:${hpPct}%;background:${hpPct > 50 ? '#4de36b' : hpPct > 20 ? '#f5d142' : '#f55'}"></i></span></span>
         <span>배 <b class="${p.belly <= 20 ? 'warn' : ''}">${Math.ceil(p.belly)}</b>/100</span>
