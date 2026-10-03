@@ -156,7 +156,7 @@ function speedAccMul(att, def) {
 // 기술 분류
 const hasFlag = (m, f) => !!(m.fg && m.fg.includes(f));
 const isContact = m => hasFlag(m, 1);
-const isSlicing = m => /베기|가르기|자르기|칼|커터|베어|참격/.test(m.n);
+const isSlicing = m => SLICING_MOVES.has(m.id);   // 원작 목록 (js/moverules.js)
 // 특성이 바꾸는 기술 타입: 노말스킨(모든 기술 → 노말), 촉촉보이스(소리 기술 → 물), 페어리스킨 등(노말 기술 → 그 타입). 타입 없는 기본 공격은 그대로
 // 덩굴방망이(오거폰): 쓰고 있는 가면의 타입 (풀 말고 다른 타입). 가면이 없으면 풀
 function ivyType(att, move) {

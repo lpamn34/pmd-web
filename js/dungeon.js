@@ -850,6 +850,7 @@ const Dungeon = (() => {
       case 'assurance': if ((t.lastHurtSeq || 0) > ctx.prevAct) p *= 2; break;
       case 'firstStrike': if (!struck) p *= 2; break;
       case 'stomp': if (ctx.lastMissed) p *= 2; break;
+      case 'hex': if (t.status) p *= 2; break;
       case 'crush': p = Math.max(1, Math.floor(120 * t.hp / t.maxhp)); break;
     }
     if (R.chain && user.chain) {
@@ -924,7 +925,7 @@ const Dungeon = (() => {
         } else if (!A.rockHead) { log(`${jo(nm(user), '은')} 반동으로 데미지를 입었다.`, at); damage(user, amt, null, at); }
       }
       if (tgt.hp > 0 && secondary) {
-        if (move.ail && Math.random() * 100 < move.ac * serene) inflict(tgt, AILMENT_MAP[move.ail], at, false, user);
+        if (move.ail && Math.random() * 100 < move.ac * serene) inflict(tgt, move.ailPick ? pick(move.ailPick) : AILMENT_MAP[move.ail], at, false, user);
         if (move.fl && Math.random() * 100 < move.fl * serene) setFlinch(tgt, at);
       }
       if (tgt.hp > 0 && A.stench && Math.random() < 0.1 * serene) setFlinch(tgt, at);

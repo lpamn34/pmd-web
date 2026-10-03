@@ -126,7 +126,7 @@ const RANGE_DESC = { f: '바로 앞 1칸의 적', p: '바라보는 방향 직선
 function moveEffects(mid) {
   const m = DATA.moves[mid], out = [];
   if (m.hits) out.push(`${m.hits[0]}~${m.hits[1]}회 연속으로 공격한다.`);
-  if (m.ail) out.push(`${m.c === 1 || m.ac >= 100 ? '' : m.ac + '% 확률로 '}상대를 ${STATUS_NAMES[AILMENT_MAP[m.ail]]} 상태로 만든다.`);
+  if (m.ail) out.push(`${m.c === 1 || m.ac >= 100 ? '' : m.ac + '% 확률로 '}상대를 ${m.ailPick ? m.ailPick.map(k => STATUS_NAMES[k]).join('·') + ' 중 하나의' : STATUS_NAMES[AILMENT_MAP[m.ail]]} 상태로 만든다.`);
   if (m.sc) for (const [st, ch] of m.sc) {
     const who = m.ss || ch > 0 ? '자신' : '상대';
     out.push(`${m.scc < 100 ? m.scc + '% 확률로 ' : ''}${who}의 ${jo(STAT_NAMES[st], '을')} ${Math.abs(ch)}단계 ${ch > 0 ? '올린다' : '내린다'}.`);

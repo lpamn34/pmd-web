@@ -365,7 +365,7 @@ function abilityExact(r) {
   if (r.adapt) o.push('자속 보정이 1.5배 → 2배');
   if (r.technician) o.push('위력 60 이하인 기술의 위력 1.5배');
   if (r.flagMul) o.push(`${AB_FLAG_N[r.flagMul[0]] || '특정'} 기술의 위력 ${x(r.flagMul[1])}`);
-  if (r.slicing) o.push(`베는 기술(베기·가르기·자르기·커터 등)의 위력 ${x(r.slicing)}`);
+  if (r.slicing) o.push(`베는 기술(리프블레이드·시저크로스·깜짝베기·에어슬래시·사이코커터 등)의 위력 ${x(r.slicing)}`);
   if (r.sheer) o.push('추가 효과가 있는 기술의 위력 1.3배 (대신 추가 효과가 발동하지 않음)');
   if (r.reckless) o.push('반동이 있는 기술의 위력 1.2배');
   if (r.tinted) o.push('효과가 별로인 기술의 데미지 2배');
