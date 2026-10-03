@@ -1009,10 +1009,61 @@ const Game = (() => {
         <button class="btn sm ghost" data-dexitem="${id}" title="아이템 정보">ℹ</button>${id === 'candy' ? ' <button class="btn sm" data-act="use-candy">사용</button>' : ''}
         <button class="btn sm" data-act="withdraw" data-arg="${id}" ${bagSlots() >= bagMax() && !ITEMS[id].stack ? 'disabled' : ''}>꺼내기</button>
         ${id !== 'quest' ? `<button class="btn sm ghost" data-act="sell-store" data-arg="${id}" title="${ITEMS[id].stack ? '5개씩' : '하나'} 판다 (상점 탭에서 되살 수 있음)">₽${sellValue({ id, n: ITEMS[id].stack ? Math.min(5, save.storage[id]) : 1 })} 팔기</button>` : ''}</div>`).join('') : `<p class="dim">${all.length ? '이 종류의 아이템이 없습니다.' : '창고가 비어 있습니다.'}</p>`}
-      </div><div><h3>가방 (${bagSlots()}/${bagMax()})</h3>
+      </div><div>${presetBox()}<h3>가방 (${bagSlots()}/${bagMax()})</h3>
       ${save.bag.length ? `<div class="row sort-row"><button class="btn sm" data-act="deposit-all">모두 맡기기</button>${save.bag.length > 1 ? ' <button class="btn sm ghost" data-act="sort-bag">↕ 가방 정리</button>' : ''}</div>` : ''}
       ${save.bag.map((b, i) => `<div class="row">${itemLabel(b.id)}${b.n > 1 ? ' ×' + b.n : ''}<span class="grow"></span>
         <button class="btn sm ghost" data-act="deposit" data-arg="${i}">맡기기</button></div>`).join('') || '<p class="dim">가방이 비어 있습니다.</p>'}</div></div>`;
+  }
+
+  // ── 꺼내기 프리셋: 지금 가방 구성을 저장해 두고, 창고에서 그대로 다시 채운다 (PRESET_N개, 이름 바꾸기 가능) ──
+  const PRESET_N = 3;
+  function presets() {
+    save.presets = save.presets || [];
+    for (let i = 0; i < PRESET_N; i++) if (!save.presets[i]) save.presets[i] = { name: `프리셋 ${i + 1}`, items: [] };
+    return save.presets;
+  }
+  const bagCount = id => save.bag.filter(b => b.id === id).reduce((s, b) => s + b.n, 0);
+  function presetBox() {
+    return `<h3>🎒 꺼내기 프리셋 <span class="dim">(지금 가방을 저장해 두고, 다음에 창고에서 그대로 채워요)</span></h3>
+      ${presets().map((p, i) => `<div class="row preset"><div class="grow"><b>${esc(p.name)}</b> <button class="btn sm ghost" data-act="preset-name" data-arg="${i}" title="이름 바꾸기">✏</button>
+        <div class="dim tiny">${p.items.length ? p.items.map(x => `${ITEMS[x.id] ? ITEMS[x.id].icon + esc(ITEMS[x.id].n) : '?'}${x.n > 1 ? '×' + x.n : ''}`).join(' ') : '비어 있음'}</div></div>
+        <button class="btn sm" data-act="preset-load" data-arg="${i}" ${p.items.length ? '' : 'disabled'} title="가방에 모자란 만큼 창고에서 꺼낸다">꺼내기</button>
+        <button class="btn sm ghost" data-act="preset-save" data-arg="${i}" title="지금 가방 구성을 이 프리셋에 저장">저장</button></div>`).join('')}`;
+  }
+  function presetSave(i) {
+    const items = {};
+    for (const b of save.bag) if (ITEMS[b.id] && b.id !== 'quest') items[b.id] = (items[b.id] || 0) + b.n;
+    presets()[i].items = Object.entries(items).map(([id, n]) => ({ id, n }));
+    UI.toast(`${presets()[i].name}에 지금 가방을 저장했어요.`);
+  }
+  // 가방에 이미 있는 만큼은 빼고, 모자란 만큼만 창고에서 꺼낸다
+  function presetLoad(i) {
+    const p = presets()[i]; let short = false, full = false;
+    for (const { id, n } of p.items) {
+      if (!ITEMS[id]) continue;
+      let need = n - bagCount(id);
+      const take = Math.min(Math.max(0, need), save.storage[id] || 0);
+      if (take < need) short = true;
+      if (take <= 0) continue;
+      let got = 0;
+      if (ITEMS[id].stack) { if (bagAdd(id, take)) got = take; }
+      else while (got < take && bagAdd(id, 1)) got++;
+      if (got < take) full = true;
+      save.storage[id] -= got; if (save.storage[id] <= 0) delete save.storage[id];
+    }
+    UI.toast(full ? '가방이 가득 차서 일부만 꺼냈어요.' : short ? '창고에 모자란 아이템이 있어서 있는 만큼만 꺼냈어요.' : `${p.name}대로 꺼냈어요.`);
+  }
+  function presetName(i) {
+    const p = presets()[i];
+    UI.open({ title: '프리셋 이름', html: `<input id="preset-name" maxlength="12" value="${esc(p.name)}" autocomplete="off" style="width:100%">`,
+      choices: [{ label: '바꾸기', fn: box => {} }, { label: '그만둔다', fn: () => {} }],
+      onOpen: (box, m) => {
+        const inp = box.querySelector('#preset-name'), ok = () => { const v = inp.value.trim(); if (v) { p.name = v.slice(0, 12); persist(); renderTown(); } };
+        const btn = [...box.querySelectorAll('button')].find(b => b.textContent.includes('바꾸기'));
+        if (btn) btn.addEventListener('click', ok, true);
+        inp.onkeydown = e => { if (e.key === 'Enter') { ok(); UI.close(m); } };
+        setTimeout(() => { inp.focus(); inp.select(); }, 50);
+      } });
   }
 
   function upgradeBox() {
@@ -1052,6 +1103,7 @@ const Game = (() => {
     return `<h3>캐릭터 관리</h3>
       <h3>🏅 ${esc(spName(sp))}의 메달</h3>${medalSection(sp)}
       <div class="btns"><button class="btn" data-act="change-char">🔄 캐릭터 변경</button> <button class="btn" data-act="set-moves">📘 기술 설정</button></div>
+      <p class="dim">영입한 포켓몬 ${roster.length}마리 · 지금 영입 확률 <b>${(recruitRate(ch.lv) * 100).toFixed(1)}%</b> <span class="tiny">(리더 레벨 기준, 전설·보스는 절반)</span></p>
       ${DATA.species[sp].sh ? `<h3>모습</h3><div class="row">${portraitImg(sp, 'portrait sm', 'Normal', false)} ${portraitImg(sp, 'portrait sm', 'Normal', true)}
         <span class="grow">${ch.shiny ? '✨ 이로치(색이 다른 모습)로 탐험합니다.' : '보통 모습으로 탐험합니다.'} <span class="dim">(겉모습만 바뀝니다)</span></span>
         ${shinyOk(sp) ? `<button class="btn sm" data-act="toggle-shiny">${ch.shiny ? '보통 모습으로' : '✨ 이로치로'}</button>` : '<span class="dim tiny">🔒 이 포켓몬이나 같은 진화 계열의 이로치를 쓰러뜨리거나 영입하면 고를 수 있어요</span>'}</div>` : ''}
@@ -1076,8 +1128,6 @@ const Game = (() => {
       <h3>진화</h3>
       ${evos.length ? evos.map(e => `<div class="row">${portraitImg(e.to, 'portrait sm')}<div class="grow"><b>${esc(spName(e.to))}</b> ${typeBadges(DATA.species[e.to].t)}<div class="dim">${e.req}</div>${borrowNote(e.to) ? `<div class="dim tiny">${esc(borrowNote(e.to))}</div>` : ''}</div>
         <button class="btn sm" data-act="evolve" data-arg="${e.to}" ${e.ok ? '' : 'disabled'}>진화</button></div>`).join('') : '<p class="dim">더 이상 진화하지 않습니다.</p>'}
-      <h3>영입한 포켓몬 <span class="dim">(각자 레벨이 따로 저장됩니다 · 지금 영입 확률 ${(recruitRate(ch.lv) * 100).toFixed(1)}%)</span></h3>
-      <div class="roster">${roster.map(id => `<button class="rcard ${id === sp ? 'on' : ''}" data-act="switch" data-arg="${id}">${portraitImg(id, 'portrait sm')}<span>${esc(spName(id))}</span><span class="dim">Lv${save.roster[id].lv}</span></button>`).join('')}</div>
       ${partySection()}`;
   }
   // 왼쪽 캐릭터 카드 아래: 동료 정보와 기술·지닌 물건 변경, 작전
@@ -1104,9 +1154,9 @@ const Game = (() => {
   }
   function partyAdd() {
     const pl = partyList(), cand = Object.keys(save.roster).map(Number).filter(id => id !== save.current && !pl.includes(id)).sort((a, b) => (isFav(b) - isFav(a)) || save.roster[b].lv - save.roster[a].lv);
-    UI.open({ title: '🤝 동료 추가', wide: true, html: `<div class="roster">${cand.map(id => `<button class="rcard" data-pick="${id}">${portraitImg(id, 'portrait sm', 'Normal', save.roster[id].shiny)}<span>${isFav(id) ? '⭐ ' : ''}${esc(spName(id))}</span><span class="dim">Lv${save.roster[id].lv}</span></button>`).join('')}</div>`,
-      choices: [{ label: '닫기', fn: () => {} }],
-      onOpen: (box, md) => box.querySelectorAll('[data-pick]').forEach(b => { b.onclick = () => { save.party = [...partyList(), +b.dataset.pick].slice(0, PARTY_MAX); persist(); UI.close(md); renderTown(); }; }) });
+    if (!cand.length) return;
+    chooseCharacter(id => { save.party = [...partyList(), id].slice(0, PARTY_MAX); persist(); renderTown(); }, false, cand, null,
+      { title: `🤝 동료 추가 (${pl.length}/${PARTY_MAX})`, ok: '동료로 데려간다', note: `동료로 데려갈 포켓몬을 고르세요. (영입한 포켓몬 중 지금 리더와 동료를 뺀 ${cand.length}마리)` });
   }
 
   // 폼체인지·메가진화 (js/forms.js): 고를 수 있는 모습은 여기서 고르고, 나머지는 던전에서 바뀌는 방법을 보여준다
@@ -1359,6 +1409,9 @@ const Game = (() => {
         save.storage[arg] -= n; if (save.storage[arg] <= 0) delete save.storage[arg];
         break;
       }
+      case 'preset-save': presetSave(+arg); break;
+      case 'preset-load': presetLoad(+arg); break;
+      case 'preset-name': return presetName(+arg);
       case 'deposit': {
         const b = save.bag[+arg]; if (!b) return;
         if (!storageRoom(b.id, b.n)) { UI.toast('창고가 가득 찼습니다. 창고를 확장하세요.'); return; }
@@ -1709,14 +1762,15 @@ const Game = (() => {
 
   // ───────────────────────── 캐릭터 선택 ─────────────────────────
   // only: 고를 수 있는 포켓몬 (캐릭터 변경은 영입한 포켓몬만)
-  function chooseCharacter(cb, first, only, back) {
+  // opts: 다른 곳에서 같은 고르기 창을 쓸 때 (동료 추가) { title, ok: 확인 버튼, note: 위 설명 }
+  function chooseCharacter(cb, first, only, back, opts = {}) {
     const favMode = !!(only && !first);   // 영입한 포켓몬 고르기: ⭐ 즐겨찾기를 앞에
     const ids = (only || SPECIES_IDS.map(Number)).slice().sort(byDex);
     if (favMode) ids.sort((a, b) => isFav(b) - isFav(a));
     const gens = [...new Set(ids.map(id => DATA.species[id].g))].sort((a, b) => a - b);
     UI.open({
-      title: first ? '함께 모험할 포켓몬을 고르세요' : '캐릭터 변경', wide: true, cancel: first ? false : undefined,
-      html: `${only && !first ? `<p class="dim">영입한 포켓몬 ${ids.length}마리 중에서 고릅니다. 던전에서 쓰러뜨린 적이 가끔 동료가 되고 싶어 해요. (지금 영입 확률 ${(recruitRate(save.roster[save.current].lv) * 100).toFixed(1)}%)</p>` : ''}<div class="picker-bar"><input id="pk-q" placeholder="이름 / 영어 / 번호 검색" autocomplete="off">
+      title: opts.title || (first ? '함께 모험할 포켓몬을 고르세요' : '캐릭터 변경'), wide: true, cancel: first ? false : undefined,
+      html: `${opts.note ? `<p class="dim">${esc(opts.note)}</p>` : only && !first ? `<p class="dim">영입한 포켓몬 ${ids.length}마리 중에서 고릅니다. 던전에서 쓰러뜨린 적이 가끔 동료가 되고 싶어 해요. (지금 영입 확률 ${(recruitRate(save.roster[save.current].lv) * 100).toFixed(1)}%)</p>` : ''}<div class="picker-bar"><input id="pk-q" placeholder="이름 / 영어 / 번호 검색" autocomplete="off">
         <select id="pk-g"><option value="">전체 세대</option>${gens.map(g => `<option value="${g}">${g}세대</option>`).join('')}</select>
         <select id="pk-t"><option value="">전체 타입</option>${DATA.types.map((t, i) => `<option value="${i + 1}">${t}</option>`).join('')}</select>
         ${favMode ? `<label class="pk-favonly"><input type="checkbox" id="pk-f"> ⭐ 즐겨찾기만</label>` : ''}
@@ -1739,7 +1793,7 @@ const Game = (() => {
           const d = DATA.species[id], st = calcStats(id, START_LEVEL, 31);
           const ok = await UI.confirm(esc(d.n), `<div class="center">${portraitImg(id, 'portrait big')}</div><p class="center">${typeBadges(d.t)}</p>
             <p class="center dim">종족값 HP ${d.b[0]} / 공 ${d.b[1]} / 방 ${d.b[2]} / 특공 ${d.b[3]} / 특방 ${d.b[4]} / 스피드 ${d.b[5]}</p>
-            <p class="center">${save && save.roster && save.roster[id] ? `저장된 기록: Lv${save.roster[id].lv}` : `Lv${START_LEVEL}부터 시작 (HP ${st.maxhp})`}</p>`, '이 포켓몬으로 한다', '다시 고른다');
+            <p class="center">${save && save.roster && save.roster[id] ? `저장된 기록: Lv${save.roster[id].lv}` : `Lv${START_LEVEL}부터 시작 (HP ${st.maxhp})`}</p>`, opts.ok || '이 포켓몬으로 한다', '다시 고른다');
           if (ok) { UI.close(m); cb(id); }
         };
         box.querySelector('#pk-grid').onclick = e => {
