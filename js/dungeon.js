@@ -1213,7 +1213,7 @@ const Dungeon = (() => {
       else if (Math.random() < ENEMY_DROP_CHANCE && free) { const id = rollMega('floor', c.lv, D.dg) || pickDrop(D.lvl, D.dg); D.items.push(id ? { x: c.x, y: c.y, id, n: 1 } : { x: c.x, y: c.y, money: moneyPile(D.lvl) }); }
       if (c.shiny && Game.unlockShiny(c.sp)) log(`✨ 이제 캐릭터 탭에서 ${jo(spName(c.sp), '과')} 그 진화 계열의 이로치 모습을 고를 수 있다!`, at + 300);
       if (run.mode === 'normal' && !c.outlaw && !NO_RECRUIT.includes(c.sp) && !Game.save.roster[c.sp]) {
-        const rate = recruitRate(P().lv) * (DATA.species[c.sp].lg ? 0.5 : 1) * (c.boss ? 0.5 : 1) * (heldOf(P()).recruitMul || 1);
+        const rate = recruitRate(P().lv) * (DATA.species[c.sp].lg ? 0.5 : 1) * (heldOf(P()).recruitMul || 1);
         if (Math.random() < rate) D.prompts.push(() => recruitPrompt(c));
       }
     }
@@ -2052,8 +2052,8 @@ const Dungeon = (() => {
     }
     const tr = trapAt(p.x, p.y);
     if (tr && depth < 2 && !abilityOf(p).levitate) {
-      // 모르는 함정은 80%, 알고 있는 함정은 40% 확률로 작동한다
-      if (Math.random() < (tr.seen ? TRAP_RATE.seen : TRAP_RATE.hidden)) triggerTrap(tr, depth);
+      // 모르는 함정은 80%, 알고 있는 함정은 40% 확률로 작동한다 (능력 리셋 함정은 늘)
+      if (TRAP_ALWAYS.includes(tr.kind) || Math.random() < (tr.seen ? TRAP_RATE.seen : TRAP_RATE.hidden)) triggerTrap(tr, depth);
       else { const was = tr.seen; tr.seen = true; log(was ? `${jo(TRAPS[tr.kind].n, '을')} 밟았지만 작동하지 않았다.` : `${jo(TRAPS[tr.kind].n, '을')} 밟았지만 다행히 작동하지 않았다!`, T.base + 60); }
     }
     const house = D.houses.find(h => !h.triggered && D.room[idx(p.x, p.y)] === h.room);

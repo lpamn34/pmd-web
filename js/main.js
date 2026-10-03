@@ -668,9 +668,26 @@ const Game = (() => {
     save.autoSellV72 = true;
     for (const id of save.autoSell || []) { const n = save.storage[id] || 0; if (n > 0 && ITEMS[id]) { delete save.storage[id]; storeDeposit(id, n); } }
   }
+  // 모든 탐험대에게 주는 선물 (js/defs.js GLOBAL_GIFTS)
+  function claimGlobalGifts() {
+    if (!save || save.day < 2 || UI.isOpen()) return;
+    const got = save.giftsGot = save.giftsGot || [], today = Progress.today();
+    const list = GLOBAL_GIFTS.filter(g => !got.includes(g.id) && today <= g.until);
+    if (!list.length) return;
+    const lines = [];
+    for (const g of list) {
+      got.push(g.id);
+      const parts = g.items.filter(([id]) => ITEMS[id]).map(([id, n]) => { storeKeep(id, n); return `${ITEMS[id].icon} <b>${esc(ITEMS[id].n)}</b>${n > 1 ? ' ×' + n : ''}`; });
+      if (g.money) { save.money += g.money; parts.push(`₽${g.money}`); }
+      lines.push(`<p>${esc(g.note)}</p><p>${parts.join(' · ')} <span class="dim">(창고로)</span></p>`);
+    }
+    persist(); renderTown(); Sound.play('achieve');
+    UI.alert('🎁 선물이 도착했어요', lines.join('<hr>'));
+  }
   function enterTown() {
     applyPad();
     if (save) sweepAutoSell();
+    if (save) setTimeout(claimGlobalGifts, 400);
     show('town-screen');
     checkUpdate();
     Sound.town();
@@ -1237,7 +1254,7 @@ const Game = (() => {
     return `<h3>캐릭터 관리</h3>
       <h3>🏅 ${esc(spName(sp))}의 메달</h3>${medalSection(sp)}
       <div class="btns"><button class="btn" data-act="change-char">🔄 캐릭터 변경</button> <button class="btn" data-act="set-moves">📘 기술 설정</button></div>
-      <p class="dim">영입한 포켓몬 ${roster.length}마리 · 지금 영입 확률 <b>${(recruitRate(ch.lv) * 100).toFixed(1)}%</b> <span class="tiny">(리더 레벨 기준, 전설·보스는 절반)</span></p>
+      <p class="dim">영입한 포켓몬 ${roster.length}마리 · 지금 영입 확률 <b>${(recruitRate(ch.lv) * 100).toFixed(1)}%</b> <span class="tiny">(리더 레벨 기준, 전설·환상은 절반)</span></p>
       ${DATA.species[sp].sh ? `<h3>모습</h3><div class="row">${portraitImg(sp, 'portrait sm', 'Normal', false)} ${portraitImg(sp, 'portrait sm', 'Normal', true)}
         <span class="grow">${ch.shiny ? '✨ 이로치(색이 다른 모습)로 탐험합니다.' : '보통 모습으로 탐험합니다.'} <span class="dim">(겉모습만 바뀝니다)</span></span>
         ${shinyOk(sp) ? `<button class="btn sm" data-act="toggle-shiny">${ch.shiny ? '보통 모습으로' : '✨ 이로치로'}</button>` : '<span class="dim tiny">🔒 이 포켓몬이나 같은 진화 계열의 이로치를 쓰러뜨리거나 영입하면 고를 수 있어요</span>'}</div>` : ''}

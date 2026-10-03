@@ -221,6 +221,7 @@ for (const [flag, ids] of Object.entries(MOVE_FLAG_FIX)) {
 // 선공기(원작에서 먼저 나가는 기술): 앞 2칸까지 닿는다 (바로 앞이 비었으면 한 칸 너머의 적). 원거리 선공기(진공파·얼음뭉치 등)는 그대로
 const PRIORITY_MOVES = [98, 245, 183, 252, 389, 453, 425, 418, 709, 660, 803, 857, 918];
 for (const id of PRIORITY_MOVES) if (DATA.moves[id] && DATA.moves[id].r === 'f') rule([id], { reach: 2 });
+if (DATA.moves[904]) DATA.moves[904].ivy = true;   // 덩굴방망이: 가면에 따라 타입이 바뀐다 (js/mechanics.js ivyType)
 // ── 전설 포켓몬 전용기 ──
 // 원작 전용기인데 원본 데이터에 빠져 있던 기술 (자시안·자마젠타·레지기가스·카푸·크레세리아)
 const LEGEND_NEW_MOVES = {

@@ -158,7 +158,13 @@ const hasFlag = (m, f) => !!(m.fg && m.fg.includes(f));
 const isContact = m => hasFlag(m, 1);
 const isSlicing = m => /베기|가르기|자르기|칼|커터|베어|참격/.test(m.n);
 // 특성이 바꾸는 기술 타입: 노말스킨(모든 기술 → 노말), 촉촉보이스(소리 기술 → 물), 페어리스킨 등(노말 기술 → 그 타입). 타입 없는 기본 공격은 그대로
-function moveType(att, move) { const A = abilityOf(att); return A.normalize && move.t ? 1 : A.soundType && hasFlag(move, 9) ? A.soundType : A.skin && move.t === 1 ? A.skin : move.t; }
+// 덩굴방망이(오거폰): 쓰고 있는 가면의 타입 (풀 말고 다른 타입). 가면이 없으면 풀
+function ivyType(att, move) {
+  if (!move.ivy) return move.t;
+  const s = DATA.species[looksOf(att)];
+  return (s && s.f && s.f[0] === 1017 && s.t.find(t => t !== 12)) || move.t;
+}
+function moveType(att, move) { const A = abilityOf(att), t = ivyType(att, move); return A.normalize && t ? 1 : A.soundType && hasFlag(move, 9) ? A.soundType : A.skin && t === 1 ? A.skin : t; }
 function bestStatKey(c) { return ['atk', 'def', 'spa', 'spd'].reduce((b, k) => (c[k] > c[b] ? k : b), 'atk'); }
 
 // 특성에 의한 능력치 배율
