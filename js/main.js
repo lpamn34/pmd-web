@@ -65,7 +65,7 @@ const Game = (() => {
   const entryAbility = (sp, ch) => (ch && DATA.species[sp].ab.some(a => a[0] === ch.ability) ? ch.ability : defaultAbility(sp));
   let newerSave = null;   // 세이브가 이 화면보다 새 버전에서 저장됐으면 그 버전 (덮어쓰지 않는다)
   let lastBody = null;   // 저장 시각을 뺀 세이브 내용 (내용이 바뀌었을 때만 저장 시각을 갱신한다)
-  const bodyOf = s => JSON.stringify({ ...s, savedAt: 0 });
+  const bodyOf = s => JSON.stringify({ ...s, savedAt: 0, playSec: 0 });   // 플레이 시간만 늘어난 것은 '바뀜'으로 치지 않는다 (클라우드 저장을 아끼려고)
   function persist() {
     if (newerSave || !save) return;
     const body = bodyOf(save);
@@ -609,6 +609,10 @@ const Game = (() => {
     save = load();
     if (save && !newerSave) persist();
     setTimeout(checkUpdate, 3000); setInterval(checkUpdate, 10 * 60 * 1000);
+    // 플레이 시간 (v0.69부터): 창이 보이는 동안만 센다. 메모리에서 늘리고 다른 저장 때·창을 닫을 때 함께 저장된다
+    let playTick = performance.now();
+    setInterval(() => { const t = performance.now(), dt = Math.min(60, (t - playTick) / 1000); playTick = t; if (save && !document.hidden) save.playSec = (save.playSec || 0) + dt; }, 15000);
+    document.addEventListener('visibilitychange', () => { playTick = performance.now(); if (document.hidden) persist(); });
     // 다른 탭에 있다가 돌아오면 바로 확인 (1분에 한 번까지). 파일 하나를 읽을 뿐이라 서버(Firebase) 사용량과는 상관없다
     let lastCheckUpd = Date.now();
     document.addEventListener('visibilitychange', () => { if (!document.hidden && Date.now() - lastCheckUpd > 60 * 1000) { lastCheckUpd = Date.now(); checkUpdate(); } });
@@ -675,7 +679,7 @@ const Game = (() => {
   function refreshDay() {
     rollShop();
     const board = [];
-    for (let i = 0; i < 6; i++) { const m = genMission(); if (m) board.push(m); }
+    for (let i = 0; i < MISSION_BOARD; i++) { const m = genMission(); if (m) board.push(m); }
     save.missions.board = board;
   }
   // 마을 상점 진열: 하루에 한 번, 또는 돈을 내고 새로고침
@@ -697,8 +701,9 @@ const Game = (() => {
   // 오늘의 진열에서 이 물건을 몇 번 더 살 수 있나 (늘 파는 물건은 제한 없음)
   const shopLeft = id => SHOP_FIXED.includes(id) ? Infinity : ((save.shopBought || {})[id] ? 0 : 1);
 
-  // 게시판에서 고른 "자주 뜨는 지역": 새 의뢰의 절반쯤이 그 던전에서 (MISSION_FOCUS_RATE)
-  const MISSION_FOCUS_RATE = 0.5;
+  // 게시판에서 고른 "자주 뜨는 지역": 새 의뢰의 30~50%쯤이 그 던전에서 (MISSION_FOCUS_RATE, v0.69에 50% → 40%)
+  // 받을 수 있는 임무 MISSION_MAX개, 게시판 의뢰 MISSION_BOARD개 (v0.69에 4 → 8, 6 → 10)
+  const MISSION_FOCUS_RATE = 0.4, MISSION_MAX = 8, MISSION_BOARD = 10;
   const focusDungeon = () => { const d = save.missionFocus && dungeonById(save.missionFocus); return d && d.mode === 'normal' && unlocked(d) ? d : null; };
   function genMission() {
     const dgs = DUNGEONS.filter(d => d.mode === 'normal' && unlocked(d));
@@ -813,6 +818,7 @@ const Game = (() => {
     const before = medalsOf(sp).map(m => m.k);
     save.clears = save.clears || {};
     save.clears[sp] = { ...(save.clears[sp] || {}), [dg.id]: 1 };
+    noteFirst('clear', { dungeon: dg.id });   // 엔딩: 처음 클리어한 던전 (v0.69부터)
     return medalsOf(sp).filter(m => !before.includes(m.k));
   }
   function medalSection(sp) {
@@ -981,14 +987,14 @@ const Game = (() => {
   function tabMission() {
     const acc = save.missions.accepted;
     return `${sosSection()}
-      <h3>진행 중인 임무 (${acc.length}/4)</h3>
+      <h3>진행 중인 임무 (${acc.length}/${MISSION_MAX})</h3>
       ${acc.length ? acc.map(m => `<div class="row">${portraitImg(m.kind === 'outlaw' ? m.target : m.client, 'portrait sm', m.kind === 'sos' ? 'Pain' : 'Normal', !!m.shiny)}<div class="grow">${missionText(m)}<div class="dim">보상 ${rewardText(m)}</div></div>
         <button class="btn sm ghost" data-act="drop-mission" data-arg="${m.id}">취소</button></div>`).join('') : '<p class="dim">받은 임무가 없습니다.</p>'}
       <h3>게시판 <span class="dim">(던전에서 돌아오면 새 의뢰가 붙습니다)</span></h3>
-      <div class="row"><span class="grow">📍 자주 뜨는 지역 <span class="dim">(고른 던전의 의뢰가 새 의뢰의 절반쯤 나와요)</span></span>
+      <div class="row"><span class="grow">📍 자주 뜨는 지역 <span class="dim">(고른 던전의 의뢰가 새 의뢰의 30~50%쯤 나와요)</span></span>
         <select data-mfocus="1"><option value="">고르지 않음</option>${DUNGEONS.filter(d => d.mode === 'normal' && unlocked(d)).sort((a, b) => a.lv[0] - b.lv[0]).map(d => `<option value="${d.id}" ${save.missionFocus === d.id ? 'selected' : ''}>${esc(d.n)}</option>`).join('')}</select></div>
       ${save.missions.board.map(m => `<div class="row">${portraitImg(m.kind === 'outlaw' ? m.target : m.client, 'portrait sm')}<div class="grow">${missionText(m)}<div class="dim">보상 ${rewardText(m)}</div></div>
-        <button class="btn sm" data-act="take-mission" data-arg="${m.id}" ${acc.length >= 4 ? 'disabled' : ''}>수락</button></div>`).join('') || '<p class="dim">의뢰가 없습니다.</p>'}`;
+        <button class="btn sm" data-act="take-mission" data-arg="${m.id}" ${acc.length >= MISSION_MAX ? 'disabled' : ''}>수락</button></div>`).join('') || '<p class="dim">의뢰가 없습니다.</p>'}`;
   }
 
   function tabShop() {
@@ -1417,7 +1423,7 @@ const Game = (() => {
     return `<h3>버전</h3>
       <div class="row"><span class="grow">미궁 탐험대 <b>v${GAME_VERSION}</b> <span class="dim">(${GAME_DATE})</span>${ENV === 'dev' ? ' <span class="tag">개발 환경</span>' : ''}${updateVer ? ` <a href="#" data-act="update">🔔 새 버전 v${esc(updateVer)}</a>` : ''}
         <div class="dim">친구와 구조 코드나 오늘의 도전 기록을 주고받을 때는 서로 같은 버전인지 확인하세요.</div></span>
-        <button class="btn sm ghost" data-act="version-notes">변경 내역</button></div>
+        <button class="btn sm ghost" data-act="version-notes">변경 내역</button>${save.endingSeen || save.cleared?.[ENDING_DUNGEON] ? ' <button class="btn sm ghost" data-act="ending">🎬 엔딩 다시 보기</button>' : ''}</div>
       ${Online.enabled() ? `<h3>☁ 계정</h3><div class="row"><span class="grow">${Online.loggedIn() ? `<b>${esc(Online.name())}</b> 님으로 로그인 · 세이브가 클라우드에도 저장됩니다${cloudErr ? ` <span class="warn">(${esc(cloudErr)})</span>` : ''}` : '로그인하지 않았어요. 로그인하면 다른 기기에서 이어하고 구조 게시판을 쓸 수 있어요.'}</span>
         <button class="btn sm${Online.loggedIn() ? ' ghost' : ''}" data-act="account">${Online.loggedIn() ? '계정' : '로그인 / 가입'}</button></div>` : ''}
       ${Online.enabled() ? `<h3>🏆 스타팅 순위</h3><div class="row"><span class="grow">탐험대가 처음 고른 포켓몬 순위 <span class="dim">(로그인한 탐험대 기준 · 하루에 한 번 갱신)</span></span>
@@ -1457,7 +1463,7 @@ const Game = (() => {
       case 'go-hard': return prepareHard(arg);
       case 'take-mission': {
         const i = save.missions.board.findIndex(m => m.id === arg);
-        if (i >= 0 && save.missions.accepted.length < 4) save.missions.accepted.push(save.missions.board.splice(i, 1)[0]);
+        if (i >= 0 && save.missions.accepted.length < MISSION_MAX) save.missions.accepted.push(save.missions.board.splice(i, 1)[0]);
         break;
       }
       case 'drop-mission': {
@@ -1567,6 +1573,7 @@ const Game = (() => {
       case 'restore-backup': return restoreBackup(+arg);
       case 'dgtab': dgTab = arg; break;
       case 'dg-info': return showDungeonInfo(arg);
+      case 'ending': return showEnding(false);
       case 'version-notes': UI.alert('변경 내역', VERSION_NOTES.map(([v, list]) => `<h3>v${v}${v === GAME_VERSION ? ' <span class="tag">지금 버전</span>' : ''}</h3><ul>${list.map(x => `<li>${esc(x)}</li>`).join('')}</ul>`).join('')); return;
       case 'vitamin': useVitamin(arg); break;
       case 'use-candy': return useCandy();
@@ -1735,6 +1742,7 @@ const Game = (() => {
     if (save.roster[c.sp]) return;
     const ab0 = c.baseAbility ?? c.ability, ab = DATA.species[c.sp].ab.some(a => a[0] === ab0) ? ab0 : defaultAbility(c.sp);   // 숨겨진 특성인 적을 영입하면 그 특성 그대로
     save.roster[c.sp] = { lv: RECRUIT_LEVEL, exp: expFor(RECRUIT_LEVEL), moves: defaultMoves(c.sp, RECRUIT_LEVEL), ability: ab, shiny: !!c.shiny };
+    if (DATA.species[c.sp].lg) noteFirst(isUltra(c.sp) ? 'ultra' : 'legend', { sp: c.sp });   // 엔딩: 처음 함께한 전설
     if (c.shiny) unlockShiny(c.sp);
     save.recruited = (save.recruited || 0) + 1;
     Progress.check();
@@ -1794,6 +1802,7 @@ const Game = (() => {
     // 클리어 기록도 진화한 모습으로 옮긴다
     if (save.clears && save.clears[sp]) { save.clears[to] = { ...save.clears[to], ...save.clears[sp] }; delete save.clears[sp]; }
     Progress.add('evolves'); Progress.check();
+    noteFirst('evolve', { from: sp, to });
     Sound.play('levelup');
     persist(); renderTown();
     UI.alert('축하합니다!', `<div class="center">${portraitImg(to, 'portrait big', 'Joyous', entry.shiny)}</div><p>${esc(jo(spName(sp), '은'))} ${esc(jo(spName(to), '으로'))} 진화했다!</p>`);
@@ -1959,8 +1968,76 @@ const Game = (() => {
       <br><span class="dim">고르면 이 탑에서 나오는 메가스톤의 ${Math.round(MEGA_FOCUS_RATE * 100)}%가 그 스톤이 돼요.</span></p>`;
   }
 
+  // ── 엔딩용 기록 (v0.69부터): 처음 있었던 일, 많이 함께한 포켓몬 ──
+  // 초전설 (그 밖의 전설·환상은 '전설'). 모습(폼)은 원래 포켓몬 번호로
+  const ULTRA_LEGENDS = new Set([150, 249, 250, 382, 383, 384, 483, 484, 487, 643, 644, 646, 716, 717, 718, 789, 790, 791, 792, 800, 888, 889, 890, 898, 1007, 1008, 1024]);
+  const baseSp = sp => (DATA.species[sp]?.f ? DATA.species[sp].f[0] : +sp);
+  const isUltra = sp => ULTRA_LEGENDS.has(baseSp(sp));
+  function noteFirst(k, v) { save.firsts = save.firsts || {}; if (!save.firsts[k]) save.firsts[k] = { ...v, day: save.day }; }
+  function noteUse(k, kind) { save.usage = save.usage || {}; save.usage[kind] = save.usage[kind] || {}; save.usage[kind][k] = (save.usage[kind][k] || 0) + 1; }
+
+  // ── 엔딩: 에리어 제로 최심부를 처음 완주하면 (정보 탭에서 다시 보기) ──
+  const ENDING_DUNGEON = 'zerodeep';
+  const playText = sec => { const m = Math.floor((sec || 0) / 60); return m >= 60 ? `${Math.floor(m / 60)}시간 ${m % 60}분` : `${m}분`; };
+  function showEnding(first) {
+    const s = save, st = s.stats || {}, f = s.firsts || {}, at = s.endingAt;
+    const top = o => Object.entries(o || {}).sort((a, b) => b[1] - a[1])[0];
+    const lead = top(s.usage && s.usage.lead), mate = top(s.usage && s.usage.party), most = top(s.usage && s.usage.dungeon);
+    const card = (sp, sub, face = 'Joyous') => DATA.species[sp] ? `<div class="end-card">${portraitImg(sp, 'portrait big', face, s.roster[sp]?.shiny)}<b>${esc(spName(sp))}</b><span class="dim">${sub}</span></div>` : '';
+    const none = '<p class="dim">기록 없음 (v0.69부터 기록돼요)</p>';
+    const dn = id => esc(dungeonById(id)?.n || id);
+    const dexC = Progress.dexCounts();
+    const ownN = new Set(Object.keys(s.roster).flatMap(k => [+k, ...preEvos(+k)])).size;
+    const shinyN = SPECIES_IDS.filter(id => DATA.species[id].sh && shinyOk(+id)).length;
+    const achN = Progress.ACH.filter(a => s.ach[a.id]).length;
+    const legends = Object.keys(s.roster).map(Number).filter(id => DATA.species[id]?.lg);
+    const ultra = legends.filter(isUltra), legend = legends.filter(id => !isUltra(id));
+    const pct = (a, b) => b ? Math.round(a * 100 / b) : 0;
+    const stat = (k, n) => `<div class="end-stat"><span>${k}</span><b>${n}</b></div>`;
+    const sec = (i, title, body) => `<section class="end-sec" style="animation-delay:${i * 0.6}s"><h3>${title}</h3>${body}</section>`;
+    let i = 0;
+    const html = `<div class="ending">
+      ${sec(i++, '', `<p class="end-title">에리어 제로 최심부를 넘어서</p><p class="center">${first ? '긴 탐험 끝에, 미궁의 가장 깊은 곳에 닿았다.' : '지금까지의 탐험 기록'}</p>
+        ${at ? `<p class="center end-when"><b>${at.day}일째</b>${at.sec ? ` · 플레이 시간 <b>${playText(at.sec)}</b>` : ''}에 에리어 제로 최심부 도착</p>` : ''}<div class="end-cards">${card(s.current, '지금의 리더')}</div>`)}
+      ${sec(i++, '🌱 모든 것의 시작', `<div class="end-cards">${s.starter ? card(s.starter, '처음 고른 파트너', 'Happy') : ''}</div>`)}
+      ${sec(i++, '🤝 가장 오래 함께한 포켓몬', lead || mate ? `<div class="end-cards">${lead ? card(+lead[0], `리더로 ${lead[1]}번 탐험`) : ''}${mate ? card(+mate[0], `동료로 ${mate[1]}번 탐험`) : ''}</div>` : none)}
+      ${sec(i++, '🔆 처음 진화시킨 포켓몬', f.evolve ? `<div class="end-cards">${card(f.evolve.from, '진화 전', 'Normal')}<span class="end-arrow">→</span>${card(f.evolve.to, `${f.evolve.day}일째`)}</div>` : none)}
+      ${sec(i++, '👑 처음 함께한 전설', `<div class="end-cards">${f.ultra ? card(f.ultra.sp, `초전설 · ${f.ultra.day}일째`, 'Determined') : ''}${f.legend ? card(f.legend.sp, `전설 · ${f.legend.day}일째`, 'Determined') : ''}</div>
+        ${!f.ultra && !f.legend ? (legends.length ? '' : none) : ''}
+        <p class="dim center">함께하는 초전설 ${ultra.length}마리 · 전설·환상 ${legend.length}마리</p>`)}
+      ${sec(i++, '📜 잊지 못할 순간', `<div class="end-stats">
+        ${stat('처음 쓰러진 곳', f.faint ? `${dn(f.faint.dungeon)} ${f.faint.floor}층 <span class="dim">(${f.faint.day}일째)</span>` : '<span class="dim">기록 없음</span>')}
+        ${stat('처음 구조한 곳', f.rescue ? `${dn(f.rescue.dungeon)} ${f.rescue.floor || ''}층 <span class="dim">(${f.rescue.day}일째)</span>` : '<span class="dim">기록 없음</span>')}
+        ${stat('가장 많이 도전한 던전', most && dungeonById(most[0]) ? `${dn(most[0])} <span class="dim">(${most[1]}번)</span>` : '<span class="dim">기록 없음</span>')}
+        ${stat('처음 클리어한 던전', f.clear ? `${dn(f.clear.dungeon)} <span class="dim">(${f.clear.day}일째)</span>` : '<span class="dim">기록 없음</span>')}</div>`)}
+      ${sec(i++, '📖 도감', `<div class="end-stats">
+        ${stat('만난 포켓몬', `${dexC.seen} / ${dexC.total} (${pct(dexC.seen, dexC.total)}%)`)}
+        ${stat('쓰러뜨린 포켓몬', `${dexC.beaten} / ${dexC.total} (${pct(dexC.beaten, dexC.total)}%)`)}
+        ${stat('영입한 포켓몬', `${ownN} / ${dexC.total} (${pct(ownN, dexC.total)}%)`)}
+        ${stat('얻은 이로치', `${shinyN}종`)}</div>`)}
+      ${sec(i++, '🏆 업적', `<div class="end-stats">${stat('달성한 업적', `${achN} / ${Progress.ACH.length} (${pct(achN, Progress.ACH.length)}%)`)}</div>`)}
+      ${sec(i++, '📊 탐험 기록', `<div class="end-stats">
+        ${stat('탐험한 날', `${s.day}일`)}
+        ${stat('플레이 시간', s.playSec ? playText(s.playSec) : '<span class="dim">기록 없음</span>')}
+        ${stat('쓰러뜨린 적', `${st.kills || 0}마리`)}
+        ${stat('내려간 계단', `${st.floors || 0}번`)}
+        ${stat('쓰러뜨린 보스', `${st.bosses || 0}마리`)}
+        ${stat('클리어한 던전', `${Object.keys(s.cleared || {}).length}곳`)}
+        ${stat('완료한 임무', `${st.missions || 0}번`)}
+        ${stat('친구 구조', `${st.rescues || 0}번`)}
+        ${stat('진화', `${st.evolves || 0}번`)}
+        ${stat('쓰러진 횟수', `${st.faints || 0}번`)}
+        ${stat('최고 레벨', `Lv${st.maxLv || 0}`)}</div>`)}
+      ${sec(i++, '', `<p class="end-title small">그리고 탐험은 계속된다…</p><p class="center dim">플레이해 주셔서 고맙습니다.</p>`)}
+    </div>`;
+    Sound.play('clear');
+    UI.open({ title: first ? '🎬 엔딩' : '🎬 탐험 기록', wide: true, html, choices: [{ label: '마을로 돌아간다', fn: () => {} }] });
+  }
+
   function startRun(dg, hard, abilPicks = {}) {
     const sp = save.current, ch = save.roster[sp];
+    noteUse(sp, 'lead'); if (dg.mode === 'normal') for (const id of partyList()) noteUse(id, 'party');   // 엔딩: 가장 많이 함께한 포켓몬
+    noteUse(dg.id, 'dungeon');   // 엔딩: 가장 많이 도전한 던전
     let p, bag;
     if (hard) {
       const lv = dg.lv[1];
@@ -2194,7 +2271,7 @@ const Game = (() => {
       }
     }
     if (!unlocked(dg)) { UI.alert('구조 불가', `<p>${esc(jo(dg.n, '은'))} 아직 열리지 않은 던전이라 구조하러 갈 수 없어요.</p><p class="dim">${esc(jo(dungeonById(dg.req).n, '을'))} 클리어하면 열립니다.</p>`); return; }
-    if (save.missions.accepted.length >= 4) { UI.alert('구조 불가', '<p>진행 중인 임무가 4개입니다. 하나를 끝내거나 취소한 뒤 받아 주세요.</p>'); return; }
+    if (save.missions.accepted.length >= MISSION_MAX) { UI.alert('구조 불가', `<p>진행 중인 임무가 ${MISSION_MAX}개입니다. 하나를 끝내거나 취소한 뒤 받아 주세요.</p>`); return; }
     if (docId && save.missions.accepted.filter(m => m.online).length >= ONLINE_RESCUE_MAX) { UI.alert('구조 불가', `<p>게시판 구조 임무는 한 번에 ${ONLINE_RESCUE_MAX}개까지 받을 수 있어요. 먼저 받은 구조를 끝내 주세요.</p>`); return; }
     const reward = Math.round((150 + d.fl * 40) * (1 + dungeonTier(dg) * 0.5) * MISSION_MONEY_MUL / 10) * 10;
     const ok = await UI.confirm('🆘 구조 요청', `<div class="center">${portraitImg(d.sp, 'portrait big', 'Pain', !!d.sh)}</div>
@@ -2350,11 +2427,13 @@ const Game = (() => {
 
   function finishRun(r, outcome) {
     const dg = dungeonById(r.dungeon);
+    const firstClear = !(save.cleared && save.cleared[dg.id]);   // 엔딩: 이번이 처음 완주인지 (아래에서 클리어 기록을 남기기 전에)
     const p = r.p;
     const success = outcome === 'clear' || outcome === 'escape';
     const lines = [], aoks = [];
     const reached = outcome === 'clear' ? dg.floors : r.floor;
     if (!success) Progress.add('faints');
+    if (outcome === 'faint') noteFirst('faint', { dungeon: dg.id, floor: r.floor });   // 엔딩: 처음 쓰러진 곳
     if (!dg.daily) save.best[dg.id] = Math.max(save.best[dg.id] || 0, reached);
     if (outcome === 'clear' && r.hard) {   // 하드모드 클리어: 캐릭터(원래 포켓몬)마다 따로 기록
       const k = p.rsp || p.sp; save.hardClears = save.hardClears || {}; save.hardClears[k] = save.hardClears[k] || {};
@@ -2400,13 +2479,13 @@ const Game = (() => {
           if (m.kind === 'sos' && m.online) {
             save.rescued = save.rescued || {};
             save.rescued[m.sosId] = { sp: m.client, shiny: m.shiny, thanked: false, online: true, claimed: false, docId: m.docId, dungeon: m.dungeon, floor: m.floor, me: { sp: p.sp, lv: p.lv, shiny: !!p.shiny } };
-            Progress.add('rescues'); milestoneGift('rescues', lines);
+            Progress.add('rescues'); noteFirst('rescue', { dungeon: m.dungeon, floor: m.floor }); milestoneGift('rescues', lines);
           } else if (m.kind === 'sos') {
             const code = Codes.encode('aok', { id: m.sosId, sp: p.sp, lv: p.lv, sh: p.shiny ? 1 : 0 });
             save.rescued = save.rescued || {}; save.rescued[m.sosId] = { sp: m.client, shiny: m.shiny, thanked: false };
             save.aokSent = [...(save.aokSent || []), { id: m.sosId, sp: m.client, code }].slice(-10);
             aoks.push({ m, code });
-            Progress.add('rescues'); milestoneGift('rescues', lines);
+            Progress.add('rescues'); noteFirst('rescue', { dungeon: m.dungeon, floor: m.floor }); milestoneGift('rescues', lines);
           }
           Progress.add('missions');
           if (m.kind !== 'sos') milestoneGift('missions', lines);
@@ -2465,6 +2544,8 @@ const Game = (() => {
     const face = { clear: 'Joyous', escape: 'Happy', faint: 'Crying', wind: 'Sad' }[outcome] || 'Normal';
     const res = UI.alert(title, `<div class="center">${portraitImg(p.sp, 'portrait big', face, save.roster[p.sp]?.shiny)}</div><p>${esc(dg.n)} ${reached}F${outcome === 'clear' ? ' 완주' : ''}</p><ul>${lines.map(l => `<li>${l}</li>`).join('')}</ul>${runStatsHtml(r)}`);
     if (Object.values(save.rescued || {}).some(x => x.online && !x.claimed && !x.thanked)) res.then(() => checkOnline(true));
+    // 엔딩: 에리어 제로 최심부를 처음 완주하면 결과 창 뒤에
+    if (outcome === 'clear' && dg.id === ENDING_DUNGEON && !r.hard && firstClear && !save.endingSeen) { save.endingSeen = save.day; save.endingAt = { day: save.day, sec: Math.round(save.playSec || 0) }; persist(); res.then(() => setTimeout(() => showEnding(true), 0)); }
     // 친구 구조 완료 → A-OK 코드 보여주기
     aoks.reduce((pr, a) => pr.then(() => new Promise(done => codeBox('✅ A-OK 코드', `<p>친구의 <b>${esc(jo(spName(a.m.client), '을'))}</b> 구조했다! 이 코드를 친구에게 보내면 친구가 되살아납니다.</p>`, a.code, '확인', done))), res);
   }
@@ -2570,7 +2651,7 @@ const Game = (() => {
   const hasClears = sp => Object.keys(clearsOf(sp)).length > 0;
   const dexMedals = () => { const out = {}; for (const k of new Set([...Object.keys(save?.clears || {}), ...Object.keys(save?.roster || {})])) { const ic = medalIcons(+k); if (ic) out[k] = ic; } return out; };
   function setMissionFocus(id) { save.missionFocus = id || null; persist(); UI.toast(id ? `${dungeonById(id).n}의 의뢰가 더 자주 붙어요. (다음 새 의뢰부터)` : '자주 뜨는 지역을 해제했어요.'); }
-  return { setMissionFocus, hasClears, medalSection, dexMedals, askUpdate, recruit, unlockShiny, showMissions, importSave, noteShiny, boot, endRun, saveRunSnapshot, dungeonMenu, setSetting, renderTown, get save() { return save; }, setTab(t) { tab = t; renderTown(); } };
+  return { shinyOk, setMissionFocus, hasClears, medalSection, dexMedals, askUpdate, recruit, unlockShiny, showMissions, importSave, noteShiny, boot, endRun, saveRunSnapshot, dungeonMenu, setSetting, renderTown, get save() { return save; }, setTab(t) { tab = t; renderTown(); } };
 })();
 
 window.addEventListener('DOMContentLoaded', () => {

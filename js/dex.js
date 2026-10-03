@@ -22,6 +22,8 @@ const Dex = (() => {
     // 영입: 캐릭터 목록에 있는 포켓몬과 그 진화 전 모습 (진화시키면 진화 전 모습은 목록에서 빠지지만 도감에는 영입한 것으로)
     const ownSet = new Set(Game.save ? Object.keys(Game.save.roster).flatMap(k => [+k, ...preEvos(+k)]) : []);
     const own = id => ownSet.has(+id);
+    // 이로치: 그림이 있는지(sh) / 내가 얻었는지 (그 포켓몬이나 진화 계열의 이로치를 쓰러뜨리거나 영입하면 고를 수 있다)
+    const shinyMine = id => !!(Game.save && DATA.species[id].sh && Game.shinyOk(+id));
     return `<div class="dex-rate">
         <div>👁 만난 포켓몬 <b>${cnt.seen}</b> / ${cnt.total} <span class="dim">(${pct(cnt.seen)}%)</span><span class="bar"><i style="width:${pct(cnt.seen)}%;background:#6cf"></i></span></div>
         <div>⚔ 쓰러뜨린 포켓몬 <b>${cnt.beaten}</b> / ${cnt.total} <span class="dim">(${pct(cnt.beaten)}%)</span><span class="bar"><i style="width:${pct(cnt.beaten)}%;background:#f58a42"></i></span></div>
@@ -29,12 +31,12 @@ const Dex = (() => {
       <div class="picker-bar"><input class="dex-q" placeholder="이름 / 영어 / 번호 검색" autocomplete="off">
       <select class="dex-g"><option value="">전체 세대</option>${gens.map(g => `<option value="${g}">${g}세대</option>`).join('')}</select>
       <select class="dex-t"><option value="">전체 타입</option>${DATA.types.map((t, i) => `<option value="${i + 1}">${t}</option>`).join('')}</select>
-      <select class="dex-c"><option value="">전체</option><option value="1,2">만난 포켓몬</option><option value="2">쓰러뜨린 포켓몬</option><option value="0">아직 못 만난 포켓몬</option><option value="r">🤝 영입한 포켓몬</option></select>
+      <select class="dex-c"><option value="">전체</option><option value="1,2">만난 포켓몬</option><option value="2">쓰러뜨린 포켓몬</option><option value="0">아직 못 만난 포켓몬</option><option value="r">🤝 영입한 포켓몬</option><option value="s">✨ 이로치를 얻은 포켓몬</option><option value="s0">이로치를 아직 못 얻은 포켓몬</option><option value="sx">이로치 그림이 없는 포켓몬</option></select>
       <span class="dim dex-count"></span></div>
       ${(() => { medals = Game.save ? Game.dexMedals() : {}; return ''; })()}
       <div class="picker dex-grid">${ids.map(id => { const d = DATA.species[id], st = state(id), md = medals[id] || ''; return `<button class="pk dex-item${st ? '' : ' unseen'}" data-dexpoke="${id}"
-        data-s="${esc((d.n + ' ' + d.e + ' ' + dexNo(id) + ' ' + id).toLowerCase())}" data-g="${d.g}" data-t="${d.t.join(',')}" data-c="${st}" data-r="${own(id) ? 1 : ''}">
-        ${portraitImg(id, 'portrait sm')}<span>${esc(d.n)}</span><i class="dim">${dexNo(id)}${st === 2 ? ' ⚔' : st === 1 ? ' 👁' : ''}</i>${md ? `<i class="dex-medals">${md}</i>` : ''}${own(id) ? '<i class="dex-own" title="영입한 포켓몬">🤝</i>' : ''}</button>`; }).join('')}</div>`;
+        data-s="${esc((d.n + ' ' + d.e + ' ' + dexNo(id) + ' ' + id).toLowerCase())}" data-g="${d.g}" data-t="${d.t.join(',')}" data-c="${st}" data-r="${own(id) ? 1 : ''}" data-sh="${!d.sh ? 'x' : shinyMine(id) ? 'y' : 'n'}">
+        ${portraitImg(id, 'portrait sm')}<span>${esc(d.n)}</span><i class="dim">${dexNo(id)}${st === 2 ? ' ⚔' : st === 1 ? ' 👁' : ''}</i>${md ? `<i class="dex-medals">${md}</i>` : ''}${own(id) ? '<i class="dex-own" title="영입한 포켓몬">🤝</i>' : ''}${shinyMine(id) ? '<i class="dex-shiny" title="이로치를 얻었어요">✨</i>' : ''}</button>`; }).join('')}</div>`;
   }
 
   function renderMoves() {
@@ -77,7 +79,7 @@ const Dex = (() => {
       let n = 0;
       for (const b of items) {
         const ok = (!s || b.dataset.s.includes(s)) && (!g || !g.value || b.dataset.g === g.value)
-          && (!t || !t.value || b.dataset.t.split(',').includes(t.value)) && (!c || !c.value || (c.value === 'r' ? !!b.dataset.r : c.value.split(',').includes(b.dataset.c)));
+          && (!t || !t.value || b.dataset.t.split(',').includes(t.value)) && (!c || !c.value || (c.value === 'r' ? !!b.dataset.r : c.value === 's' ? b.dataset.sh === 'y' : c.value === 's0' ? b.dataset.sh === 'n' : c.value === 'sx' ? b.dataset.sh === 'x' : c.value.split(',').includes(b.dataset.c)));
         b.style.display = ok ? '' : 'none';
         if (ok) n++;
       }
@@ -142,7 +144,9 @@ const Dex = (() => {
       title: `No.${dexNo(id)} ${esc(d.n)}`, wide: true,
       html: `<div class="dex-poke">
         <div class="cc-top">${portraitImg(id, 'portrait big')}<div><div class="cc-name">${esc(d.n)}</div><div class="dim">${esc(d.e)} · ${d.g}세대${d.lg ? ' · 전설/환상' : ''}</div>
-          <div>${typeBadges(d.t)}</div><div class="dim">📖 ${rec} · 레벨업 ${expDiv(id) > 1.01 ? `느림 (필요 경험치 ${+expDiv(id).toFixed(2)}배)` : expDiv(id) < 0.99 ? `빠름 (필요 경험치 ${+expDiv(id).toFixed(2)}배)` : '보통'}</div>${played ? `<div class="note ms">플레이 기록 Lv${played.lv}</div>` : ''}</div></div>
+          <div>${typeBadges(d.t)}</div><div class="dim">📖 ${rec} · 레벨업 ${expDiv(id) > 1.01 ? `느림 (필요 경험치 ${+expDiv(id).toFixed(2)}배)` : expDiv(id) < 0.99 ? `빠름 (필요 경험치 ${+expDiv(id).toFixed(2)}배)` : '보통'}</div>${played ? `<div class="note ms">플레이 기록 Lv${played.lv}</div>` : ''}
+          <div>${!d.sh ? '<span class="dim">이로치: 그림이 없어요</span>' : Game.save && Game.shinyOk(id) ? '✨ 이로치: <b>얻었어요</b> <span class="dim">(캐릭터 탭에서 고를 수 있어요)</span>' : '이로치: 있어요 · <span class="dim">🔒 아직 못 얻었어요 (이 포켓몬이나 진화 계열의 이로치를 쓰러뜨리거나 영입하면 열려요)</span>'}</div></div>
+          ${d.sh ? `<div class="dex-shiny-pic" title="이로치 모습">${portraitImg(id, 'portrait big', 'Normal', true)}<div class="dim tiny center">이로치</div></div>` : ''}</div>
         ${borrowNote(id) ? `<p class="note">${esc(borrowNote(id))}</p>` : ''}
         ${Game.save && Game.hasClears(id) ? `<h3>🏅 메달 <span class="dim">(이 포켓몬으로 클리어한 던전)</span></h3>${Game.medalSection(id)}` : ''}
         <table class="dex-stats">${d.b.map((v, i) => `<tr><td>${labels[i]}</td><td class="num">${v}</td><td><span class="sbar"><i style="width:${Math.min(100, v / 1.8)}%;background:${v >= 100 ? '#4de36b' : v >= 70 ? '#f5d142' : '#f58a42'}"></i></span></td></tr>`).join('')}

@@ -1297,7 +1297,7 @@ const Dungeon = (() => {
       c.stTick = (c.stTick || 0) + 1;
       if (c.stTick % 2 === 0 && c.hp < c.maxhp) heal(c, Math.max(1, Math.floor(c.maxhp / 12)), Math.max(T.cursor, T.moveEnd));
     } else if ((c.status === 'psn' || c.status === 'brn') && !(heldOf(c).orb === c.status && !ORB_STATUS_DMG)) {
-      // 화염구슬·독독구슬을 지니고 있으면 그 상태이상의 데미지는 ORB_STATUS_DMG배 (지금은 0: 받지 않는다)
+      // 화염구슬·맹독구슬을 지니고 있으면 그 상태이상의 데미지는 ORB_STATUS_DMG배 (지금은 0: 받지 않는다)
       c.stTick = (c.stTick || 0) + 1;
       if (c.stTick % 2 === 0) {
         const at = Math.max(T.cursor, T.moveEnd);
@@ -1474,6 +1474,34 @@ const Dungeon = (() => {
     if (a.x !== fx || a.y !== fy) { schedMove(a, fx, fy); markMoved(a, fx, fy); }
   }
 
+  // ── 동료의 보조 기술: 회복(생명의물방울·HP회복 등), 능력 올리기(코칭·칼춤 등), 리플렉터·빛의장막 ──
+  // 회복은 HP가 낮을 때 꼭, 능력 올리기·벽은 싸우는 중에 (보스전이면 더 자주, 더 높게까지). 쓸 게 없으면 null
+  function allySupport(e, foe) {
+    const boss = !!(foe && foe.boss) || !!(D.boss && D.boss.hp > 0 && seen(D.boss));
+    const team = [P(), ...allies()].filter(m => m.hp > 0 && cheb(m, e) <= TEAM_RANGE && los(e.x, e.y, m.x, m.y));
+    const moves = e.moves.map((m, i) => ({ m: DATA.moves[m.id], i, id: m.id, pp: m.pp })).filter(o => o.pp > 0 && o.m && o.m.c === 1 && o.m.r === 's' && !(e.tauntT));
+    let best = null;
+    for (const o of moves) {
+      const R = MOVE_RULES[o.id] || {}, who = R.team ? team : [e];
+      let s = 0;
+      if (o.m.h > 0) {   // 회복: 가장 다친 대상 기준
+        const low = Math.min(...who.map(m => m.hp / m.maxhp));
+        if (low < 0.35) s = 100; else if (low < (boss ? 0.6 : 0.5)) s = 60;
+      } else if (R.screen) {   // 벽: 싸우는 중이고 아직 없으면
+        const k = R.screen === 'phys' ? 'reflectT' : 'screenT';
+        if (foe && who.some(m => !m[k])) s = boss ? 50 : 15;
+      } else if (o.m.sc && o.m.sc.some(([, ch]) => ch > 0) && !o.m.ss) {   // 능력 올리기: 아직 덜 오른 대상이 있으면
+        const cap = boss ? 4 : AI_STAGE_LIMIT;
+        const need = who.filter(m => o.m.sc.some(([st, ch]) => ch > 0 && (m.stages[st] || 0) < cap)).length;
+        if (foe && need) s = (boss ? 40 : 10) + need * 5;
+      }
+      if (s && (!best || s > best.s)) best = { ...o, s };
+    }
+    if (!best) return null;
+    // 급한 회복은 늘, 나머지는 확률로 (매 턴 쓰지 않게)
+    return best.s >= 100 || Math.random() < best.s / 100 ? best : null;
+  }
+
   function enemyAct(e) {
     if (e.skipTurn) { e.skipTurn--; return; }
     if (e.hp <= 0 || e.npc) return;
@@ -1483,7 +1511,12 @@ const Dungeon = (() => {
     if (!canAct(e)) return;
     if (e.moveOnly && (e.charging || e.rampage)) return;
     const tg = aiTarget(e);
-    if (!tg) { if (e.charging || e.rampage) { if (e.rampage) rampageStep(e); else useMove(e, e.charging.slot, e.dir, { release: true, free: true }); } else followLeader(e); return; }
+    if (!tg) {
+      if (e.charging || e.rampage) { if (e.rampage) rampageStep(e); else useMove(e, e.charging.slot, e.dir, { release: true, free: true }); return; }
+      const sup = e.ally && !e.moveOnly && allySupport(e, null);   // 싸움이 없을 때도 다친 같은 편은 회복
+      if (sup) { useMove(e, sup.i, e.dir); return; }
+      followLeader(e); return;
+    }
     const p = tg.p;
     if (e.charging) {
       const ddx = p.x - e.x, ddy = p.y - e.y;
@@ -1515,6 +1548,7 @@ const Dungeon = (() => {
     };
     if (e.moveOnly && sees && dist <= 1) return;   // 화난 켈리몬의 두 번째 이동: 붙었으면 멈춘다 (공격은 한 턴에 한 번)
     if (!e.ally && e.item && !e.moveOnly && enemyUseItem(e, p, sees, dist, dx, dy)) return;
+    if (e.ally && !e.moveOnly && sees && dist <= 6) { const sup = allySupport(e, p); if (sup) { useMove(e, sup.i, e.dir); return; } }   // 동료: 회복·능력 올리기·벽
     // 동료는 상대에게 가장 효과적인 공격을 고른다 (면역·흡수되는 기술은 쓰지 않는다). 적은 지금처럼 무작위
     const score = o => moveScore(e, p, o.m);
     const best = list => list.map(o => ({ o, s: score(o) })).filter(x => x.s > 0).sort((a, b) => b.s - a.s)[0]?.o;
@@ -2048,7 +2082,7 @@ const Dungeon = (() => {
     // 배고픔 / 회복
     const b0 = p.belly;
     p.belly = Math.max(0, p.belly - 0.08 * (weatherNow() === 'snow' && !p.types.includes(15) ? 1.5 : 1) * (heldOf(p).bellyMul || 1));
-    // 독독구슬·화염구슬: 지닌 포켓몬(동료 포함)에게 5턴마다 (상태이상이 없을 때)
+    // 맹독구슬·화염구슬: 지닌 포켓몬(동료 포함)에게 5턴마다 (상태이상이 없을 때)
     if (run.turnsOnFloor % 5 === 0) for (const c of [p, ...allies()]) if (heldOf(c).orb && !c.status && c.hp > 0) { log(`${nm(c)}의 ${jo(ITEMS[c.held].n, '이')} 반응했다!`, T.base); inflict(c, heldOf(c).orb, T.base, true); }
     if (p.belly > 0) {
       const ph = heldOf(p);

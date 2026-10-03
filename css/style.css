@@ -475,6 +475,8 @@ i.clear.me { background: #2b6cb0; margin-left: 4px; }
 .vol-num.loud { color: #ff6b6b; font-weight: bold; }
 /* 도감: 영입한 포켓몬 */
 .pk i.dex-own { left: 4px; right: auto; font-size: 11px; }
+.pk i.dex-shiny { top: 18px; left: 4px; right: auto; font-size: 11px; }
+.dex-shiny-pic { margin-left: auto; text-align: center; }
 /* 던전 메뉴 탭 */
 .dm-tabs { margin-bottom: 8px; }
 
@@ -490,3 +492,17 @@ i.clear.me { background: #2b6cb0; margin-left: 4px; }
 .rs-bar i.dealt { background: #f5a442; }
 .rs-bar i.taken { background: #e05a5a; }
 .rs-line b { min-width: 48px; text-align: right; font-variant-numeric: tabular-nums; }
+
+/* 엔딩 */
+.ending { max-height: 70vh; overflow-y: auto; padding: 4px 2px; }
+.end-sec { opacity: 0; animation: endIn .8s ease forwards; margin-bottom: 14px; }
+@keyframes endIn { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: none; } }
+.end-sec h3 { text-align: center; }
+.end-title { text-align: center; font-size: 22px; color: var(--accent); margin: 10px 0 4px; }
+.end-title.small { font-size: 18px; }
+.end-cards { display: flex; flex-wrap: wrap; justify-content: center; align-items: center; gap: 14px; }
+.end-card { display: flex; flex-direction: column; align-items: center; gap: 3px; min-width: 96px; }
+.end-arrow { font-size: 22px; color: var(--dim); }
+.end-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 4px 16px; }
+.end-stat { display: flex; justify-content: space-between; gap: 8px; border-bottom: 1px solid #ffffff14; padding: 3px 0; }
+.end-when { color: var(--text); margin: 4px 0 10px; }
