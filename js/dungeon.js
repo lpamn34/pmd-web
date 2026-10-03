@@ -143,17 +143,31 @@ const Dungeon = (() => {
     if (cand.length < 8) cand = all.slice().sort((a, b) => Math.abs(a.bst - target) - Math.abs(b.bst - target)).slice(0, CAND_FALLBACK);
     return { lvl, target, cand, concept };
   }
+  // 아직 못 얻은 포켓몬이 더 잘 나온다: 영입하지 않은 포켓몬(영입한 포켓몬의 진화 전 모습은 영입한 것으로 본다),
+  // 그 층에 그런 포켓몬이 없으면 이로치를 아직 못 얻은 포켓몬이 WANT_W배 잘 나온다 (이로치 확률은 그대로)
+  const WANT_W = 2;
+  function ownedSet() { const s = Game.save; return new Set(s ? Object.keys(s.roster).flatMap(k => [+k, ...preEvos(+k)]) : []); }
+  const shinyMissing = id => !!DATA.species[id].sh && !Game.shinyOk(+id);
+  function wantSet(ids) {
+    if (run.daily) return new Set();   // 오늘의 도전은 모두 같은 층이어야 하므로 그대로
+    const own = ownedSet();
+    const nw = ids.filter(id => !own.has(+id));
+    return new Set(nw.length ? nw : ids.filter(shinyMissing));
+  }
+  // 목록에서 하나를 꺼낸다 (원하는 포켓몬은 WANT_W배)
+  const takeWanted = (arr, want, key = x => x) => { const i = weighted(arr.map((x, j) => [j, want.has(+key(x)) ? WANT_W : 1])); return arr.splice(i, 1)[0]; };
   function makePool(dg, floor) {
     const { lvl, target, cand, concept } = floorCandidates(dg, floor);
+    const want = wantSet([...concept, ...cand.map(o => o.id)]);
     const pool = [];
     // 컨셉 포켓몬을 먼저 (CONCEPT_SHARE종), 나머지는 던전 타입에서
     const cc = concept.slice();
     // 컨셉 목록의 전설(코스모그·타입:널: 진화형이 보스)은 드물게: 뽑혀도 LEGEND_CONCEPT_RATE 확률로만 남긴다
-    while (pool.length < CONCEPT_SHARE && cc.length) { const id = cc.splice(rand(cc.length), 1)[0]; if (!DATA.species[id].lg || Math.random() < LEGEND_CONCEPT_RATE) pool.push(id); }
+    while (pool.length < CONCEPT_SHARE && cc.length) { const id = takeWanted(cc, want); if (!DATA.species[id].lg || Math.random() < LEGEND_CONCEPT_RATE) pool.push(id); }
     // 패러독스 포켓몬은 테마 던전이 아니면 드물게: 뽑혀도 PARADOX_RATE 확률로만 남기고 아니면 다시 뽑는다
     const para = new Set(dg.extra ? [] : [...PARADOX_PAST, ...PARADOX_FUTURE]);
     while (pool.length < 6 && cand.length) {
-      const id = cand.splice(rand(cand.length), 1)[0].id;
+      const id = takeWanted(cand, want, o => o.id).id;
       if (!para.has(id) || Math.random() < PARADOX_RATE) pool.push(id);
     }
     // 테마 던전: 시리즈 포켓몬을 일반 적으로 섞는다 (강함이 비슷한 쪽 우선)
@@ -161,6 +175,7 @@ const Dungeon = (() => {
       const ex = extraPool(dg).filter(id => !pool.includes(id)).sort((a, b) => Math.abs(DATA.species[a].b.reduce((s, v) => s + v, 0) - target) - Math.abs(DATA.species[b].b.reduce((s, v) => s + v, 0) - target));
       for (const id of ex.slice(0, 6).sort(() => Math.random() - 0.5).slice(0, 3)) if (!DATA.species[id].lg || Math.random() < LEGEND_CONCEPT_RATE) pool.push(id);   // 전설(코스모그 등)은 드물게
     }
+    D.want = wantSet(pool);
     return { pool, lvl };
   }
   // 전설 던전(별의 정상): 최종 보스는 전설 포켓몬 중 무작위 하나. 후보는 층마다 강함이 가까운 25종을 모은 것
@@ -183,7 +198,7 @@ const Dungeon = (() => {
   }
   function spawnEnemy(pos, sp, lv) {
     if (D.thief) return spawnAngryKecleon(pos);
-    sp = sp || pick(D.pool);
+    sp = sp || (D.want && D.want.size ? weighted(D.pool.map(id => [id, D.want.has(+id) ? WANT_W : 1])) : pick(D.pool));
     const c = makeCreature(sp, run.hard ? run.hardLv : clamp((lv || D.lvl) + rint(-1, 1), 1, MAX_LEVEL));   // 하드모드: 레벨 고정
     c.enemy = true; c.x = pos.x; c.y = pos.y; c.dir = rand(8);
     c.shiny = !!DATA.species[sp].sh && Math.random() < SHINY_CHANCE;
@@ -1482,6 +1497,20 @@ const Dungeon = (() => {
 
   // ── 동료의 보조 기술: 회복(생명의물방울·HP회복 등), 능력 올리기(코칭·칼춤 등), 리플렉터·빛의장막 ──
   // 회복은 HP가 낮을 때 꼭, 능력 올리기·벽은 싸우는 중에 (보스전이면 더 자주, 더 높게까지). 쓸 게 없으면 null
+  // 날씨가 탐험대(곁에 있는 같은 편)에게 얼마나 좋은지: 강해지는 공격 기술·날씨 특성·모래바람/설경에 강한 타입은 +, 약해지거나 다치면 −
+  const WX_UP = { sun: 10, rain: 11 }, WX_DOWN = { sun: 11, rain: 10 };
+  function wxValue(w, team) {
+    let v = 0;
+    for (const m of team) {
+      const A = abilityOf(m), atk = m.moves.map(x => DATA.moves[x.id]).filter(x => x && x.c !== 1 && x.p > 0);
+      if ((A.wx && A.wx.w === w) || A.setWeather === w) v += 2;
+      if (WX_UP[w] && atk.some(x => x.t === WX_UP[w])) v += 1;
+      if (WX_DOWN[w] && atk.some(x => x.t === WX_DOWN[w])) v -= 1;
+      if (w === 'sand') v += m.types.some(t => t === 5 || t === 6 || t === 9) || A.chipImmune ? (m.types.includes(6) ? 1 : 0) : -1;
+      if (w === 'snow') v += m.types.includes(15) ? 1 : -0.5;
+    }
+    return v;
+  }
   function allySupport(e, foe) {
     const boss = !!(foe && foe.boss) || !!(D.boss && D.boss.hp > 0 && seen(D.boss));
     const team = [P(), ...allies()].filter(m => m.hp > 0 && cheb(m, e) <= TEAM_RANGE && los(e.x, e.y, m.x, m.y));
@@ -1493,6 +1522,12 @@ const Dungeon = (() => {
       if (o.m.h > 0) {   // 회복: 가장 다친 대상 기준
         const low = Math.min(...who.map(m => m.hp / m.maxhp));
         if (low < 0.35) s = 100; else if (low < (boss ? 0.6 : 0.5)) s = 60;
+      } else if (R.setWx) {   // 날씨: 싸우는 중이고, 지금 날씨보다 탐험대에 확실히 좋으면 (전용 날씨가 버티고 있으면 안 바뀌니 쓰지 않는다)
+        const cur = wxBase(D.weather), lock = D.wxLock && D.wxLock.hp > 0 && !D.wxLock.dead;
+        if (foe && !lock && cur !== R.setWx) {
+          const gain = wxValue(R.setWx, team) - (cur ? wxValue(cur, team) : 0);
+          if (wxValue(R.setWx, team) > 0 && gain >= 1) s = Math.min(boss ? 80 : 50, (boss ? 30 : 15) + gain * 10);
+        }
       } else if (R.screen) {   // 벽: 싸우는 중이고 아직 없으면
         const k = R.screen === 'phys' ? 'reflectT' : 'screenT';
         if (foe && who.some(m => !m[k])) s = boss ? 50 : 15;

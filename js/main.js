@@ -662,8 +662,15 @@ const Game = (() => {
   }
 
   // ───────────────────────── 마을 ─────────────────────────
+  // 창고에 남아 있는 자동 판매 아이템을 한 번 판다 (v0.72 이전에 '남겨 둔다'를 골랐거나 다른 길로 들어온 것. 그 뒤로 직접 산 물건은 남긴다)
+  function sweepAutoSell() {
+    if (save.autoSellV72) return;
+    save.autoSellV72 = true;
+    for (const id of save.autoSell || []) { const n = save.storage[id] || 0; if (n > 0 && ITEMS[id]) { delete save.storage[id]; storeDeposit(id, n); } }
+  }
   function enterTown() {
     applyPad();
+    if (save) sweepAutoSell();
     show('town-screen');
     checkUpdate();
     Sound.town();
@@ -787,7 +794,10 @@ const Game = (() => {
     if (bagSlots() >= bagMax()) return false;
     save.bag.push({ id, n: 1 }); return true;
   }
-  const storeAdd = (id, n = 1) => { save.storage[id] = (save.storage[id] || 0) + n; };
+  // 창고에 넣기: 자동 판매 아이템은 어떤 길로 들어와도 (의뢰 보상·구조 보답·맡기기 등) 넣지 않고 판다 (v0.72)
+  // 직접 사거나 되사거나 지닌 물건을 뺀 것은 storeKeep (팔지 않고 그대로 넣는다)
+  const storeKeep = (id, n = 1) => { save.storage[id] = (save.storage[id] || 0) + n; };
+  const storeAdd = (id, n = 1) => { storeDeposit(id, n); };
   // 최근에 판 물건 (되사기용, SOLD_LOG_MAX개까지)
   const SOLD_LOG_MAX = 10;
   function logSale(id, n, money, from) { save.soldLog = [{ id, n, money, from }, ...(save.soldLog || [])].slice(0, SOLD_LOG_MAX); }
@@ -1158,7 +1168,7 @@ const Game = (() => {
     const have = new Set([...Object.keys(save.storage).filter(k => save.storage[k] > 0), ...save.bag.map(b => b.id)]);
     const opts = Object.keys(ITEMS).filter(id => id !== 'quest' && !list.includes(id) && ITEMS[id].price).sort(byKind);
     const opt = id => `<option value="${id}">${ITEMS[id].icon} ${esc(ITEMS[id].n)}</option>`;
-    return `<div class="autosell"><p class="dim">고른 아이템은 창고에 맡길 때 넣지 않고 바로 팔아요. 판 물건은 상점 탭에서 되살 수 있어요. (${list.length}개)</p>
+    return `<div class="autosell"><p class="dim">고른 아이템은 창고에 들어올 때(맡기기·의뢰 보상 등) 넣지 않고 바로 팔아요. 고르면 창고에 있던 것도 바로 팔아요. 직접 사거나 되산 물건은 팔지 않아요. 판 물건은 상점 탭에서 되살 수 있어요. (${list.length}개)</p>
       <div class="row"><select data-asadd="1"><option value="">＋ 자동 판매할 아이템 고르기</option>
         <optgroup label="창고·가방에 있는 것">${opts.filter(id => have.has(id)).map(opt).join('')}</optgroup>
         <optgroup label="그 밖의 아이템">${opts.filter(id => !have.has(id)).map(opt).join('')}</optgroup></select></div>
@@ -1168,7 +1178,7 @@ const Game = (() => {
   let autoSoldMoney = 0, autoSoldTimer = null;
   // 창고에 맡긴다. 자동 판매 아이템이면 대신 판다 (true: 팔았음)
   function storeDeposit(id, n = 1) {
-    if (!autoSells(id)) { storeAdd(id, n); return false; }
+    if (!autoSells(id) || id === 'quest') { storeKeep(id, n); return false; }
     const v = sellValue({ id, n });
     save.money += v; logSale(id, n, v, 'storage');
     autoSoldMoney += v; clearTimeout(autoSoldTimer);
@@ -1181,9 +1191,8 @@ const Game = (() => {
     if (autoSells(id)) { save.autoSell = save.autoSell.filter(x => x !== id); UI.toast(`${ITEMS[id].n} 자동 판매를 껐습니다.`); persist(); renderTown(); return; }
     save.autoSell.push(id);
     const have = save.storage[id] || 0;
-    if (have && await UI.confirm('자동 판매', `<p>${ITEMS[id].icon} <b>${esc(ITEMS[id].n)}</b>을(를) 이제 창고에 맡길 때 바로 팝니다.</p><p>창고에 있는 ${have}개도 지금 팔까요? (₽${sellValue({ id, n: have })})</p>`, '지금 판다', '남겨 둔다')) {
-      delete save.storage[id]; storeDeposit(id, have);
-    } else UI.toast(`${ITEMS[id].n} 자동 판매를 켰습니다.`);
+    if (have) { delete save.storage[id]; storeDeposit(id, have); }   // 창고에 있던 것도 바로 판다 (상점 탭에서 되살 수 있다)
+    else UI.toast(`${ITEMS[id].n} 자동 판매를 켰습니다.`);
     persist(); renderTown();
   }
 
@@ -1486,7 +1495,7 @@ const Game = (() => {
         const n = it.stack ? 5 : 1;
         if (!bagAdd(arg, n)) {
           if (!storageRoom(arg, n)) { UI.toast('가방과 창고가 모두 가득 찼습니다.'); return; }
-          storeAdd(arg, n); UI.toast('가방이 가득 차서 창고로 보냈습니다.');
+          storeKeep(arg, n); UI.toast('가방이 가득 차서 창고로 보냈습니다.');
         }
         else UI.toast(`${jo(it.n, '을')} 샀습니다.`);
         save.money -= it.price;
@@ -1517,7 +1526,7 @@ const Game = (() => {
       case 'buyback': {   // 최근에 판 물건을 판 값 그대로 되사기
         const e = (save.soldLog || [])[+arg]; if (!e || save.money < e.money) return;
         if (e.from === 'bag' && bagAdd(e.id, e.n)) { /* 가방으로 */ }
-        else if (storageRoom(e.id, e.n)) storeAdd(e.id, e.n);
+        else if (storageRoom(e.id, e.n)) storeKeep(e.id, e.n);
         else if (bagAdd(e.id, e.n)) { /* 창고가 가득 차면 가방으로 */ }
         else { UI.toast('가방과 창고가 모두 가득 찼습니다.'); return; }
         save.money -= e.money; save.soldLog.splice(+arg, 1);
@@ -1601,7 +1610,7 @@ const Game = (() => {
       case 'toggle-shiny': { const ch = save.roster[save.current]; if (!shinyOk(save.current)) return; ch.shiny = !ch.shiny; UI.toast(ch.shiny ? '✨ 이로치로 바꿨습니다.' : '보통 모습으로 바꿨습니다.'); break; }
       case 'save-export': exportSave(); return;
       case 'save-import': document.getElementById('save-file').click(); return;
-      case 'unhold': { const ch = save.roster[arg ? +arg : save.current]; if (ch && ch.held) { storeAdd(ch.held); ch.held = null; UI.toast('지닌 물건을 창고에 넣었습니다.'); } break; }
+      case 'unhold': { const ch = save.roster[arg ? +arg : save.current]; if (ch && ch.held) { storeKeep(ch.held); ch.held = null; UI.toast('지닌 물건을 창고에 넣었습니다.'); } break; }
       case 'hold': return chooseHeld(arg && save.roster[+arg] ? +arg : save.current);
       case 'use-tm': return useTM(arg);
       case 'learn-egg': return learnEgg(+arg);
@@ -1706,7 +1715,7 @@ const Game = (() => {
       title: `${esc(spName(sp))}에게 지니게 할 물건`, wide: true,
       choices: opts.map(o => ({ label: `${ITEMS[o.id].icon} ${esc(ITEMS[o.id].n)} <span class="dim">(${o.from === 'bag' ? '가방' : '창고'})</span>`, sub: esc(heldBlockReason(entryAbility(sp, ch), o.id) || ITEMS[o.id].d), disabled: !!heldBlockReason(entryAbility(sp, ch), o.id), fn: () => {
         if (o.from === 'bag') save.bag.splice(o.i, 1); else { save.storage[o.id]--; if (save.storage[o.id] <= 0) delete save.storage[o.id]; }
-        if (ch.held) storeAdd(ch.held);
+        if (ch.held) storeKeep(ch.held);
         ch.held = o.id; persist(); renderTown(); UI.toast(`${jo(ITEMS[o.id].n, '을')} 지니게 했습니다.`);
       } })),
     });
