@@ -144,7 +144,8 @@ const Dungeon = (() => {
     const pool = [];
     // 컨셉 포켓몬을 먼저 (CONCEPT_SHARE종), 나머지는 던전 타입에서
     const cc = concept.slice();
-    while (pool.length < CONCEPT_SHARE && cc.length) pool.push(cc.splice(rand(cc.length), 1)[0]);
+    // 컨셉 목록의 전설(코스모그·타입:널: 진화형이 보스)은 드물게: 뽑혀도 LEGEND_CONCEPT_RATE 확률로만 남긴다
+    while (pool.length < CONCEPT_SHARE && cc.length) { const id = cc.splice(rand(cc.length), 1)[0]; if (!DATA.species[id].lg || Math.random() < LEGEND_CONCEPT_RATE) pool.push(id); }
     // 패러독스 포켓몬은 테마 던전이 아니면 드물게: 뽑혀도 PARADOX_RATE 확률로만 남기고 아니면 다시 뽑는다
     const para = new Set(dg.extra ? [] : [...PARADOX_PAST, ...PARADOX_FUTURE]);
     while (pool.length < 6 && cand.length) {
@@ -154,7 +155,7 @@ const Dungeon = (() => {
     // 테마 던전: 시리즈 포켓몬을 일반 적으로 섞는다 (강함이 비슷한 쪽 우선)
     if (dg.extra) {
       const ex = extraPool(dg).filter(id => !pool.includes(id)).sort((a, b) => Math.abs(DATA.species[a].b.reduce((s, v) => s + v, 0) - target) - Math.abs(DATA.species[b].b.reduce((s, v) => s + v, 0) - target));
-      for (const id of ex.slice(0, 6).sort(() => Math.random() - 0.5).slice(0, 3)) pool.push(id);
+      for (const id of ex.slice(0, 6).sort(() => Math.random() - 0.5).slice(0, 3)) if (!DATA.species[id].lg || Math.random() < LEGEND_CONCEPT_RATE) pool.push(id);   // 전설(코스모그 등)은 드물게
     }
     return { pool, lvl };
   }
@@ -321,6 +322,7 @@ const Dungeon = (() => {
   }
 
   function newFloor() {
+    run.p.partners = (run.party || []).length;   // 혼자 탐험 보정 (afterPlayer와 같게)
     untransform(run.p); (run.party || []).forEach(untransform);   // 괴짜: 지난 층의 변신을 푼다 (이 층에서 처음 만나는 적으로 다시)
     const dg = dungeonById(run.dungeon);
     const bossFloor = isBossFloor(dg, run.floor);
@@ -1193,7 +1195,7 @@ const Dungeon = (() => {
       a.lv++; recalc(a);
       log(`${jo(nm(a), '은')} 레벨 ${jo(a.lv, '으로')} 올랐다!`, at);
       popup(a, 'LEVEL UP', '#ffe066', at + 200);
-      for (const mid of learnedAt(a.sp, a.lv)) if (!a.moves.some(m => m.id === mid) && a.moves.length < 4) { a.moves.push(newMove(a, mid)); log(`${jo(nm(a), '은')} ${jo(DATA.moves[mid].n, '을')} 배웠다!`, at); }
+      for (const mid of learnedAtAll(a.sp, a.lv)) if (!a.moves.some(m => m.id === mid) && a.moves.length < 4) { a.moves.push(newMove(a, mid)); log(`${jo(nm(a), '은')} ${jo(DATA.moves[mid].n, '을')} 배웠다!`, at); }
     }
   }
   // raw: 이상한사탕처럼 정해진 만큼 (전설 보정 없이)
@@ -1209,7 +1211,7 @@ const Dungeon = (() => {
       popup(p, 'LEVEL UP', '#ffe066', at + 200);
       Sound.play('levelup', at + 200); Progress.max('maxLv', p.lv); checkLater();
       setFace('Joyous', 2500);
-      for (const mid of learnedAt(p.sp, p.lv)) {
+      for (const mid of learnedAtAll(p.sp, p.lv)) {
         if (p.moves.some(m => m.id === mid)) continue;
         if (p.moves.length < 4) { p.moves.push(newMove(p, mid)); log(`${jo(DATA.moves[mid].n, '을')} 배웠다!`, at); }
         else D.learnQueue.push(mid);
@@ -1937,7 +1939,8 @@ const Dungeon = (() => {
     if (!D.stairsHidden && D.stairs.x === p.x && D.stairs.y === p.y) {
       // 자동 탐색이 다른 곳(아이템·안 가 본 곳)으로 가다 계단을 지나가는 중이면 그냥 지나간다
       if (D.auto && D.auto.kind === 'explore' && !D.auto.toStairs) {}
-      else if (D.auto && D.auto.kind === 'explore' && Game.save.settings.autoDescend) D.prompts.push(() => descend());
+      // 계단으로 가던 중(자동 탐색을 마치고 계단으로, 또는 계단 버튼 G): 설정이 켜져 있으면 바로 내려간다
+      else if (D.auto && D.auto.toStairs && Game.save.settings.autoDescend) D.prompts.push(() => descend());
       else D.prompts.push(stairsPrompt);
     }
   }
@@ -1986,7 +1989,7 @@ const Dungeon = (() => {
       a.regen = (a.regen || 0) + (a.maxhp / 110 + 0.05) * (abVal(a, 'regen') || 1) * (heldOf(a).regen || 1) * (heldOf(a).sludge && a.types.includes(4) ? 2.5 : 1);   // 검은오물: 독 타입이면 2.5배
       if (a.regen >= 1) { const n = Math.floor(a.regen); if (p.belly > 0 && a.hp < a.maxhp) a.hp = Math.min(a.maxhp, a.hp + n); a.regen -= n; }
     }
-    p.partners = allies().length;   // 혼자 탐험 보정은 동료가 없을 때만
+    p.partners = (run.party || []).length;   // 혼자 탐험 보정: 동료 없이 들어왔을 때만 (동료가 모두 쓰러져도 생기지 않음)
     D.turn++; run.turnsOnFloor++; run.turns = (run.turns || 0) + 1;
     const wi = WIND.warn.indexOf(run.turnsOnFloor);
     if (wi >= 0) {
@@ -2907,7 +2910,7 @@ const Dungeon = (() => {
     const p = P();
     if (D.stairsHidden) log('보스를 쓰러뜨려야 계단이 나타난다!', now());
     else if (D.stairs.x === p.x && D.stairs.y === p.y) stairsPrompt();
-    else if (D.explored[idx(D.stairs.x, D.stairs.y)]) startAuto('travel', { x: D.stairs.x, y: D.stairs.y });
+    else if (D.explored[idx(D.stairs.x, D.stairs.y)]) startAuto('travel', { x: D.stairs.x, y: D.stairs.y, toStairs: true });
     else log('아직 계단을 찾지 못했다.', now());
   }
   function onClick(e) {

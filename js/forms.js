@@ -48,7 +48,7 @@ for (const [fi, fid] of Object.entries(FORM_ID)) {
   if (s.fc !== 'mega' || MEGA_NO_STONE[s.f[0]]) continue;
   const base = s.f[0], xy = /-mega-([xyz])$/.exec(fi), id = 'ms_' + fi.replace(/-/g, '_');
   ITEMS[id] = {
-    n: `${spName(base)}나이트${xy ? xy[1].toUpperCase() : ''}`, icon: '🔮', price: MEGA_STONE_PRICE, use: 'none', held: true, mega: fid,
+    n: `${spName(base)}나이트${xy ? xy[1].toUpperCase() : ''}`, icon: '♾️', price: MEGA_STONE_PRICE, use: 'none', held: true, mega: fid,
     d: `[메가스톤] ${spName(base)}에게 지니게 하면 던전에서 ${s.n}${jo(s.n, '으로').slice(s.n.length)} 메가진화한다. 다른 포켓몬에게는 효과가 없다.`,
     hold: { only: [base] }, formTo: fid,
   };

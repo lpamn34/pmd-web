@@ -216,6 +216,7 @@ i.clear { font-style: normal; font-size: 11px; background: #3a9d4d; padding: 1px
 .md-tbl td:nth-child(odd) { color: var(--dim); }
 .md-flavor { background: #0003; border-radius: 6px; padding: 8px 10px; line-height: 1.5; }
 .md-eff { color: #cde7ff; font-size: 13px; }
+.autosell select { max-width: 100%; }
 .upgrades { display: grid; grid-template-columns: 1fr 1fr; gap: 0 10px; margin-top: 10px; }
 @media (max-width: 800px) { .upgrades { grid-template-columns: 1fr; } }
 

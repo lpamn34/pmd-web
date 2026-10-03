@@ -51,6 +51,8 @@ function defaultMoves(sp, lv) {
 }
 const learnableUpTo = (sp, lv) => [...new Set(DATA.species[sp].l.filter(([l]) => l <= lv).map(x => x[1]))];
 const learnedAt = (sp, lv) => DATA.species[sp].l.filter(([l]) => l === lv).map(x => x[1]);
+// 레벨업 알림용: 진화 전 모습이 그 레벨에 배우는 기술도 (예: 버섯꼬의 Lv40 버섯포자를 먼저 진화한 버섯모도)
+const learnedAtAll = (sp, lv) => [...new Set([...learnedAt(sp, lv), ...preEvos(sp).flatMap(p => learnedAt(p, lv))])];
 
 // 던전 안에서 쓰는 개체
 // ── 기술 숙련도: 포켓몬마다·기술마다 쓴 횟수 (save.mastery[sp][mid], 기술을 빼도 남고 로그라이크에서도 쌓인다) ──
@@ -140,7 +142,7 @@ function weatherNow() {
 }
 // 스피드: 명중률·회피율 보정에 쓰인다
 function speedOf(c) {
-  let s = c.spe * (abVal(c, 'speedMul') || 1) * (heldOf(c).speedMul || 1);
+  let s = c.spe * (abVal(c, 'speedMul') || 1) * (heldOf(c).speedMul || 1) * (c.player && c.partners === 0 ? SOLO_STAT_MUL : 1);
   if (abilityOf(c).quickFeet && c.status) s *= 1.5;
   else if (c.status === 'par') s *= 0.5;
   return s;
@@ -181,6 +183,7 @@ function statMul(c, key) {
   const H = heldOf(c);
   if (H[key + 'Mul']) m *= H[key + 'Mul'];
   if (H.eviolite && (key === 'def' || key === 'spd') && DATA.species[c.sp].v.length) m *= 1.5;
+  if (c.player && c.partners === 0) m *= SOLO_STAT_MUL;   // 혼자 탐험 보정
   return m;
 }
 function evasionMul(c, A) {
@@ -275,7 +278,7 @@ function calcHit(att, def, move) {
   dmg *= (crit ? (A.sniper ? 2.25 : 1.5) : 1) * (0.85 + Math.random() * 0.15);
   dmg *= guardMul(def, Dd, move, mt, eff);
   if (phys ? def.reflectT : def.screenT) dmg *= 0.5;   // 리플렉터·빛의장막
-  if (!att.player && def.player && !def.partners) dmg *= SOLO_DMG_MUL;   // 혼자 탐험하므로 조금 완화 (동료가 있으면 없음)
+  if (!att.player && def.player && def.partners === 0) dmg *= SOLO_DMG_MUL;   // 혼자 탐험 보정 (동료와 함께 들어왔으면 모두 쓰러져도 없음)
   return { hit: true, dmg: Math.max(1, Math.floor(dmg)), eff, crit };
 }
 
@@ -312,7 +315,7 @@ function effText(eff) {
 // 내 레벨보다 LOW_LV_GAP 이상 낮은 적은 전체 배율 EXP_RATE 대신 LOW_LV_MUL배
 const LOW_LV_GAP = 6, LOW_LV_MUL = 0.1;
 // 혼자 탐험할 때 적에게 받는 데미지 배율
-const SOLO_DMG_MUL = 0.85;
+const SOLO_DMG_MUL = 0.85, SOLO_STAT_MUL = 1.1;   // 혼자 탐험 보정: 받는 데미지 배율, 능력치(HP 제외) 배율
 function expGain(enemy, plv) {
   const e = enemy.lv, scale = Math.pow((2 * e + 10) / (e + plv + 10), 2.5);
   return Math.max(1, Math.floor(DATA.species[enemy.sp].x * e / 7 * scale * (plv - e >= LOW_LV_GAP ? LOW_LV_MUL : EXP_RATE)));
