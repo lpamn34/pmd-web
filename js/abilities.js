@@ -26,7 +26,26 @@ ab_(137, { toxicBoost: true }); ab_(138, { flareBoost: true });
 ab_(97, { sniper: true }); ab_(105, { critStage: 1 });
 ab_(14, { accMul: 1.3 });
 ab_(99, { noGuard: true });
-ab_([96], { skin: 1 }); ab_(174, { skin: 15 }); ab_(182, { skin: 18 });
+ab_(96, { normalize: true }); ab_(174, { skin: 15 }); ab_(182, { skin: 18 }); ab_(184, { skin: 3 });   // 노말스킨: 모든 기술이 노말 (원작처럼), 스카이스킨: 노말 → 비행
+// ── 원본 특성 데이터에 없는 특성 (스카이스킨, 레전드 Z-A의 새 메가진화 특성): 여기서 더하고 그 메가진화에 붙인다 (PokeAPI 기준) ──
+// 전에는 데이터가 없어서 원래 포켓몬의 첫 특성을 대신 썼다 (예: 메가루카리오Z가 불굴의마음)
+const NEW_ABILITIES = {
+  184: { n: '스카이스킨', d: '노말타입의 기술이 비행타입이 된다. 위력이 조금 올라간다.', fi: ['pinsir-mega', 'salamence-mega'] },
+  309: { n: '드래곤스킨', d: '노말타입의 기술이 드래곤타입이 된다. 위력이 조금 올라간다.', fi: ['feraligatr-mega'] },
+  310: { n: '메가솔라', d: '날씨가 쾌청이 아니어도 쾌청일 때처럼 기술을 쓸 수 있다.', fi: ['meganium-mega'] },
+  311: { n: '하바네로분출', d: '공격 기술로 데미지를 받으면 공격한 상대를 화상 상태로 만든다.', fi: ['scovillain-mega'] },
+  313: { n: '불꽃의갈기', d: '불꽃타입 기술의 위력이 올라간다.', fi: ['pyroar-mega'] },
+  314: { n: '파동의방호', d: '접촉하는 기술로 받는 데미지가 절반이 된다.', fi: ['lucario-mega-z'] },
+};
+for (const [id, a] of Object.entries(NEW_ABILITIES)) {
+  if (!DATA.abilities[id]) DATA.abilities[id] = { n: a.n, d: a.d };
+  for (const s of Object.values(DATA.species)) if (a.fi.includes(s.fi)) s.ab = [[+id, 0]];
+}
+ab_(309, { skin: 16 });   // 드래곤스킨: 노말 → 드래곤, 1.2배
+ab_(310, { megaSol: true, dungeon: '자기 기술은 늘 쾌청일 때처럼 쓴다: 불꽃 기술 1.5배·물 기술 0.5배, 솔라빔을 모으지 않고 쏘고, 아침햇살·광합성 회복량이 늘어난다.' });   // 메가솔라
+ab_(311, { spicySpray: true, dungeon: '공격 기술로 데미지를 받으면 공격한 상대가 화상에 걸린다.' });   // 하바네로분출
+ab_(313, { typeMul: { 10: 1.5 } });   // 불꽃의갈기
+ab_(314, { contactResist: 0.5 });   // 파동의방호
 ab_(186, { typeMul: { 17: 1.33 } }); ab_(187, { typeMul: { 18: 1.33 } });
 ab_(200, { typeMul: { 9: 1.5 } }); ab_(262, { typeMul: { 13: 1.3 } }); ab_(263, { typeMul: { 16: 1.5 } });
 ab_(79, { rival: true, dungeon: '자신과 같은 타입을 가진 적에게 위력이 1.25배.' });
@@ -361,6 +380,7 @@ function abilityExact(r) {
   if (r.accMul) o.push(`명중률 ${x(r.accMul)}`);
   if (r.noGuard) o.push('자신과 상대의 기술이 반드시 명중');
   if (r.skin) o.push(`노말 기술이 ${T(r.skin)} 타입이 되고 위력 1.2배`);
+  if (r.normalize) o.push('모든 기술이 노말 타입이 되고 위력 1.2배');
   if (r.typeMul) o.push(`기술 위력: ${types(r.typeMul)}`);
   if (r.scrappy) o.push('노말·격투 기술이 고스트 타입에게 반감(0.5배) 없이 보통(1배)으로 맞음');
   if (r.moldBreaker) o.push('공격할 때 상대의 특성을 무시');

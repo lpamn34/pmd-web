@@ -568,12 +568,12 @@ const Dungeon = (() => {
   function transformInto(c, t, at, byMove) {
     if (!c || c.tf || !t || t.hp <= 0 || c.hp <= 0) return false;
     const look = looksOf(t), who = nm(c);
-    c.tf = { moves: c.moves, types: c.types, ability: c.ability, fsp: c.fsp || null, stages: c.stages, stageT: c.stageT };
+    c.tf = { moves: c.moves, types: c.types, ability: c.ability, fsp: c.fsp || null, stages: c.stages, stageT: c.stageT, stageS: c.stageS };
     if (c.baseAbility == null) c.baseAbility = c.ability;
     const hp = c.hp;
     c.fsp = look; recalc(c); c.hp = Math.min(hp, c.maxhp);
     c.types = t.types.slice(); c.ability = t.ability;
-    c.stages = { ...(t.stages || {}) }; c.stageT = { ...(t.stageT || {}) };
+    c.stages = { ...(t.stages || {}) }; c.stageT = { ...(t.stageT || {}) }; c.stageS = JSON.parse(JSON.stringify(t.stageS || {}));
     c.moves = t.moves.map(m => ({ id: m.id, pp: TF_PP, max: TF_PP }));
     Sprites.load(look, c.shiny);
     if (c.player || seen(c)) {
@@ -586,7 +586,7 @@ const Dungeon = (() => {
     if (!c || !c.tf) return;
     const o = c.tf; c.tf = null;
     const hp = c.hp;
-    c.moves = o.moves; c.types = o.types; c.ability = o.ability; c.fsp = o.fsp; c.stages = o.stages || {}; c.stageT = o.stageT || {};
+    c.moves = o.moves; c.types = o.types; c.ability = o.ability; c.fsp = o.fsp; c.stages = o.stages || {}; c.stageT = o.stageT || {}; c.stageS = o.stageS || {};
     recalc(c); c.hp = Math.min(hp, c.maxhp);
   }
   // 위협: 처음 마주쳤을 때
@@ -720,7 +720,7 @@ const Dungeon = (() => {
     const visible = user.player || seen(user);
     const color = TYPE_COLORS[(move.t || 1) - 1];
     // 모으기 1턴째
-    if (R.charge && !opts.release && !(R.sunNoCharge && weatherNow() === 'sun') && !(R.rainNoCharge && weatherNow() === 'rain')) {
+    if (R.charge && !opts.release && !(R.sunNoCharge && (weatherNow() === 'sun' || abilityOf(user).megaSol)) && !(R.rainNoCharge && weatherNow() === 'rain')) {
       const t0 = schedAction(user, 'Shoot', 280 * spd());
       user.charging = { slot, invuln: !!R.invuln };
       if (visible) log(`${nm(user)}의 ${move.n}! ${jo(nm(user), '은')} ${R.charge}`, t0);
@@ -904,8 +904,9 @@ const Dungeon = (() => {
       }
       if (tgt.hp > 0 && A.stench && Math.random() < 0.1 * serene) setFlinch(tgt, at);
       if (tgt.hp > 0 && A.poisonTouch && Math.random() < 0.3) inflict(tgt, 'psn', at, false, user);
-      if (tgt.hp > 0 && r.crit && abilityOf(tgt).angerPoint) { const prev = tgt.stages[2] || 0; tgt.stages[2] = 6; stageTimer(tgt, 2, prev); abLog(tgt, `${nm(tgt)}의 공격이 최대로 올라갔다!`, at); }
+      if (tgt.hp > 0 && r.crit && abilityOf(tgt).angerPoint) { tgt.stages[2] = 6; stageTimer(tgt, 2); abLog(tgt, `${nm(tgt)}의 공격이 최대로 올라갔다!`, at); }
       if (tgt.hp > 0 && total > 0) onHitAbility(tgt, user, move, mt, at);
+      if (total > 0 && user.hp > 0 && abilityOf(tgt).spicySpray && !user.status) { abLog(tgt, `${jo(nm(user), '은')} 하바네로분출에 데었다!`, at); inflict(user, 'brn', at, false, tgt); }
       if (isContact(move) && total > 0 && !A.noContact) contactAbility(user, tgt, at);
       const Hu = heldOf(user);
       // 울퉁불퉁멧은 접촉 반격 특성(까칠한피부 등)과 겹치지 않는다
@@ -987,7 +988,7 @@ const Dungeon = (() => {
     for (const t of who) {
       if (move.h > 0) {
         // 날씨에 따라 회복량이 바뀌는 기술 (js/moverules.js)
-        const w = weatherNow();
+        const w = abilityOf(user).megaSol ? 'sun' : weatherNow();   // 메가솔라: 늘 쾌청처럼
         const mul = R.sunHeal ? (w === 'sun' ? WEATHER_HEAL_MUL : w ? WEATHER_HEAL_LOW : 1) : R.sandHeal && w === 'sand' ? WEATHER_HEAL_MUL : 1;
         const h = user.boss ? Math.min(move.h, BOSS_HEAL_MAX) : move.h;   // 보스는 회복량을 줄인다
         heal(t, Math.floor(t.maxhp * h * mul / 100), at);
@@ -1013,8 +1014,11 @@ const Dungeon = (() => {
       if (heldOf(c).noDrop) { log(`${ITEMS[c.held].n}의 힘으로 ${nm(c)}의 ${jo(STAT_NAMES[st], '은')} 떨어지지 않았다!`, at); return; }
     }
     const cur = c.stages[st] || 0, nv = clamp(cur + ch, -6, 6);
-    if (nv === cur) { log(`${nm(c)}의 ${jo(STAT_NAMES[st], '은')} 더 이상 변하지 않는다!`, at); return; }
-    c.stages[st] = nv; stageTimer(c, st, cur);
+    if (nv === cur) {   // 이미 최대: 가장 적게 남은 랭크의 지속 시간을 새로 센다
+      stageRefresh(c, st, Math.abs(ch));
+      log(`${nm(c)}의 ${jo(STAT_NAMES[st], '은')} 더 이상 ${ch > 0 ? '오르지' : '떨어지지'} 않는다! (지속 시간 갱신)`, at); return;
+    }
+    c.stages[st] = nv; stageTimer(c, st);
     if (c.player || seen(c)) Sound.play(ch > 0 ? 'up' : 'down2', at);
     log(`${nm(c)}의 ${jo(STAT_NAMES[st], '이')}${Math.abs(ch) > 1 ? ' 크게' : ''} ${ch > 0 ? '올라갔다!' : '떨어졌다!'}`, at);
     if (ch < 0 && byFoe && A.defiant) { abLog(c, '능력이 떨어져서 오기가 생겼다!', at); statChange(c, A.defiant, 2, at, c); }
@@ -1233,23 +1237,42 @@ const Dungeon = (() => {
     if (c.status === 'par' && Math.random() < 0.25) { if (c.player || seen(c)) log(`${jo(nm(c), '은')} 몸이 저려서 움직일 수 없다!`, undefined, 'st-par'); return false; }
     return true;
   }
-  // 능력 변화(랭크 업·다운)는 처음 바뀐 뒤 STAGE_TURNS턴 동안 이어진다 (층을 넘어가도 유지)
+  // 능력 변화(랭크 업·다운): 랭크 하나하나가 따로 STAGE_TURNS턴 동안 이어진다 (층을 넘어가도 유지, v0.68)
+  //  예: 10턴에 +1, 30턴에 +1 → 110턴에 앞의 +1이 끝나 +1로, 130턴에 0으로
+  //  c.stageS[st] = { s: 방향(+1/-1), t: [랭크마다 남은 턴] }, c.stages[st]는 지금 랭크 (= 방향 × 개수), c.stageT[st]는 가장 먼저 끝나는 랭크의 남은 턴 (표시용)
+  //  반대 방향으로 바뀌면 가장 적게 남은 랭크부터 지우고, 0을 지나 방향이 바뀌면 새로 센다
   const STAGE_TURNS = 100;
-  // 처음 오르거나 내린 때부터 STAGE_TURNS턴 (더 쌓아도 남은 턴은 늘지 않는다. 0을 지나 방향이 바뀌면 새로 센다)
-  function stageTimer(c, st, prev = 0) {
-    c.stageT = c.stageT || {};
-    const v = c.stages[st];
-    if (!v) delete c.stageT[st];
-    else if (!c.stageT[st] || !prev || Math.sign(prev) !== Math.sign(v)) c.stageT[st] = STAGE_TURNS;
+  function stageTimer(c, st) {
+    c.stageS = c.stageS || {}; c.stageT = c.stageT || {};
+    const v = c.stages[st] || 0, n = Math.abs(v);
+    let e = c.stageS[st];
+    if (!e || e.s !== Math.sign(v)) e = { s: Math.sign(v), t: [] };
+    e.t.sort((a, b) => b - a);
+    while (e.t.length > n) e.t.pop();
+    while (e.t.length < n) e.t.push(STAGE_TURNS);
+    if (n) { c.stageS[st] = e; c.stageT[st] = Math.min(...e.t); }
+    else { delete c.stageS[st]; delete c.stageT[st]; }
+  }
+  // 이미 최대(±6)인데 같은 쪽으로 또 바꾸면: 가장 적게 남은 랭크부터 k개를 새로 센다
+  function stageRefresh(c, st, k) {
+    stageTimer(c, st);
+    const e = c.stageS[st]; if (!e) return;
+    e.t.sort((a, b) => a - b);
+    for (let i = 0; i < Math.min(k, e.t.length); i++) e.t[i] = STAGE_TURNS;
+    c.stageT[st] = Math.min(...e.t);
   }
   function stageTick(c) {
     if (c.critT && --c.critT <= 0) { c.critT = 0; c.critBoost = 0; if (c.hp > 0 && (c.player || seen(c))) log(`${nm(c)}의 급소 집중이 풀렸다.`, Math.max(T.cursor, T.moveEnd)); }
-    if (!c.stageT) return;
-    for (const k of Object.keys(c.stageT)) {
-      if (!c.stages[k]) { delete c.stageT[k]; continue; }
-      if (--c.stageT[k] > 0) continue;
-      delete c.stageT[k]; c.stages[k] = 0;
-      if (c.hp > 0 && (c.player || seen(c))) log(`${nm(c)}의 ${jo(STAT_NAMES[k], '이')} 원래대로 돌아왔다.`, Math.max(T.cursor, T.moveEnd));
+    const keys = new Set([...Object.keys(c.stages || {}).filter(k => c.stages[k]), ...Object.keys(c.stageS || {})]);
+    for (const k of keys) {
+      stageTimer(c, k);   // 다른 곳에서 랭크를 직접 바꿨으면(회복·리셋 함정 등) 개수를 맞춘다
+      const e = c.stageS[k]; if (!e) continue;
+      e.t = e.t.map(x => x - 1);
+      const left = e.t.filter(x => x > 0);
+      if (left.length === e.t.length) { c.stageT[k] = Math.min(...e.t); continue; }
+      e.t = left; c.stages[k] = e.s * left.length;
+      stageTimer(c, k);
+      if (c.hp > 0 && (c.player || seen(c))) log(left.length ? `${nm(c)}의 ${jo(STAT_NAMES[k], '이')} 조금 원래대로 돌아왔다. (${e.s > 0 ? '+' : ''}${c.stages[k]})` : `${nm(c)}의 ${jo(STAT_NAMES[k], '이')} 원래대로 돌아왔다.`, Math.max(T.cursor, T.moveEnd));
     }
   }
   const AI_STAGE_LIMIT = 2;   // 적은 능력 변화를 ±2단계까지만 노린다
@@ -1403,6 +1426,7 @@ const Dungeon = (() => {
     return best ? { p: best, sees: true } : { p, sees: false };
   }
   const ALLY_SIGHT = 6, ALLY_SIGHT_FAR = 12;
+  const ALLY_DETOUR = 4;   // 동료가 상대에게 가는 길이 직선거리보다 이만큼 넘게 길면 돌아가지 않는다
   // 이번 턴 행동 순서: 동료가 먼저 (리더에게 가까운 동료부터, 줄의 앞사람이 먼저 움직이게), 그다음 적
   function turnOrder() {
     const lead = P();
@@ -1509,17 +1533,26 @@ const Dungeon = (() => {
       else useMove(e, -1, dir);
       return;
     }
+    // 동료: 상대 옆까지 갈 길이 다른 동료에게 막혔거나 한참 돌아가야 하면 (좁은 통로에 동료가 줄지어 있을 때) '막힘'
+    // 막혔으면 원거리·범위 기술을 아끼지 않고 쓰고, 쓸 게 없으면 멀리 돌아가지 않고 줄을 지킨다
+    let stuck = false;
+    if (e.ally && sees && dist > 1) {
+      const near = bfs(e.x, e.y, (x, y) => cheb({ x, y }, p) <= 1, { blockMons: true, self: e, max: 400 });
+      stuck = !near || near.len > dist + ALLY_DETOUR;
+    }
     if (sees && !e.moveOnly && dist <= PROJ_RANGE && (dx === 0 || dy === 0 || Math.abs(dx) === Math.abs(dy))) {
       const proj = usable.filter(o => o.m.r === 'p' && o.m.c !== 1);
       const pc = e.ally || run.hard ? best(proj) : pick(proj);
-      if (pc && Math.random() < (run.hard && !e.ally ? 0.8 : 0.45) * nerve && lineClear(e, dirIndex(dx, dy), dist)) { useMove(e, pc.i, dirIndex(dx, dy)); return; }
+      const rate = e.ally ? (stuck ? 1 : 0.6) : run.hard ? 0.8 : 0.45;
+      if (pc && Math.random() < rate * nerve && lineClear(e, dirIndex(dx, dy), dist)) { useMove(e, pc.i, dirIndex(dx, dy)); return; }
     }
     if (sees && !e.moveOnly && dist <= 3) {
       const area = usable.filter(o => o.m.r === 'r' && o.m.c !== 1);
       const ac = e.ally || run.hard ? best(area) : pick(area);
-      if (ac && Math.random() < 0.25 * nerve && los(e.x, e.y, p.x, p.y)) { useMove(e, ac.i, dirIndex(dx, dy) || 0); return; }
+      if (ac && Math.random() < (stuck ? 1 : 0.25) * nerve && los(e.x, e.y, p.x, p.y)) { useMove(e, ac.i, dirIndex(dx, dy) || 0); return; }
     }
     if (e.ally && tactic() === 'wait') return;   // 기다리는 동료는 쫓아가지 않는다
+    if (stuck) { followLeader(e); return; }   // 막힌 동료: 다른 길로 크게 돌지 않고 줄을 지킨다
     let goal = e.target;
     if (goal && goal.x === e.x && goal.y === e.y) { e.target = null; goal = null; }
     if (!goal) {
@@ -2768,13 +2801,13 @@ const Dungeon = (() => {
   function updateHud(t) {
     const p = P(), dg = D.dg;
     const pt = (run.party || []).map(a => `${a.sp}:${a.lv}:${a.hp}:${a.maxhp}:${a.fainted ? 1 : 0}:${a.status}`).join(',');
-    const hud = `${pt}|${p.held}|${weatherRaw()}|${dg.n}|${run.floor}|${p.lv}|${p.hp}|${p.maxhp}|${Math.ceil(p.belly)}|${Game.save.money}|${run.money}|${p.status}|${p.exp}|${JSON.stringify(p.stages)}|${JSON.stringify(p.stageT || {})}`;
+    const hud = `${pt}|${p.held}|${weatherRaw()}|${dg.n}|${run.floor}|${p.lv}|${p.hp}|${p.maxhp}|${Math.ceil(p.belly)}|${Game.save.money}|${run.money}|${p.status}|${p.exp}|${JSON.stringify(p.stages)}|${JSON.stringify(p.stageS || {})}`;
     if (hud !== hudCache) {
       hudCache = hud;
       const hpPct = p.hp / p.maxhp * 100;
       const need = expFor(p.lv + 1) - expFor(p.lv), have = p.exp - expFor(p.lv);
       // 랭크 변화: 넓은 화면은 이름 그대로, 휴대폰은 줄임말 (css .sl / .ss)
-      const stg = Object.entries(p.stages).filter(([, v]) => v).map(([k, v]) => `<span class="${v > 0 ? 'up' : 'down'}" title="${STAT_NAMES[k]} ${p.stageT?.[k] || 0}턴 남음"><i class="sl">${STAT_NAMES[k]}</i><i class="ss">${STAT_SHORT[k]}</i>${v > 0 ? '+' : ''}${v}</span>`).join(' ');
+      const stg = Object.entries(p.stages).filter(([, v]) => v).map(([k, v]) => `<span class="${v > 0 ? 'up' : 'down'}" title="${STAT_NAMES[k]} ${(p.stageS?.[k]?.t || [p.stageT?.[k] || 0]).slice().sort((a, b) => a - b).join(' · ')}턴 남음 (랭크마다 따로)"><i class="sl">${STAT_NAMES[k]}</i><i class="ss">${STAT_SHORT[k]}</i>${v > 0 ? '+' : ''}${v}</span>`).join(' ');
       document.getElementById('hud').innerHTML = `
         <span class="floor">${run.hard ? '☠ ' : ''}${esc(dg.n)} <b>${run.floor}F</b>${weatherRaw() ? ` <span class="wx" title="${esc(WEATHERS[weatherRaw()].d)}">${WEATHERS[weatherRaw()].icon} ${WEATHERS[weatherRaw()].n}</span>` : ''}${dg.mode === 'rogue' ? ' <i class="rogue">로그라이크</i>' : ''}</span>
         <span>Lv <b>${p.lv}</b></span>

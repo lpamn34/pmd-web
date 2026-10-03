@@ -157,7 +157,8 @@ function speedAccMul(att, def) {
 const hasFlag = (m, f) => !!(m.fg && m.fg.includes(f));
 const isContact = m => hasFlag(m, 1);
 const isSlicing = m => /베기|가르기|자르기|칼|커터|베어|참격/.test(m.n);
-function moveType(att, move) { const A = abilityOf(att); return A.soundType && hasFlag(move, 9) ? A.soundType : A.skin && move.t === 1 ? A.skin : move.t; }
+// 특성이 바꾸는 기술 타입: 노말스킨(모든 기술 → 노말), 촉촉보이스(소리 기술 → 물), 페어리스킨 등(노말 기술 → 그 타입). 타입 없는 기본 공격은 그대로
+function moveType(att, move) { const A = abilityOf(att); return A.normalize && move.t ? 1 : A.soundType && hasFlag(move, 9) ? A.soundType : A.skin && move.t === 1 ? A.skin : move.t; }
 function bestStatKey(c) { return ['atk', 'def', 'spa', 'spd'].reduce((b, k) => (c[k] > c[b] ? k : b), 'atk'); }
 
 // 특성에 의한 능력치 배율
@@ -203,7 +204,7 @@ function powerMul(att, def, move, mt, A) {
   if (A.slicing && isSlicing(move)) m *= A.slicing;
   if (A.sheer && (move.ail || move.fl || (move.sc && !move.ss))) m *= 1.3;
   if (A.reckless && move.dr < 0) m *= 1.2;
-  if (A.skin && move.t === 1) m *= 1.2;
+  if ((A.skin && move.t === 1) || (A.normalize && move.t)) m *= 1.2;
   if (A.rival && def.types.some(t => att.types.includes(t))) m *= 1.25;
   if (A.vsTypeMul) for (const t of def.types) if (A.vsTypeMul[t]) m *= A.vsTypeMul[t];
   if (att.flashFire && mt === 10) m *= 1.5;
@@ -272,8 +273,9 @@ function calcHit(att, def, move) {
   if (mt && (att.types.includes(mt) || A.protean)) dmg *= A.adapt ? 2 : 1.5;
   dmg *= eff;
   if (Ha.seBoost && eff > 1) dmg *= Ha.seBoost;
-  if (W === 'sun') dmg *= mt === 10 ? 1.5 : mt === 11 ? (move.id === 876 ? 1.5 : 0.5) : 1;   // 하이드로스팀은 쾌청에서 오히려 1.5배
-  if (W === 'rain') dmg *= mt === 11 ? 1.5 : mt === 10 ? 0.5 : 1;
+  const Wa = A.megaSol ? 'sun' : W;   // 메가솔라: 자기 기술은 늘 쾌청처럼
+  if (Wa === 'sun') dmg *= mt === 10 ? 1.5 : mt === 11 ? (move.id === 876 ? 1.5 : 0.5) : 1;   // 하이드로스팀은 쾌청에서 오히려 1.5배
+  if (Wa === 'rain') dmg *= mt === 11 ? 1.5 : mt === 10 ? 0.5 : 1;
   if (A.tinted && eff < 1) dmg *= 2;
   dmg *= (crit ? (A.sniper ? 2.25 : 1.5) : 1) * (0.85 + Math.random() * 0.15);
   dmg *= guardMul(def, Dd, move, mt, eff);
@@ -297,7 +299,7 @@ function moveScore(att, def, move) {
   if ((Dd.levitate && mt === 5 && move.id !== THOUSAND_ARROWS) || (Dd.absorb && Dd.absorb.t === mt) || (Dd.immuneFlag && hasFlag(move, Dd.immuneFlag))) return 0;
   if (Dd.wonderGuard && eff <= 1) eff = move.basic ? eff * WONDER_GUARD_BASIC : 0;
   if (!eff) return 0;
-  const W = weatherNow();
+  const W = Ab.megaSol ? 'sun' : weatherNow();
   const wx = W === 'sun' ? (mt === 10 ? 1.5 : mt === 11 ? (move.id === 876 ? 1.5 : 0.5) : 1) : W === 'rain' ? (mt === 11 ? 1.5 : mt === 10 ? 0.5 : 1) : 1;
   const tinted = Ab.tinted && eff < 1 ? 2 : 1;
   const wall = (phys ? def.reflectT : def.screenT) ? 0.5 : 1;
