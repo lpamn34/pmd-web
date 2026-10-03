@@ -1779,10 +1779,19 @@ const Game = (() => {
         <p>가방: ${save.bag.length}/${bagMax()}칸${save.bag.length ? '' : ' <span class="warn">(비어 있음!)</span>'}</p>
         ${ms.length ? `<p>이 던전의 임무: ${ms.map(m => m.floor + 'F').join(', ')}</p>` : ''}
         ${partyList().length ? `<p>🤝 동료: ${partyList().map(id => `${esc(spName(id))} Lv${save.roster[id].lv}`).join(', ')}</p>` : `<p class="dim">혼자 갑니다. 혼자 탐험 보정으로 적에게 받는 데미지가 ${SOLO_DMG_MUL}배예요. (캐릭터 탭에서 동료를 고를 수 있어요)</p>`}
-        <p class="dim">쓰러지면 가방 아이템의 절반(무작위)과 이번 탐험에서 주운 돈을 잃습니다. 레벨은 유지됩니다.</p>`, '출발한다', '그만둔다');
+        ${dg.megaMul ? megaFocusHtml() : ''}
+        <p class="dim">쓰러지면 가방 아이템의 절반(무작위)과 이번 탐험에서 주운 돈을 잃습니다. 레벨은 유지됩니다.</p>`, '출발한다', '그만둔다', [],
+        box => { const s = box.querySelector('[data-megafocus]'); if (s) s.onchange = () => { save.megaFocus = s.value || null; persist(); }; });
       if (!ok) return;
     }
     startRun(dg);
+  }
+
+  // 메가 진화의 탑: 노릴 메가스톤 (나오는 메가스톤의 MEGA_FOCUS_RATE만큼이 이 스톤)
+  function megaFocusHtml() {
+    const list = MEGA_STONES.map(id => [id, ITEMS[id].n]).sort((a, b) => a[1].localeCompare(b[1], 'ko'));
+    return `<p>🔮 노릴 메가스톤 <select data-megafocus="1"><option value="">고르지 않음</option>${list.map(([id, n]) => `<option value="${id}" ${save.megaFocus === id ? 'selected' : ''}>${esc(n)}</option>`).join('')}</select>
+      <br><span class="dim">고르면 이 탑에서 나오는 메가스톤의 ${Math.round(MEGA_FOCUS_RATE * 100)}%가 그 스톤이 돼요.</span></p>`;
   }
 
   function startRun(dg, hard, abilPicks = {}) {

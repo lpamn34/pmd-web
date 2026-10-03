@@ -31,6 +31,12 @@ function calcStats(sp, lv, iv) {
   };
 }
 
+// 종족값이 모두 B인 개체의 능력치 (화난 상점 켈리몬)
+function statsFromBase(B, lv, iv) {
+  const f = Math.floor((2 * B + iv) * lv / 100);
+  return { maxhp: f + lv + 10, atk: f + 5, def: f + 5, spa: f + 5, spd: f + 5, spe: f + 5 };
+}
+
 function isDamaging(mid) { const m = DATA.moves[mid]; return m && m.c !== 1; }
 
 function defaultMoves(sp, lv) {
@@ -85,7 +91,7 @@ function makeCreature(sp, lv, opts = {}) {
 
 function recalc(c) {
   const old = c.maxhp;
-  Object.assign(c, applyBoost(calcStats(looksOf(c), c.lv, c.iv), c.boost));   // 모습이 바뀌면 그 모습의 능력치
+  Object.assign(c, c.baseAll ? statsFromBase(c.baseAll, c.lv, c.iv) : applyBoost(calcStats(looksOf(c), c.lv, c.iv), c.boost));   // 모습이 바뀌면 그 모습의 능력치
   if (c.hpMul) c.maxhp = Math.floor(c.maxhp * c.hpMul);   // 보스·현상수배범의 HP 배율 (모습이 바뀌어도 유지)
   if (c.statMul) for (const k of ['atk', 'def', 'spa', 'spd']) c[k] = Math.floor(c[k] * c.statMul);
   c.hp = clamp(c.hp + (c.maxhp - old), 1, c.maxhp);

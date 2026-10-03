@@ -95,8 +95,8 @@ const UI = (() => {
   const closeAll = () => { while (stack.length) close(stack[stack.length - 1]); };
 
   // extra: 예/아니요 사이에 넣을 선택지 [{ label, value }] (고르면 그 value로 끝난다)
-  function confirm(title, html, yesLabel = '예', noLabel = '아니요', extra = []) {
-    return new Promise(res => open({ title, html, choices: [{ label: yesLabel, fn: () => res(true) }, ...extra.map(x => ({ label: x.label, fn: () => res(x.value) })), { label: noLabel, fn: () => res(false) }], cancel: () => res(false) }));
+  function confirm(title, html, yesLabel = '예', noLabel = '아니요', extra = [], onOpen) {
+    return new Promise(res => open({ title, html, onOpen, choices: [{ label: yesLabel, fn: () => res(true) }, ...extra.map(x => ({ label: x.label, fn: () => res(x.value) })), { label: noLabel, fn: () => res(false) }], cancel: () => res(false) }));
   }
   function alert(title, html, label = '확인') {
     return new Promise(res => open({ title, html, choices: [{ label, fn: () => res() }], cancel: () => res() }));

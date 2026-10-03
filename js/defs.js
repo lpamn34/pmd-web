@@ -3,7 +3,7 @@
 
 // 게임 버전: 업데이트할 때 올리고, index.html의 ?v= 숫자도 같이 올린다
 // (친구와 구조 코드·오늘의 도전을 주고받으려면 버전이 같아야 한다)
-const GAME_VERSION = '0.60';
+const GAME_VERSION = '0.61';
 // 버전 비교: '0.25' > '0.9' 처럼 숫자로 비교한다
 function cmpVer(a, b) {
   const x = String(a).split('.').map(Number), y = String(b).split('.').map(Number);
@@ -12,6 +12,10 @@ function cmpVer(a, b) {
 }
 const GAME_DATE = '2026-10-01';
 const VERSION_NOTES = [
+  ['0.61', ['새 기술: 포켓몬 챔피언스에서 배우는 기술을 이 게임에서도 배울 수 있어요 (예: 캐스퐁 → 설경). 기술머신이 있는 기술은 기술머신으로, 없는 기술은 교배기술머신으로 배워요. 원래 배우던 기술은 그대로예요',
+    '던전 상점: 켈리몬에게 말을 걸어 공격하거나, 진열된 물건을 훔칠 수 있어요. 대신 켈리몬이 화를 내요 (Lv100, 아주 강하고 한 턴에 두 칸씩 쫓아옴). 다음 층으로 갈 때까지 새로 나오는 적도 전부 화난 켈리몬이에요',
+    '메가 진화의 탑: 출발할 때 원하는 메가스톤을 고를 수 있어요. 메가스톤이 나오면 4번에 1번꼴로 고른 스톤이 나와요',
+    '휴대폰 화면: 던전의 상태창과 메시지 창이 화면을 덜 가려요. 경험치·돈·지닌 물건은 상태창을 누르면 보여요']],
   ['0.60', ['의뢰 보상 아이템이 지역에 맞게: 초반 던전은 기본 물건, 후반일수록 좋은 물건·비싼 기술머신, 최후반·깊은 층 의뢰는 10% 확률로 영양제·구미·이상한사탕 같은 아주 좋은 물건', '메가진화 52종 추가 (그림이 아직 없어서 원래 포켓몬 그림을 빌려 씀): 메가이상해꽃·메가거북왕·메가리자몽Y·메가갸라도스·메가보만다·메가메타그로스·메가한카리아스 등과 레전드 Z-A의 새 메가진화. 메가스톤도 추가', '독독구슬·화염구슬: 층에 들어서고 5턴 뒤 한 번 → 5턴마다 (상태이상이 없을 때), 동료가 지녀도 발동', '의뢰 게시판에 📍 자주 뜨는 지역: 고른 던전의 의뢰가 새 의뢰의 절반쯤 나옴', '☠ 하드모드: 일반·테마 던전을 모두 클리어하면 열림. 탐험대와 적 모두 던전 최고 레벨로 고정·경험치 없음, 레벨이 진화 조건보다 낮으면 진화 전 모습으로 입장',
     '하드모드의 적: 상성·면역을 따져 가장 효과적인 기술을 쓰고, HP가 낮은 탐험대를 노리고, 레벨업 기술 중심으로 좋은 기술을 골라 들고 나옴 (기술머신은 견제기만). 보스는 +3레벨',
     '던전 정보 등 긴 창에서 아래 닫기 버튼이 잘리던 문제', '하드모드(테스트 중)는 던전 탭의 ☠ 하드 탭에서 (작은 숲 ~ 유사 사막 7곳). 적이 더 빨리 다시 나타나고 몬스터하우스가 2층부터 더 자주(40%), 한 층에 여러 개(최대 3개) 생길 수 있음. 진화 전 모습으로 들어가는 포켓몬은 출발 창에서 특성을 고름 (기본은 진화할 때처럼 같은 칸의 특성). 가방은 기본 아이템으로 시작 (지닌 물건은 그대로, 던전 레벨이 높을수록 좋은 기본 아이템), 나올 때는 주운 것만 가져옴',
@@ -506,6 +510,8 @@ function rollWeather(dg) {
 const FEATURE_LV = { trap: 14, shop: 14, house: 20 };
 const SHOP_CHANCE = 0.1, HOUSE_CHANCE = 0.25;
 const KECLEON = 352;
+// 상점 켈리몬은 Lv KEEPER_LV. 도둑질하거나 공격하면 화를 낸다: 종족값이 모두 THIEF_BASE, 이동은 한 턴에 두 칸 (공격은 한 번). 다음 층까지 새로 나오는 적은 모두 화난 켈리몬
+const KEEPER_LV = 100, THIEF_BASE = 255;
 const TRAPS = {
   psn:    { n: '독가시 함정', icon: '☠', d: '독 상태가 된다.' },
   slp:    { n: '수면 함정',   icon: '💤', d: '잠들어 버린다.' },
@@ -574,7 +580,8 @@ const keyLabel = code => KEY_NAMES[code] || code.replace(/^Key/, '').replace(/^D
 function eggMovesOf(sp) {
   const base = DATA.species[sp]?.f ? DATA.species[sp].f[0] : sp;
   const ids = [base, ...preEvos(base)];
-  return [...new Set(ids.flatMap(x => (typeof EGG_MOVES !== 'undefined' && EGG_MOVES[x]) || []))].filter(m => DATA.moves[m]);
+  const champ = typeof CHAMP_EGG !== 'undefined' ? [...(CHAMP_EGG[sp] || []), ...(CHAMP_EGG[base] || [])] : [];   // 포켓몬 챔피언스 기준으로 더한 기술 (js/champmoves.js)
+  return [...new Set([...ids.flatMap(x => (typeof EGG_MOVES !== 'undefined' && EGG_MOVES[x]) || []), ...champ])].filter(m => DATA.moves[m]);
 }
 // 진화 계열 전체 (가장 처음 모습부터 모든 진화형까지, 갈래 진화 포함)
 const familyCache = {};
@@ -617,6 +624,7 @@ const sellOf = id => { const it = ITEMS[id]; return it.sellAt ?? (it.price ? it.
 const sellValue = b => Math.floor(sellOf(b.id) * (ITEMS[b.id].stack ? b.n / 5 : 1)) || 1;
 
 const STAT_NAMES = { 2: '공격', 3: '방어', 4: '특수공격', 5: '특수방어', 6: '스피드', 7: '명중률', 8: '회피율' };
+const STAT_SHORT = { 2: '공', 3: '방', 4: '특공', 5: '특방', 6: '스', 7: '명', 8: '회' };   // 휴대폰 상태창용
 const STATUS_NAMES = { psn: '독', brn: '화상', par: '마비', slp: '잠듦', frz: '얼음', cnf: '혼란' };
 const STATUS_COLORS = { psn: '#c77dff', brn: '#ff7a3c', par: '#ffd84a', slp: '#9fb4ff', frz: '#7fe3ff', cnf: '#8ff0b0' };
 const AILMENT_MAP = { 1: 'par', 2: 'slp', 3: 'frz', 4: 'brn', 5: 'psn', 6: 'cnf' };
@@ -824,6 +832,7 @@ function rewardPool(lvl, dg) {
 }
 const tmBits = {};
 function canLearnTM(sp, mid) {
+  if (typeof CHAMP_TM !== 'undefined' && CHAMP_TM[sp] && CHAMP_TM[sp].includes(mid)) return true;   // 포켓몬 챔피언스 기준으로 더한 기술 (js/champmoves.js)
   if (typeof EXTRA_TM !== 'undefined' && EXTRA_TM[mid] && !DATA.tms.includes(mid)) return EXTRA_TM[mid].includes(+sp);
   const i = DATA.tms.indexOf(mid);
   if (i < 0) return false;

@@ -177,6 +177,7 @@ const Dungeon = (() => {
     if (msg && seen(c)) log(`${jo(nm(c), '이')} 눈을 떴다!`, at);
   }
   function spawnEnemy(pos, sp, lv) {
+    if (D.thief) return spawnAngryKecleon(pos);
     sp = sp || pick(D.pool);
     const c = makeCreature(sp, run.hard ? run.hardLv : clamp((lv || D.lvl) + rint(-1, 1), 1, MAX_LEVEL));   // 하드모드: 레벨 고정
     c.enemy = true; c.x = pos.x; c.y = pos.y; c.dir = rand(8);
@@ -1396,6 +1397,7 @@ const Dungeon = (() => {
     if (e.napping && [P(), ...allies()].some(m => cheb(m, e) <= 1) && Math.random() < NAP_WAKE) wakeNap(e, Math.max(T.cursor, T.moveEnd), true);
     if (e.napping) return;
     if (!canAct(e)) return;
+    if (e.moveOnly && (e.charging || e.rampage)) return;
     const tg = aiTarget(e);
     if (!tg) { if (e.charging || e.rampage) { if (e.rampage) rampageStep(e); else useMove(e, e.charging.slot, e.dir, { release: true, free: true }); } else followLeader(e); return; }
     const p = tg.p;
@@ -1409,6 +1411,7 @@ const Dungeon = (() => {
     const nerve = abilityOf(p).unnerve ? 0.5 : 1;
     const sees = tg.sees && p.hp > 0;
     if (sees) e.target = { x: p.x, y: p.y };
+    if (e.thief) e.target = { x: P().x, y: P().y };   // 화난 켈리몬: 어디 있든 쫓아온다
     const dx = p.x - e.x, dy = p.y - e.y, dist = Math.max(Math.abs(dx), Math.abs(dy));
     const usable = e.moves.map((m, i) => ({ m: DATA.moves[m.id], i, pp: m.pp, id: m.id })).filter(o => o.pp > 0 && !selfKOBlocked(e, o.id) && !(e.tauntT && o.m.c === 1));
     // 능력 변화 기술은 이미 충분히 바뀌었으면 쓰지 않는다 (작아지기·칼춤을 끝없이 쌓거나 상대 능력을 계속 깎지 않게)
@@ -1425,7 +1428,8 @@ const Dungeon = (() => {
       const self = m.r === 's' || m.ss;
       return m.sc.some(([st, ch]) => self ? ch > 0 && (e.stages[st] || 0) < AI_STAGE_LIMIT : ch < 0 && (p.stages[st] || 0) > -AI_STAGE_LIMIT);
     };
-    if (!e.ally && e.item && enemyUseItem(e, p, sees, dist, dx, dy)) return;
+    if (e.moveOnly && sees && dist <= 1) return;   // 화난 켈리몬의 두 번째 이동: 붙었으면 멈춘다 (공격은 한 턴에 한 번)
+    if (!e.ally && e.item && !e.moveOnly && enemyUseItem(e, p, sees, dist, dx, dy)) return;
     // 동료는 상대에게 가장 효과적인 공격을 고른다 (면역·흡수되는 기술은 쓰지 않는다). 적은 지금처럼 무작위
     const score = o => moveScore(e, p, o.m);
     const best = list => list.map(o => ({ o, s: score(o) })).filter(x => x.s > 0).sort((a, b) => b.s - a.s)[0]?.o;
@@ -1444,12 +1448,12 @@ const Dungeon = (() => {
       else useMove(e, -1, dir);
       return;
     }
-    if (sees && dist <= PROJ_RANGE && (dx === 0 || dy === 0 || Math.abs(dx) === Math.abs(dy))) {
+    if (sees && !e.moveOnly && dist <= PROJ_RANGE && (dx === 0 || dy === 0 || Math.abs(dx) === Math.abs(dy))) {
       const proj = usable.filter(o => o.m.r === 'p' && o.m.c !== 1);
       const pc = e.ally || run.hard ? best(proj) : pick(proj);
       if (pc && Math.random() < (run.hard && !e.ally ? 0.8 : 0.45) * nerve && lineClear(e, dirIndex(dx, dy), dist)) { useMove(e, pc.i, dirIndex(dx, dy)); return; }
     }
-    if (sees && dist <= 3) {
+    if (sees && !e.moveOnly && dist <= 3) {
       const area = usable.filter(o => o.m.r === 'r' && o.m.c !== 1);
       const ac = e.ally || run.hard ? best(area) : pick(area);
       if (ac && Math.random() < 0.25 * nerve && los(e.x, e.y, p.x, p.y)) { useMove(e, ac.i, dirIndex(dx, dy) || 0); return; }
@@ -1699,10 +1703,45 @@ const Dungeon = (() => {
       const id = pick(stock);
       D.items.push({ x: i % D.w, y: (i / D.w) | 0, id, n: ITEMS[id].stack ? 5 : 1, price: shopPrice(id) });
     }
-    const k = makeCreature(KECLEON, Math.max(D.lvl + 15, 30));
+    const k = makeCreature(KECLEON, keeperLv());
     k.npc = true; k.shopkeeper = true; k.x = keeperPos.x; k.y = keeperPos.y;
     Sprites.load(KECLEON);
     D.mons.push(k);
+  }
+
+  const keeperLv = () => Math.min(KEEPER_LV, MAX_LEVEL);
+  // ── 도둑질: 상점 켈리몬이 화를 낸다 ──
+  function makeAngry(k) {
+    Object.assign(k, { npc: false, shopkeeper: false, letPass: false, enemy: true, thief: true, baseAll: THIEF_BASE, napping: false });
+    Object.assign(k, statsFromBase(THIEF_BASE, k.lv, k.iv)); k.hp = k.maxhp;
+    k.target = { x: P().x, y: P().y };
+  }
+  function spawnAngryKecleon(pos) {
+    const c = makeCreature(KECLEON, keeperLv());
+    c.x = pos.x; c.y = pos.y; c.dir = rand(8);
+    makeAngry(c);
+    D.mons.push(c);
+    return c;
+  }
+  function becomeThief(how) {
+    if (D.thief) return;
+    D.thief = true;
+    stopAuto();
+    const k = D.mons.find(m => m.shopkeeper);
+    if (k) makeAngry(k);
+    // 남은 진열품은 이제 공짜로 주울 수 있다
+    for (const it of D.items) if (it.price) delete it.price;
+    setFace('Surprised', 2500);
+    log(how === 'attack' ? '켈리몬에게 덤벼들었다!' : '물건을 훔쳤다!', now());
+    log('켈리몬: "도둑이야!! 놓치지 않겠다!"', now() + 300);
+    log('다음 층으로 갈 때까지 켈리몬들이 쫓아온다!', now() + 600);
+    return k;
+  }
+  // 상점 켈리몬을 공격한다: 그 턴에 켈리몬은 움직이지 못한다
+  function attackKeeper() {
+    const k = becomeThief('attack');
+    if (k) k.skipTurn = (k.skipTurn || 0) + 1;
+    act({ t: 'attack' });
   }
 
   function shopBuyPrompt(it) {
@@ -1723,6 +1762,12 @@ const Dungeon = (() => {
           addToBag(it.id, it.n);
           log(`${jo(info.n, '을')} ₽${it.price}에 샀다. "감사합니다!"`, now());
         } },
+        { label: '훔친다', sub: '켈리몬이 화를 낸다!', disabled: full, fn: () => {
+          D.items = D.items.filter(i => i !== it);
+          addToBag(it.id, it.n);
+          becomeThief('steal');
+          log(`${jo(info.n, '을')} 손에 넣었다.`, now());
+        } },
         { label: '그만둔다', fn: () => {} },
       ],
       cancel: () => {},
@@ -1734,7 +1779,14 @@ const Dungeon = (() => {
     UI.open({
       title: '켈리몬 상점',
       html: `<p>${portraitImg(KECLEON, 'portrait sm')} 어서 오세요! 켈리몬 상점입니다.</p><p class="dim">진열된 물건 위에 올라서면 살 수 있어요. 물건도 사들이고 있답니다.</p>`,
-      choices: [{ label: '물건을 판다', fn: sellMenu }, { label: '자리를 바꿔 지나간다', fn: swapKeeper }, { label: '그만둔다', fn: () => {} }],
+      choices: [{ label: '물건을 판다', fn: sellMenu }, { label: '자리를 바꿔 지나간다', fn: swapKeeper },
+        { label: '공격한다', sub: '켈리몬이 화를 낸다! (이번 턴에는 반격하지 못함)', fn: () => setTimeout(async () => {
+          const ok = await UI.confirm('켈리몬 공격', `<p>${portraitImg(KECLEON, 'portrait sm')} 정말 켈리몬을 공격할까요?</p>
+            <p class="warn">화가 난 켈리몬은 Lv${keeperLv()}에 종족값이 모두 ${THIEF_BASE}라 매우 강하고, 한 턴에 두 칸씩 쫓아와요. 다음 층으로 갈 때까지 새로 나오는 적도 모두 화난 켈리몬이 돼요.</p>
+            <p class="dim">남은 진열품은 공짜로 주울 수 있어요. 쓰러뜨려 영입하면 보통 켈리몬이 동료가 돼요.</p>`, '공격한다', '그만둔다');
+          if (ok) attackKeeper();
+        }, 0) },
+        { label: '그만둔다', fn: () => {} }],
     });
   }
   // 켈리몬과 자리를 바꾼다 (좁은 곳에서 길을 막고 있을 때)
@@ -1862,7 +1914,11 @@ const Dungeon = (() => {
     else for (const e of turnOrder()) {
       if (D.dead) break;
       if (e.dead) continue;
-      enemyAct(e); statusTick(e);
+      const ex = e.x, ey = e.y;
+      enemyAct(e);
+      // 화난 켈리몬: 이동만 한 번 더 (한 턴에 두 칸)
+      if (e.thief && !D.dead && e.hp > 0 && (e.x !== ex || e.y !== ey)) { e.moveOnly = true; enemyAct(e); e.moveOnly = false; }
+      statusTick(e);
       const es = abVal(e, 'speedy');
       if (es && !e.npc && !D.dead && e.hp > 0 && Math.random() < es) enemyAct(e);
     }
@@ -2654,16 +2710,17 @@ const Dungeon = (() => {
       hudCache = hud;
       const hpPct = p.hp / p.maxhp * 100;
       const need = expFor(p.lv + 1) - expFor(p.lv), have = p.exp - expFor(p.lv);
-      const stg = Object.entries(p.stages).filter(([, v]) => v).map(([k, v]) => `<span class="${v > 0 ? 'up' : 'down'}" title="${p.stageT?.[k] || 0}턴 남음">${STAT_NAMES[k]}${v > 0 ? '+' : ''}${v}</span>`).join(' ');
+      // 랭크 변화: 넓은 화면은 이름 그대로, 휴대폰은 줄임말 (css .sl / .ss)
+      const stg = Object.entries(p.stages).filter(([, v]) => v).map(([k, v]) => `<span class="${v > 0 ? 'up' : 'down'}" title="${STAT_NAMES[k]} ${p.stageT?.[k] || 0}턴 남음"><i class="sl">${STAT_NAMES[k]}</i><i class="ss">${STAT_SHORT[k]}</i>${v > 0 ? '+' : ''}${v}</span>`).join(' ');
       document.getElementById('hud').innerHTML = `
         <span class="floor">${run.hard ? '☠ ' : ''}${esc(dg.n)} <b>${run.floor}F</b>${weatherNow() ? ` <span class="wx" title="${esc(WEATHERS[weatherNow()].d)}">${WEATHERS[weatherNow()].icon} ${WEATHERS[weatherNow()].n}</span>` : ''}${dg.mode === 'rogue' ? ' <i class="rogue">로그라이크</i>' : ''}</span>
         <span>Lv <b>${p.lv}</b></span>
         <span class="hpwrap">HP <b>${p.hp}</b>/${p.maxhp}<span class="bar"><i style="width:${hpPct}%;background:${hpPct > 50 ? '#4de36b' : hpPct > 20 ? '#f5d142' : '#f55'}"></i></span></span>
         <span>배 <b class="${p.belly <= 20 ? 'warn' : ''}">${Math.ceil(p.belly)}</b>/100</span>
         <span class="exp">EXP<span class="bar small"><i style="width:${p.lv >= MAX_LEVEL ? 100 : clamp(have / need * 100, 0, 100)}%;background:#6cf"></i></span></span>
-        <span title="쓰러지면 이번 탐험에서 주운 돈(괄호 안)을 잃습니다">₽ <b>${Game.save.money}</b>${run.money ? ` <span class="run-money">(이번 탐험 +${run.money})</span>` : ''}</span>
+        <span class="money" title="쓰러지면 이번 탐험에서 주운 돈(괄호 안)을 잃습니다">₽ <b>${Game.save.money}</b>${run.money ? ` <span class="run-money">(이번 탐험 +${run.money})</span>` : ''}</span>
         ${p.held ? `<span class="held" title="${esc(ITEMS[p.held].d)}">${ITEMS[p.held].icon} ${esc(ITEMS[p.held].n)}</span>` : ''}
-        ${p.status ? `<span class="st">${STATUS_NAMES[p.status]}</span>` : ''} ${stg}
+        ${p.status || stg ? `<span class="stgs">${p.status ? `<span class="st">${STATUS_NAMES[p.status]}</span> ` : ''}${stg}</span>` : ''}
         ${(run.party || []).length ? `<span class="party">${run.party.map(a => { const pc = a.fainted ? 0 : a.hp / a.maxhp * 100; return `<span class="pm${a.fainted ? ' out' : ''}" title="${esc(spName(a.sp))} Lv${a.lv} HP ${a.fainted ? 0 : a.hp}/${a.maxhp}${a.status ? ' · ' + STATUS_NAMES[a.status] : ''}">${esc(spName(a.sp))} <span class="bar small"><i style="width:${pc}%;background:${pc > 50 ? '#4de36b' : pc > 20 ? '#f5d142' : '#f55'}"></i></span></span>`; }).join('')}</span>` : ''}`;
     }
     const mv = p.moves.map(m => m.id + ':' + m.pp + ':' + m.max).join(',');
@@ -2883,7 +2940,7 @@ const Dungeon = (() => {
       title: '📊 내 상태', wide: true,
       html: `<div class="row">${portraitImg(looksOf(p), 'portrait', 'Normal', p.shiny)}<div class="grow"><b>${esc(spName(looksOf(p)))}</b> Lv${p.lv} ${typeBadges(p.types)}
           <div>HP ${p.hp}/${p.maxhp} · 배 ${Math.floor(p.belly)}/100${p.status ? ` · <span class="warn">${STATUS_NAMES[p.status]}</span>` : ''}</div>
-          <div class="dim">EXP ${p.lv >= MAX_LEVEL ? '최대' : `${have}/${need}`} · 특성 ${esc(abilityName(p.ability))} · 지닌 물건 ${p.held ? `${ITEMS[p.held].icon}${esc(ITEMS[p.held].n)}` : '없음'}</div></div></div>
+          <div class="dim">EXP ${p.lv >= MAX_LEVEL ? '최대' : `${have}/${need}`} · ₽ ${Game.save.money}${run.money ? ` (이번 탐험 +${run.money})` : ''} · 특성 ${esc(abilityName(p.ability))} · 지닌 물건 ${p.held ? `${ITEMS[p.held].icon}${esc(ITEMS[p.held].n)}` : '없음'}</div></div></div>
         <table class="md-tbl">${row('공격', p.atk, p.stages[2] ? `(${p.stages[2] > 0 ? '+' : ''}${p.stages[2]}단계)` : '')}${row('방어', p.def, p.stages[3] ? `(${p.stages[3] > 0 ? '+' : ''}${p.stages[3]}단계)` : '')}
           ${row('특수공격', p.spa, p.stages[4] ? `(${p.stages[4] > 0 ? '+' : ''}${p.stages[4]}단계)` : '')}${row('특수방어', p.spd, p.stages[5] ? `(${p.stages[5] > 0 ? '+' : ''}${p.stages[5]}단계)` : '')}
           ${row('스피드', p.spe, p.stages[6] ? `(${p.stages[6] > 0 ? '+' : ''}${p.stages[6]}단계)` : '')}</table>

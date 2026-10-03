@@ -33,9 +33,12 @@ const MEGA_STONE_PRICE = 30000;
 const MEGA_RATE = { boss: 0.01, shiny: 0.01, rescue: 0.001, floor: 0.001 };   // v0.52: 2배
 const MEGA_MIN_LV = 35;
 const megaPool = dg => MEGA_STONES.filter(id => typeFits(dg, id));
+// 메가 진화의 탑에서는 출발할 때 고른 메가스톤(save.megaFocus)이 MEGA_FOCUS_RATE 확률로 나온다
+const MEGA_FOCUS_RATE = 0.25;
 function rollMega(kind, lvl, dg) {
   if (lvl < MEGA_MIN_LV || Math.random() >= MEGA_RATE[kind] * ((dg && dg.megaMul) || 1)) return null;
-  const pool = megaPool(dg);
+  const pool = megaPool(dg), focus = typeof Game !== 'undefined' && Game.save && Game.save.megaFocus;
+  if (dg && dg.megaMul && focus && pool.includes(focus) && Math.random() < MEGA_FOCUS_RATE) return focus;
   return pool.length ? pick(pool) : null;
 }
 const MEGA_NO_STONE = { 384: 620 };   // 레쿠쟈: 메가스톤 대신 화룡점정을 알고 있으면
