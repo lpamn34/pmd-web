@@ -166,6 +166,8 @@ const Game = (() => {
   //  마을: 바뀐 게 있으면 30분에 한 번까지 / 던전 안: 올리지 않는다 (층마다 바뀌어서)
   //  던전을 마치고 마을에 돌아올 때, 창을 닫거나 다른 탭으로 갈 때는 바로 올린다 (던전 도중이어도)
   //  서버 규칙은 20초에 한 번까지만 받아 준다. 탭을 자주 오가도 FLUSH_GAP 안에는 다시 올리지 않는다
+  // 클라우드 세이브 최대 크기 (보안 규칙과 같게. 문서 한도 1MB 안, v0.64에 40만 → 90만 자)
+  const CLOUD_SAVE_MAX = 900000;
   const UPLOAD_GAP = 30 * 60 * 1000, FLUSH_GAP = 2 * 60 * 1000;   // 무료 한도(쓰기)를 아끼려고 10분 → 20분(v0.47) → 30분(v0.51), 창을 숨길 때 30초 → 2분
   let bound = false, upTimer = null, lastUp = 0, upPending = false, syncing = null, cloudErr = null, onlineBoot = null;
   const inDungeon = () => typeof Dungeon !== 'undefined' && !!Dungeon.run;
@@ -180,11 +182,13 @@ const Game = (() => {
     const m = syncMeta();
     if (m && m.uid === Online.uid() && m.at === save.savedAt) { upPending = false; return true; }   // 바뀐 것 없음
     lastUp = Date.now();
+    const raw = JSON.stringify(save);
+    if (raw.length > CLOUD_SAVE_MAX) { cloudErr = '세이브가 너무 커서 클라우드에 올릴 수 없어요. 이 브라우저에는 그대로 저장됩니다.'; upPending = false; return false; }
     // 올리는 동안 세이브가 또 바뀔 수 있다: 올린 그 시점의 값으로 기록해야 바뀐 부분이 다음에 다시 올라간다
     // (예전에는 올린 뒤의 savedAt을 적어서, 그 사이 바뀐 내용이 클라우드에 안 올라가고 다음 접속 때 옛 클라우드 세이브로 덮였다)
     const at = save.savedAt || 0;
     try {
-      await Online.pushCloud(JSON.stringify(save), at); setSyncMeta({ uid: Online.uid(), at }); cloudErr = null;
+      await Online.pushCloud(raw, at); setSyncMeta({ uid: Online.uid(), at }); cloudErr = null;
       upPending = (save.savedAt || 0) !== at; if (upPending) scheduleUpload();
       return true;
     }
@@ -210,6 +214,7 @@ const Game = (() => {
       try { await Online.touchPresence(); } catch (e) { console.warn(e); }   // 방금 남겼으면 서버가 거절한다 (괜찮음)
     }
     renewSOSHolds();
+    Online.flushDiag().catch(() => {});
     if (inTown() && Date.now() - countAt >= PRESENCE_MS()) {
       countAt = Date.now();
       try { onlineN = await Online.onlineCount(); } catch (e) { console.warn(e); }
@@ -469,6 +474,7 @@ const Game = (() => {
   // 구조 게시판 확인: 내 요청이 구조됐는지, 내가 구조한 친구가 감사 편지를 보냈는지 (자주 읽지 않게 1분 30초 간격)
   let lastCheck = 0, checking = false;
   let sosRelinked = false;
+  const claimFailed = new Set();   // 구조 완료를 서버가 거절한 요청 (이번 접속 동안은 다시 보내지 않는다)
   async function checkOnline(force) {
     if (!save || !bound || !Online.loggedIn() || checking || (!force && Date.now() - lastCheck < 90 * 1000)) return;
     checking = true; lastCheck = Date.now();
@@ -508,7 +514,15 @@ const Game = (() => {
         if (!r.online || r.thanked) continue;
         const doc = r.docId || id;
         if (!r.claimed) {
-          const ok = await Online.claimRescue(doc, r.me, !!save.settings.noGift);
+          if (claimFailed.has(doc)) continue;   // 이번 접속에서 서버가 거절함: 새로고침하거나 닉네임을 바꾼 뒤 다시
+          let ok;
+          try { ok = await Online.claimRescue(doc, r.me, !!save.settings.noGift); }
+          catch (e) {
+            if (!/permission|name-taken/.test((e && e.code) || '')) throw e;
+            claimFailed.add(doc);
+            UI.alert('구조 완료를 전하지 못했어요', `<p>${esc(e.msg || '서버가 구조 완료를 받아 주지 않았어요.')}</p><p class="dim">닉네임 문제라면 계정 창에서 닉네임을 바꾼 뒤 새로고침하면 다시 전해요.</p>`);
+            continue;
+          }
           if (ok) {
             // 구조 보답: 요청자가 게임을 그만둬도 받을 수 있게 바로 준다 (감사 편지는 따로)
             r.claimed = true;
@@ -1349,7 +1363,7 @@ const Game = (() => {
       <p>버그 제보 · 문의 · 삭제 요청: <a href="https://github.com/pmd-fan-web/pmd-fan-web.github.io/issues" target="_blank" rel="noopener">GitHub Issues</a></p>
       <h3>개인정보</h3>
       <p class="dim">로그인하지 않으면 모든 기록은 이 브라우저에만 저장되고, 서버로 보내지 않습니다.
-        로그인하면 <b>아이디, 닉네임, 세이브, 마지막 접속 시각</b>과 구조 게시판에 올린 요청만 서버(Google Firebase)에 저장합니다. 이메일·전화번호 같은 개인정보는 받지 않고, 광고나 방문 기록 분석도 하지 않습니다.
+        로그인하면 <b>아이디, 닉네임, 세이브, 마지막 접속 시각</b>과 구조 게시판에 올린 요청, 오류 기록(어떤 기능이 몇 번 실패했는지)만 서버(Google Firebase)에 저장합니다. 이메일·전화번호 같은 개인정보는 받지 않고, 광고나 방문 기록 분석도 하지 않습니다.
         계정 창의 <b>계정 삭제</b>로 언제든 서버의 기록을 모두 지울 수 있습니다. (스타팅 순위에 더해진 포켓몬 번호 하나는 누구 것인지 알 수 없는 형태로 순위에 남습니다.)</p>
       <p class="dim">비상업적 팬 게임입니다. Pokémon © Nintendo / Creatures Inc. / GAME FREAK inc. Pokémon Mystery Dungeon © Spike Chunsoft.</p>`;
   }

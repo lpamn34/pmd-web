@@ -29,11 +29,11 @@ service cloud.firestore {
       allow create: if signedIn() && request.auth.uid == uid
         && request.resource.data.keys().hasOnly(['name', 'id', 'created', 'save', 'savedAt', 'ver', 'upAt'])
         && (!('name' in request.resource.data) || ownsName(request.resource.data.name))
-        && (!('save' in request.resource.data) || (request.resource.data.save is string && request.resource.data.save.size() < 400000));
+        && (!('save' in request.resource.data) || (request.resource.data.save is string && request.resource.data.save.size() < 900000));
       allow update: if signedIn() && request.auth.uid == uid
         && request.resource.data.keys().hasOnly(['name', 'id', 'created', 'save', 'savedAt', 'ver', 'upAt'])
         && (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['name']) || ownsName(request.resource.data.name))
-        && (!('save' in request.resource.data) || (request.resource.data.save is string && request.resource.data.save.size() < 400000))
+        && (!('save' in request.resource.data) || (request.resource.data.save is string && request.resource.data.save.size() < 900000))
         && saveThrottled();
     }
 
@@ -43,6 +43,18 @@ service cloud.firestore {
       allow create, update: if signedIn() && request.auth.uid == uid
         && request.resource.data.keys().hasOnly(['at']) && request.resource.data.at == request.time
         && (resource == null || resource.data.at < request.time - duration.value(60, 's'));
+      allow delete: if signedIn() && request.auth.uid == uid;   // 계정 삭제
+    }
+
+    // 진단 기록: 어떤 기능이 몇 번 거절됐는지만 (본인만 쓰고, 읽기는 콘솔에서만). 30분에 한 번까지
+    match /diag/{uid} {
+      allow create, update: if signedIn() && request.auth.uid == uid
+        && request.resource.data.keys().hasOnly(['day', 'ver', 'c', 'at'])
+        && request.resource.data.at == request.time
+        && request.resource.data.day is string && request.resource.data.day.size() <= 10
+        && request.resource.data.ver is string && request.resource.data.ver.size() <= 8
+        && request.resource.data.c is map && request.resource.data.c.size() <= 30
+        && (resource == null || resource.data.at < request.time - duration.value(30, 'm'));
       allow delete: if signedIn() && request.auth.uid == uid;   // 계정 삭제
     }
 

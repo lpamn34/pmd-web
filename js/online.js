@@ -70,6 +70,45 @@ const Online = (() => {
     }
   }
   const name = () => (profile && profile.name) || (user ? user.email.replace(MAIL, '') : '');
+  // 구조 게시판에 쓰는 닉네임은 names/에 내 것으로 있어야 서버가 받아 준다 (보안 규칙 ownsName).
+  // 닉네임 없이 가입이 끝난 계정(아이디가 닉네임)·옛 계정: 쓰기 전에 한 번 차지해 둔다. 남이 쓰고 있으면 바꾸라고 안내
+  async function ensureName() {
+    if (profile && profile.nameOk) return;
+    const n = name();
+    try { await claimName(n); profile = { ...(profile || {}), nameOk: true }; setNameOk(n); }
+    catch (e) { if (e.taken) { profile = { ...(profile || {}), nameTaken: true }; throw { code: 'name-taken', msg: '닉네임을 다른 사람이 쓰고 있어요. 계정 → 닉네임 바꾸기에서 새 닉네임을 정해 주세요.' }; } throw e; }
+  }
+
+  // ── 진단: 서버가 거절한 요청을 동작별로 세어 두었다가 DIAG_GAP마다 diag/{uid}에 남긴다 (원인 찾기용, 콘솔에서만 본다) ──
+  // 어떤 기능이 몇 번 실패했는지만 남는다 (세이브 내용·닉네임 등은 없음). 실패가 있던 사람만 2시간에 한 번 + 끝날 때 한 번 (최대 4번)
+  // 6시간만 모은다 (DIAG_UNTIL까지 세고, 그 뒤 1시간 안에 마지막으로 올림). 그 뒤로는 세지도 올리지도 않는다
+  const DIAG_UNTIL = Date.parse('2026-10-03T23:00:00+09:00');
+  const DIAG_KEY = 'pmdweb_diag', DIAG_GAP = 2 * 3600 * 1000, DIAG_CODES = /permission-denied|failed-precondition|invalid-argument|resource-exhausted|name-taken/;
+  const today = () => new Date().toLocaleDateString('sv');
+  function diagRead() {
+    try { const d = JSON.parse(localStorage.getItem(DIAG_KEY)); if (d && d.day === today() && d.c) return d; } catch (e) { /* 무시 */ }
+    return { day: today(), c: {}, at: 0 };
+  }
+  function noteFail(op, e) {
+    const code = String((e && e.code) || '').replace(/^firestore\//, '');
+    if (!DIAG_CODES.test(code) || Date.now() > DIAG_UNTIL) return;
+    const d = diagRead(), k = op + ':' + code;
+    if (Object.keys(d.c).length >= 30 && !d.c[k]) return;
+    d.c[k] = (d.c[k] || 0) + 1;
+    try { localStorage.setItem(DIAG_KEY, JSON.stringify(d)); } catch (x) { /* 무시 */ }
+  }
+  async function flushDiag() {
+    if (!user) return;
+    if (Date.now() > DIAG_UNTIL + 3600 * 1000) return;
+    const d = diagRead(), last = Date.now() > DIAG_UNTIL;   // 끝난 뒤 마지막 한 번
+    if (!Object.keys(d.c).length || (Date.now() - d.at < DIAG_GAP && !(last && !d.final))) return;
+    if (last) d.final = true;
+    d.at = Date.now();
+    try { localStorage.setItem(DIAG_KEY, JSON.stringify(d)); } catch (x) { /* 무시 */ }
+    await db.collection('diag').doc(user.uid).set({ day: d.day, ver: GAME_VERSION, c: d.c, at: firebase.firestore.FieldValue.serverTimestamp() }).catch(() => {});
+  }
+  // 바깥에서 부르는 서버 기능: 실패하면 세어 둔다 (오류는 그대로 다시 던진다)
+  const track = (op, fn) => async (...a) => { try { return await fn(...a); } catch (e) { noteFail(op, e); throw e; } };
   const userId = () => (user ? user.email.replace(MAIL, '') : '');
 
   // Firebase 오류 → 한국어 안내
@@ -168,6 +207,7 @@ const Online = (() => {
         if (n.exists && n.data().uid === uid) await ref.delete();
       }
       await db.collection('presence').doc(uid).delete().catch(() => {});
+      await db.collection('diag').doc(uid).delete().catch(() => {});
       await db.collection('users').doc(uid).delete();
       await user.delete();
     } catch (e) { throw { msg: why(e) }; }
@@ -210,6 +250,7 @@ const Online = (() => {
   const stamp = t => String(t).padStart(14, '0');
   const idOf = docId => +String(docId).split('_').pop();   // 문서 이름 → 요청 번호 (SOS 코드의 번호)
   async function postSOS(s) {
+    await ensureName();
     dropListCache();
     const created = Date.now(), docId = `${stamp(created)}_${s.id}`;
     await db.collection('sos').doc(docId).set({
@@ -261,7 +302,7 @@ const Online = (() => {
   }
   // 내 구조 요청 지켜보기: 문서가 바뀔 때만 알려 준다 (처음 1번 + 바뀔 때마다 읽기 1번. 1분 30초마다 확인하는 것보다 싸고 바로 알 수 있다)
   function watchSOS(docId, cb) {
-    return db.collection('sos').doc(String(docId)).onSnapshot(d => cb(d.exists ? d.data() : null), () => {});
+    return db.collection('sos').doc(String(docId)).onSnapshot(d => cb(d.exists ? d.data() : null), e => noteFail('watchSOS', e));
   }
   // SOS 코드의 요청 번호로 게시판 문서 찾기 (v0.57부터 올린 요청만 sid가 있다). 없으면 null
   async function findSOSById(sid) {
@@ -275,6 +316,7 @@ const Online = (() => {
   // 구조 완료를 알린다. 이미 누가 구조했거나 요청자가 포기했으면 false
   // noGift: 감사 선물을 받지 않는 탐험대 (요청자에게 선물 고르는 창을 띄우지 않게). 서버 규칙이 아직 이 값을 모르면 빼고 다시 보낸다
   async function claimRescue(id, me, noGift) {
+    await ensureName();
     const ref = db.collection('sos').doc(String(id));
     const run = ng => db.runTransaction(async t => {
       const d = await t.get(ref);
@@ -306,7 +348,7 @@ const Online = (() => {
     const headers = { 'Content-Type': 'application/json', Authorization: 'Bearer ' + await user.getIdToken() };
     if (appCheckOn()) headers['X-Firebase-AppCheck'] = (await firebase.appCheck().getToken()).token;   // REST 요청도 App Check 토큰을 붙인다
     const r = await fetch(url, { method: 'POST', headers, body: JSON.stringify(body) });
-    if (!r.ok) throw new Error('count ' + r.status);
+    if (!r.ok) throw { code: r.status === 403 ? 'permission-denied' : r.status === 429 ? 'resource-exhausted' : 'http-' + r.status, message: 'count ' + r.status };
     const j = await r.json();
     return +((j[0] && j[0].result && j[0].result.aggregateFields.n.integerValue) || 0);
   }
@@ -334,10 +376,13 @@ const Online = (() => {
   }
 
   return {
-    touchPresence, onlineCount, PRESENCE_MIN, ONLINE_WINDOW, voteStarter, starterRanks,
+    touchPresence: track('touchPresence', touchPresence), onlineCount: track('onlineCount', onlineCount), PRESENCE_MIN, ONLINE_WINDOW,
+    voteStarter: track('voteStarter', voteStarter), starterRanks: track('starterRanks', starterRanks), flushDiag,
     enabled, init, onChange, loggedIn, name, userId, why, nameTaken: () => !!(profile && profile.nameTaken),
-    signUp, signIn, signOut, setName, deleteAccount, cleanName, uid: () => user && user.uid,
-    fetchCloud, pushCloud, clearCloud,
-    postSOS, listSOS, takeSOS, releaseSOS, getSOS, findMySOS, findSOSById, watchSOS, claimRescue, thankSOS, deleteSOS, idOf,
+    signUp, signIn, signOut, setName: track('setName', setName), deleteAccount, cleanName, uid: () => user && user.uid,
+    fetchCloud: track('fetchCloud', fetchCloud), pushCloud: track('pushCloud', pushCloud), clearCloud: track('clearCloud', clearCloud),
+    postSOS: track('postSOS', postSOS), listSOS: track('listSOS', listSOS), takeSOS: track('takeSOS', takeSOS), releaseSOS: track('releaseSOS', releaseSOS),
+    getSOS: track('getSOS', getSOS), findMySOS: track('findMySOS', findMySOS), findSOSById: track('findSOSById', findSOSById), watchSOS,
+    claimRescue: track('claimRescue', claimRescue), thankSOS: track('thankSOS', thankSOS), deleteSOS: track('deleteSOS', deleteSOS), idOf,
   };
 })();
