@@ -102,12 +102,12 @@ service cloud.firestore {
           && request.resource.data.rescuer.shiny is bool
           && request.resource.data.key == resource.data.ver + '|done')
         ||
-        // 구조하러 간다: 다른 사람이, 열린 요청을 2시간 동안 맡는다 (아무도 안 맡았거나, 맡은 지 2시간이 지났거나, 내가 맡은 것)
+        // 구조하러 간다: 다른 사람이, 열린 요청을 30분 동안 맡는다 (아무도 안 맡았거나, 맡은 지 30분이 지났거나, 내가 맡은 것 = 연장)
         (resource.data.status == 'open' && resource.data.owner != request.auth.uid
           && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['takenBy', 'takenAt'])
           && request.resource.data.takenBy == request.auth.uid && request.resource.data.takenAt == request.time
           && (resource.data.get('takenBy', null) == null || resource.data.takenBy == request.auth.uid
-              || resource.data.takenAt < request.time - duration.value(2, 'h')))
+              || resource.data.takenAt < request.time - duration.value(30, 'm')))
         ||
         // 맡은 구조를 취소: 맡은 사람이 풀어 준다
         (resource.data.status == 'open' && resource.data.get('takenBy', null) == request.auth.uid

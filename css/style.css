@@ -426,6 +426,7 @@ body.touch #actions kbd { display: none; }
 .modal-x { position: absolute; top: 6px; right: 6px; width: 30px; height: 30px; font: inherit; font-size: 15px; color: var(--dim); background: transparent; border: 0; border-radius: 6px; cursor: pointer; }
 .modal-x:hover { background: #ffffff1a; color: #fff; }
 .modal-title { padding-right: 30px; }
+.rank-list { max-height: 60vh; overflow-y: auto; }
 .log-history { max-height: 55vh; overflow-y: auto; font-size: 13px; line-height: 1.6; background: #0003; border-radius: 6px; padding: 6px 10px; }
 .log-history div { color: #cfd8f0; }
 .log-history div.super { color: #ffb02e; } .log-history div.weak { color: #8ea6c8; } .log-history div.crit { color: #ff5ce1; }

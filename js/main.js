@@ -209,6 +209,7 @@ const Game = (() => {
       presenceAt = Date.now();
       try { await Online.touchPresence(); } catch (e) { console.warn(e); }   // 방금 남겼으면 서버가 거절한다 (괜찮음)
     }
+    renewSOSHolds();
     if (inTown() && Date.now() - countAt >= PRESENCE_MS()) {
       countAt = Date.now();
       try { onlineN = await Online.onlineCount(); } catch (e) { console.warn(e); }
@@ -220,6 +221,16 @@ const Game = (() => {
     el.hidden = onlineN == null || !Online.loggedIn();
     el.textContent = `🟢 접속 ${onlineN}명`;
     el.title = `최근 약 ${Online.ONLINE_WINDOW - 1}분 안에 접속한 탐험대 (로그인한 사람 기준, ${Online.PRESENCE_MIN}분마다 갱신)`;
+  }
+  // 게시판 구조: 그 던전에 들어가 있는 동안 SOS_RENEW_MS마다 다시 맡는다 (맡은 시간 연장)
+  async function renewSOSHolds() {
+    const run = Dungeon.run; if (!run || !Dungeon.floor) return;
+    for (const m of save.missions.accepted) {
+      if (m.kind !== 'sos' || !m.online || !m.docId || m.dungeon !== run.dungeon || run.done.includes(m.id)) continue;
+      if (Date.now() - (m.heldAt || 0) < SOS_RENEW_MS) continue;
+      m.heldAt = Date.now();
+      try { await Online.takeSOS(m.docId); } catch (e) { console.warn(e); }   // 이미 구조됐거나 다른 사람이 맡았으면 그냥 둔다
+    }
   }
   function startPresence() {
     if (presenceTimer) return;
@@ -481,7 +492,7 @@ const Game = (() => {
         } else if (d && d.status === 'open' && sosLeft(s) <= 0) {
           failSOS(s);
         } else if (d && d.status === 'open') {
-          // 다른 탐험대가 구조하러 갔는지 (맡은 지 2시간이 지나면 다시 게시판으로)
+          // 다른 탐험대가 구조하러 갔는지 (맡은 지 30분이 지나면 다시 게시판으로, 구조 중이면 연장됨)
           const at = d.takenBy && d.takenAt && d.takenAt.toMillis ? d.takenAt.toMillis() : 0;
           const taken = at && at > Date.now() - SOS_HOLD_MS ? at : null;
           if (taken && !s.takenAt) UI.toast('🏃 다른 탐험대가 구조하러 출발했어요!');
@@ -538,9 +549,9 @@ const Game = (() => {
     const list = Object.entries(r.c).map(([sp, n]) => [+sp, +n || 0]).filter(([sp, n]) => n > 0 && hasKey(DATA.species, sp)).sort((a, b) => b[1] - a[1] || a[0] - b[0]);
     const total = list.reduce((t, [, n]) => t + n, 0);
     let rank = 0, prev = -1;
-    const rows = list.slice(0, 20).map(([sp, n], i) => { if (n !== prev) { rank = i + 1; prev = n; }
+    const rows = list.map(([sp, n], i) => { if (n !== prev) { rank = i + 1; prev = n; }
       return `<div class="row">${rank <= 3 ? ['🥇', '🥈', '🥉'][rank - 1] : `<b class="num">${rank}</b>`} ${portraitImg(sp, 'portrait sm')}<span class="grow"><b>${esc(spName(sp))}</b></span><span>${n}명 <span class="dim">(${Math.round(n * 100 / total)}%)</span></span></div>`; }).join('');
-    UI.alert('🏆 스타팅 순위', `${total ? rows : '<p>아직 집계된 탐험대가 없어요.</p>'}
+    UI.alert('🏆 스타팅 순위', `${total ? `<p class="dim">전체 ${list.length}종</p><div class="rank-list">${rows}</div>` : '<p>아직 집계된 탐험대가 없어요.</p>'}
       <p class="dim tiny">총 ${total}명 · ${esc(r.day)} 기준 (하루에 한 번 갱신) · 로그인한 탐험대가 처음 고른 포켓몬만 세요 (v0.33부터 시작한 탐험대).</p>`);
   }
 
@@ -561,7 +572,7 @@ const Game = (() => {
     });
     UI.open({
       title: '📋 구조 게시판', wide: true,
-      html: `<p class="dim">구조 요청 중 가장 오래 기다린 ${list.length || ''}건. 누가 구조하러 가면 2시간 동안 다른 사람에게는 보이지 않아요.
+      html: `<p class="dim">구조 요청 중 가장 오래 기다린 ${list.length || ''}건. 누가 구조하러 가면 30분 동안 다른 사람에게는 보이지 않아요 (구조하러 던전에 들어가 있는 동안은 연장).
         구조 임무는 한 번에 ${ONLINE_RESCUE_MAX}개까지 받을 수 있어요.</p>${rows.join('') || '<p>지금은 구조를 기다리는 탐험대가 없어요.</p>'}`,
       choices: [{ label: '🔄 새로고침', fn: sosBoard }, { label: '닫기', fn: () => {} }],
       onOpen: (box, m) => box.querySelectorAll('[data-sos]').forEach(b => { b.onclick = () => {
@@ -2041,7 +2052,7 @@ const Game = (() => {
         <div class="dim">가방 ${s.snap.bag.length}칸${s.snap.held ? ` · 지닌 물건 ${esc(ITEMS[s.snap.held].n)}` : ''}이 함께 기다리고 있습니다.</div>
         ${s.revived ? '' : `<div class="${sosLeft(s) < 6 * 3600e3 ? 'warn' : 'dim'}">⏳ 구조 가능 시간 ${Math.max(0, Math.floor(sosLeft(s) / 3600e3))}시간 ${Math.max(0, Math.floor(sosLeft(s) / 60000) % 60)}분 남음 <span class="dim">(48시간이 지나면 구조 실패: 포기와 같은 패널티)</span></div>`}
         ${s.online && !s.revived ? (s.takenAt && s.takenAt > Date.now() - SOS_HOLD_MS
-          ? `<div class="ok">🏃 다른 탐험대가 구조하러 출발했어요! (${Math.max(1, Math.round((Date.now() - s.takenAt) / 60000))}분 전) <span class="dim">2시간 안에 구조하지 못하면 다시 게시판에 올라가요.</span></div>`
+          ? `<div class="ok">🏃 다른 탐험대가 구조하러 출발했어요! (${Math.max(1, Math.round((Date.now() - s.takenAt) / 60000))}분 전) <span class="dim">구조하던 탐험대가 게임을 끄거나 30분 넘게 던전에 들어가지 않으면 다시 게시판에 올라가요.</span></div>`
           : '<div class="dim">📋 구조 게시판에 올라가 있어요. 누군가 구조하러 가면 여기에 표시되고, 구조하면 자동으로 알려 드려요.</div>') : ''}</div>
         ${s.revived ? '<button class="btn sm" data-act="sos-resume">이어서 탐험</button>' : '<button class="btn sm ghost" data-act="sos-show">SOS 코드</button> <button class="btn sm ghost danger" data-act="sos-giveup">포기</button>'}</div>`;
     }
@@ -2089,14 +2100,14 @@ const Game = (() => {
     const ok = await UI.confirm('🆘 구조 요청', `<div class="center">${portraitImg(d.sp, 'portrait big', 'Pain', !!d.sh)}</div>
       <p class="center"><b>${esc(dg.n)} ${d.fl}F</b>에서 ${from ? `<b>${esc(from)}</b> 님` : '친구'}의 Lv${d.lv} <b>${esc(jo(spName(d.sp), '이'))}</b> 쓰러져 있습니다.</p>
       <p class="center dim">그 층까지 내려가서 말을 걸면 구조 성공. 보상 ₽${reward} + ${from ? '마을로 돌아오면 구조 완료가 자동으로 전해져요' : 'A-OK 코드'}</p>
-      ${from ? '<p class="center dim">구조를 마치면 구조 보답(무작위 아이템과 돈)도 받아요. 2시간 동안은 이 요청이 다른 사람에게 보이지 않아요.</p>' : ''}`, '구조하러 간다', '그만둔다');
+      ${from ? '<p class="center dim">구조를 마치면 구조 보답(무작위 아이템과 돈)도 받아요. 30분 동안은 이 요청이 다른 사람에게 보이지 않아요. 그 던전에 들어가 있는 동안은 자동으로 연장돼요.</p>' : ''}`, '구조하러 간다', '그만둔다');
     if (!ok) return;
     if (docId) {   // 게시판 요청: 먼저 맡는다 (이미 누가 맡았으면 받을 수 없음)
       let got = false;
       try { got = await Online.takeSOS(docId); } catch (e) { UI.alert('구조 불가', `<p>${esc(Online.why(e))}</p>`); return; }
       if (!got) { UI.alert('구조 불가', '<p>방금 다른 탐험대가 구조하러 갔거나, 이미 구조된 요청이에요.</p>'); return; }
     }
-    save.missions.accepted.push({ id: 'sos' + d.id, kind: 'sos', sosId: d.id, dungeon: dg.id, floor: d.fl, client: d.sp, lv: d.lv, shiny: !!d.sh, reward, ...(from ? { online: true, from, docId } : {}) });
+    save.missions.accepted.push({ id: 'sos' + d.id, kind: 'sos', sosId: d.id, dungeon: dg.id, floor: d.fl, client: d.sp, lv: d.lv, shiny: !!d.sh, reward, ...(from ? { online: true, from, docId, heldAt: Date.now() } : {}) });
     const ci = document.getElementById('code-input'); if (ci) ci.value = '';
     persist(); renderTown(); UI.toast('구조 임무를 받았습니다!');
   }
